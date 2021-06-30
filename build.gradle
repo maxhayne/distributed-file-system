@@ -1,0 +1,24 @@
+apply plugin: 'java-library'
+
+repositories {
+   flatDir {
+       dirs 'libs'
+   }
+}
+
+dependencies {
+	implementation name: 'reed-solomon-erasure-coding'
+	//configurations.compile.extendsFrom(configurations.libs)
+}
+
+jar {
+    from {
+        configurations
+        .runtimeClasspath
+        .collect {
+            if(it.name.equalsIgnoreCase("reed-solomon-erasure-coding.jar")) {
+                zipTree(it)
+            }
+        }
+    }
+}
