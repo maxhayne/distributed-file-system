@@ -61,9 +61,7 @@ public class ChunkServerHeartbeatService extends TimerTask {
 				int[] errorsarray = null;
 				data = fileservice.readBytesFromFile(directorystring+filename);
 				errors = fileservice.checkChunkForCorruption(data);
-				if (data.length > 65720) {
-					fileservice.truncateFile(directorystring+filename,65720);
-				}
+				if (data.length > 65720) { fileservice.truncateFile(directorystring+filename,65720); }
 				if (errors.size() > 0) {
 					errorsarray = new int[errors.size()];
 					for (int i = 0; i < errors.size(); i++)
@@ -80,7 +78,15 @@ public class ChunkServerHeartbeatService extends TimerTask {
 					fileservice.addToQueue(event); // Send message to Controller about corruption
 				}
 			} else { // This is a shard
-				majorFiles.put(filename, new FileMetadata(filename));
+				byte[] data = fileservice.readBytesFromFile(directorystring+filename);
+				boolean corrupt = fileservice.checkShardForCorruption(data);
+				if (data.length > 10994) { fileservice.truncateFile(directorystring+filename,10994); }
+				if (corrupt) {
+					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(connection.getIdentifier(),filename,null);
+					fileservice.addToQueue(event); // Send message to Controller about corruption
+				} else {
+					majorFiles.put(filename, new FileMetadata(filename));
+				}
 			}
 		}
 
@@ -131,12 +137,12 @@ public class ChunkServerHeartbeatService extends TimerTask {
 				if (data.length > 65720) {
 					fileservice.truncateFile(directorystring+filename,65720);
 				}
-				System.out.println(data.length + " " + errors.size());
+				//System.out.println(data.length + " " + errors.size());
 				if (errors.size() > 0) {
 					errorsarray = new int[errors.size()];
 					for (int i = 0; i < errors.size(); i++) {
 						errorsarray[i] = errors.elementAt(i);
-						System.out.println(errorsarray[i]);
+						//System.out.println(errorsarray[i]);
 					}
 					numberOfErrors = errorsarray.length;
 				} else {
@@ -146,12 +152,20 @@ public class ChunkServerHeartbeatService extends TimerTask {
 					ByteBuffer buffer = ByteBuffer.wrap(data);
 					minorFiles.put(filename, new FileMetadata(filename,buffer.getInt(28)));
 				} else {
-					System.out.println("Trying to add an event to the fileservice.");
+					//System.out.println("Trying to add an event to the fileservice.");
 					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(connection.getIdentifier(),filename,errorsarray);
 					fileservice.addToQueue(event);
 				}
 			} else if (shard) { // This is a shard
-				minorFiles.put(filename, new FileMetadata(filename));
+				byte[] data = fileservice.readBytesFromFile(directorystring+filename);
+				boolean corrupt = fileservice.checkShardForCorruption(data);
+				if (data.length > 10994) { fileservice.truncateFile(directorystring+filename,10994); }
+				if (corrupt) {
+					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(connection.getIdentifier(),filename,null);
+					fileservice.addToQueue(event); // Send message to Controller about corruption
+				} else {
+					majorFiles.put(filename, new FileMetadata(filename));
+				}
 			}
 		}
 

@@ -1,12 +1,13 @@
 package cs555.overlay.util;
 
-public class Chunk implements Comparable<Chunk> {
+public class Chunk extends ServerFile implements Comparable<Chunk> {
 
 	public String filename;
 	public int sequence;
 	public int version;
 	public int serveridentifier;
 	public boolean corrupt;
+	public long created;
 
 	public Chunk(String filename, int sequence, int version, int serveridentifier, boolean corrupt) {
 		this.filename = filename;
@@ -14,6 +15,7 @@ public class Chunk implements Comparable<Chunk> {
 		this.version = version;
 		this.serveridentifier = serveridentifier;
 		this.corrupt = corrupt;
+		this.created = System.currentTimeMillis();
 	}
 
 	@Override
@@ -67,5 +69,9 @@ public class Chunk implements Comparable<Chunk> {
 		returnable += "ServerIdentifier: " + serveridentifier + '\n';
 		returnable += "Corrupt Status: " + corrupt + '\n'; 
 		return returnable;
+	}
+
+	public String getType() {
+		return "CHUNK";
 	}
 }

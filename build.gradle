@@ -8,7 +8,6 @@ repositories {
 
 dependencies {
 	implementation name: 'reed-solomon-erasure-coding'
-	//configurations.compile.extendsFrom(configurations.libs)
 }
 
 jar {

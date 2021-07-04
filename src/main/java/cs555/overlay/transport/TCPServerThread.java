@@ -34,12 +34,8 @@ public class TCPServerThread extends Thread {
 
 	public void close() {
 		try {
-			if (server != null)
-				server.close();
-		} catch (IOException ioe) {
-			System.out.println("TCPServerThread close IOException: " + ioe);
-		}
-		server = null;
+			if (server != null) server.close();
+		} catch (IOException ioe) {}
 	}
 
 	@Override
@@ -52,19 +48,18 @@ public class TCPServerThread extends Thread {
 					? new Thread(new TCPReceiverThread(incomingConnectionSocket,this,this.chunkcache)) 
 					: new Thread(new TCPReceiverThread(incomingConnectionSocket,this,this.fileservice));
 				receiverThread.start();
-				System.out.println("Accepted a new connection!");
 			}
 		} catch (IOException ioe) {
-			System.err.println("TCPServerThread run IOException: " + ioe);
+			//System.err.println("TCPServerThread run IOException: " + ioe);
 		} finally {
 			try {
 				if (server != null)
 					server.close();
 			} catch (IOException ioe) {
-				System.err.println("TCPServerThread run IOException: " + ioe);
+				//System.err.println("TCPServerThread run IOException: " + ioe);
 			}
 		}
 		this.close();
-		System.out.println("TCPServerThread has stopped.");
+		System.out.println("Server has stopped.");
 	}
 }

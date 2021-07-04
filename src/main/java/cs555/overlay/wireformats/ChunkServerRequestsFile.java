@@ -5,19 +5,19 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-public class ChunkServerAcknowledgesFileForward implements Event {
+public class ChunkServerRequestsFile implements Event {
 
 	public String filename;
 
-	public ChunkServerAcknowledgesFileForward(String filename) {
+	public ChunkServerRequestsFile(String filename) {
 		this.filename = filename;
 	}
 
-	public ChunkServerAcknowledgesFileForward(byte[] msg) {
+	public ChunkServerRequestsFile(byte[] msg) {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
-		int fileLength = buffer.getInt();
-		byte[] array = new byte[fileLength];
+		int length = buffer.getInt();
+		byte[] array = new byte[length];
 		buffer.get(array);
 		this.filename = new String(array);
 	}
@@ -26,7 +26,7 @@ public class ChunkServerAcknowledgesFileForward implements Event {
 		byte[] marshalledBytes = null;
 		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
 		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
-		dout.writeByte(Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FORWARD);
+		dout.writeByte(Protocol.CHUNK_SERVER_REQUESTS_FILE);
 		byte[] array = filename.getBytes();
 		dout.writeInt(array.length);
 		dout.write(array);
@@ -40,6 +40,6 @@ public class ChunkServerAcknowledgesFileForward implements Event {
 	}
 
 	public byte getType() throws IOException {
-		return Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FORWARD;
+		return Protocol.CHUNK_SERVER_REQUESTS_FILE;
 	}
 }

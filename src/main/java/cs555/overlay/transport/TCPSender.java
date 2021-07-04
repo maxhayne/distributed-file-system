@@ -35,4 +35,17 @@ public class TCPSender {
 		}
 	}
 
+	public void close() {
+		try {
+			this.socket.close();
+		} catch (IOException ioe) {}
+		
+		try {
+			this.dout.close(); 
+		} catch (IOException ioe) {}
+		
+		try {
+			this.din.close();
+		} catch (IOException ioe) {}
+	}
 }

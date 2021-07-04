@@ -28,11 +28,11 @@ public class ControllerConnection extends Thread {
 	private String directory;
 	private int serveridentifier;
 
-	public ControllerConnection(String controllerHostName, int controllerPort, ServerSocket serverSocket, String directory) throws IOException {
-		this.controllersocket = new Socket(ChunkServer.CONTROLLER_HOSTNAME, ChunkServer.CONTROLLER_PORT); // Connect to Controller
+	public ControllerConnection(Socket controllerSocket, ServerSocket serverSocket, String directory) throws IOException {
+		this.controllersocket = controllerSocket;
 		this.fileservice = new FileDistributionService(directory,this);
 		this.server = new TCPServerThread(serverSocket,fileservice);
-		this.receiver = new TCPReceiverThread(controllersocket,server,this);
+		this.receiver = new TCPReceiverThread(controllersocket,server,this,this.fileservice);
 		this.activestatus = false;
 		this.sendQueue = new LinkedBlockingQueue<byte[]>();
 		this.dout = new DataOutputStream(new BufferedOutputStream(receiver.getDataOutputStream(), 8192));
@@ -64,11 +64,11 @@ public class ControllerConnection extends Thread {
 		this.heartbeattimer = new Timer();
 		long randomOffset = (long)ThreadLocalRandom.current().nextInt(2, 15 + 1);
 		long heartbeatstart = randomOffset*1000L;
-		this.heartbeattimer.scheduleAtFixedRate(heartbeatservice,heartbeatstart,30000L);
+		this.heartbeattimer.scheduleAtFixedRate(heartbeatservice,heartbeatstart,ChunkServer.HEARTRATE);
 	}
 
 	public synchronized void stopHeartbeatService() {
-		heartbeattimer.cancel();
+		if (heartbeattimer != null) { heartbeattimer.cancel(); }
 		heartbeattimer = null;
 	}
 

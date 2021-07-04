@@ -5,17 +5,17 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-public class ControllerRequestsFileForward implements Event {
+public class ControllerRequestsFileAcquire implements Event {
 
 	public String filename;
 	public String[] servers;
 
-	public ControllerRequestsFileForward(String filename, String[] servers) {
+	public ControllerRequestsFileAcquire(String filename, String[] servers) {
 		this.filename = filename;
 		this.servers = servers;
 	}
 
-	public ControllerRequestsFileForward(byte[] msg) {
+	public ControllerRequestsFileAcquire(byte[] msg) {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int filelength = buffer.getInt();
@@ -37,7 +37,7 @@ public class ControllerRequestsFileForward implements Event {
 		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
 		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
 		
-		dout.writeByte(Protocol.CONTROLLER_REQUESTS_FILE_FORWARD);
+		dout.writeByte(Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE);
 		byte[] array = filename.getBytes();
 		dout.writeInt(array.length);
 		dout.write(array);
@@ -63,6 +63,6 @@ public class ControllerRequestsFileForward implements Event {
 	}
 
 	public byte getType() throws IOException {
-		return Protocol.CONTROLLER_REQUESTS_FILE_FORWARD;
+		return Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE;
 	}
 }

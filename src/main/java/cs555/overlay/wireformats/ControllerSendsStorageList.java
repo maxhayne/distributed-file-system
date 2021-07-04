@@ -34,24 +34,20 @@ public class ControllerSendsStorageList implements Event {
 		if (replicationcount != 0) {
 			this.replicationservers = new String[replicationcount];
 			for (int i = 0; i < replicationcount; i++) {
-				String serverinfo = "";
 				length = buffer.getInt();
 				string = new byte[length];
 				buffer.get(string);
-				serverinfo += new String(string) + ":" + buffer.getInt();
-				replicationservers[i] = serverinfo;
+				replicationservers[i] = new String(string);
 			}
 		}
 		int shardcount = buffer.getInt();
 		if (shardcount != 0) {
 			this.shardservers = new String[shardcount];
 			for (int i = 0; i < shardcount; i++) {
-				String serverinfo = "";
 				length = buffer.getInt();
 				string = new byte[length];
 				buffer.get(string);
-				serverinfo += new String(string) + ":" + buffer.getInt();
-				shardservers[i] = serverinfo;
+				shardservers[i] = new String(string);
 			}
 		}
 		string = null;
@@ -79,11 +75,9 @@ public class ControllerSendsStorageList implements Event {
 		}
 
 		for (int i = 0; i < replicationserverlength; i++) {
-			String[] parts = replicationservers[i].split(":");
-			array = parts[0].getBytes();
-			dout.writeInt(array.length); // length of address
-			dout.write(array); // address
-			dout.writeInt(Integer.parseInt(parts[1])); // port
+			array = replicationservers[i].getBytes();
+			dout.writeInt(array.length);
+			dout.write(array);
 		}
 
 		// Write list of shard server address:port
@@ -96,11 +90,9 @@ public class ControllerSendsStorageList implements Event {
 		}
 
 		for (int i = 0; i < shardserverlength; i++) {
-			String[] parts = shardservers[i].split(":");
-			array = parts[0].getBytes();
-			dout.writeInt(array.length); // length of address
-			dout.write(array); // address
-			dout.writeInt(Integer.parseInt(parts[1])); // port
+			array = shardservers[i].getBytes();
+			dout.writeInt(array.length);
+			dout.write(array);
 		}
 
 		dout.flush();

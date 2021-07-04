@@ -59,38 +59,14 @@ public class TCPReceiverThread extends Thread {
 
 	// Constructor for the TCPReceiverThread that will recieve messages over the registration
 	// and heartbeat channel. Will not be spawned from a TCPServerThread
-	public TCPReceiverThread(Socket socket, TCPServerThread server, ControllerConnection conn) throws IOException {
+	public TCPReceiverThread(Socket socket, TCPServerThread server, ControllerConnection conn, FileDistributionService fileservice) throws IOException {
 		this.socket = socket;
 		this.server = server;
 		this.din = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 8192));
 		this.dout = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream(), 8192));
 		this.controller = false;
 		this.controllerconn = conn;
-	}
-
-	public void close() {
-		try {
-			if (socket != null)
-				socket.close();
-		} catch (IOException ioe) {
-			System.out.println("TCPReceiverThread close IOException: " + ioe);
-		}
-		try {
-			if (din != null)
-				din.close();
-			if (dout != null)
-				dout.close();
-		} catch (IOException ioe) {
-			System.out.println("TCPReceiverThread close IOException: " + ioe);
-		}
-		din = null;		
-		if (controller && chunkconn != null && chunkcache != null) { // May want to unregister this connection from the ChunkServerConnectionCache
-			chunkcache.deregister(chunkconn.getIdentifier());
-		}
-
-		if (controllerconn != null) { // what do we want to do here at the client...
-			controllerconn.setActiveStatus(false);
-		}
+		this.fileservice = fileservice;
 	}
 
 	public String getLocalAddress() throws UnknownHostException {
@@ -113,6 +89,24 @@ public class TCPReceiverThread extends Thread {
 		return socket.getOutputStream();
 	}
 
+	public synchronized void close() {
+		try {
+			if (socket != null) socket.close();
+		} catch (IOException ioe) {}
+		try {
+			if (din != null) din.close();
+			if (dout != null) dout.close();
+		} catch (IOException ioe) {}	
+		if (controller && chunkconn != null && chunkcache != null) {
+			ChunkServerConnection tempConn = chunkconn;
+			ChunkServerConnectionCache tempCache = chunkcache;
+			chunkconn = null;
+			chunkcache = null;
+			tempCache.deregister(tempConn.getIdentifier());
+		}
+		if (controllerconn != null) controllerconn.setActiveStatus(false);
+	}
+
 	// Send a message back over this socket connection to the sender
 	public boolean respond(byte[] msg) {
 		try {
@@ -128,13 +122,14 @@ public class TCPReceiverThread extends Thread {
 
 	@Override
 	public void run() {
-		while (true) {
+		while (!this.socket.isClosed()) {
 			try {
+				
 				int dataLength = din.readInt();
 				byte[] data = new byte[dataLength];
 				din.readFully(data, 0, dataLength);
+				
 				switch(data[0]) {
-					
 					case Protocol.CHUNK_SERVER_SENDS_REGISTRATION: {
 						if (!controller) break;
 						ChunkServerSendsRegistration msg = new ChunkServerSendsRegistration(data);
@@ -203,6 +198,7 @@ public class TCPReceiverThread extends Thread {
 						if (servers.equals("")) {
 							ControllerDeniesStorageRequest response = new ControllerDeniesStorageRequest();
 							respond(response.getBytes());
+							break;
 						}
 						String[] serverarray = servers.split(",");
 						ControllerSendsClientValidChunkServers response = new ControllerSendsClientValidChunkServers(msg.filename,msg.sequence,serverarray);
@@ -217,6 +213,7 @@ public class TCPReceiverThread extends Thread {
 						if (servers.equals("")) {
 							ControllerDeniesStorageRequest response = new ControllerDeniesStorageRequest();
 							respond(response.getBytes());
+							break;
 						}
 						String[] serverarray = servers.split(",");
 						ControllerSendsClientValidChunkServers response = new ControllerSendsClientValidChunkServers(msg.filename,msg.sequence,serverarray);
@@ -245,9 +242,9 @@ public class TCPReceiverThread extends Thread {
 								byte[] reply = sender.receiveData();
 								if (reply[0] == Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE)	{
 									ChunkServerAcknowledgesFileDelete msgreply = new ChunkServerAcknowledgesFileDelete(reply);
-									System.out.println("Chunk Server " + addresses[i] + " acknowledges it should delete " + msgreply.filename + ".");
+									//System.out.println("Chunk Server " + addresses[i] + " acknowledges it should delete " + msgreply.filename + ".");
 								} else {
-									System.out.println("No delete acknowledgement was received for file " + msg.filename + " during the one second interval.");
+									//System.out.println("No delete acknowledgement was received for file " + msg.filename + " during the one second interval.");
 								}
 								deleteAttempt.close();
 							} catch (Exception e) {
@@ -268,13 +265,13 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
-					// SHOULD BE MODIFIED TO INCLUDE SHARDS
 					case Protocol.SENDS_FILE_FOR_STORAGE: {
 						if (controller || fileservice == null) break;
 						SendsFileForStorage msg = new SendsFileForStorage(data);
 						ChunkServerAcknowledgesFileForStorage response = new ChunkServerAcknowledgesFileForStorage(msg.filename);
+						//System.out.println("storing: " + msg.filename);
 						respond(response.getBytes()); // Send acknowledgement of receive
-						System.out.println("Received storage request.");
+						//System.out.println("Received storage request.");
 						// Prepare the byte[] for being storage, whether it is a chunk or a shard.
 						// Need to save the file if possible, then open a new socket to connect to the next node in the chain.
 						// Then, send out the forward message with the node we are sending to's forwarding information removed.
@@ -288,23 +285,27 @@ public class TCPReceiverThread extends Thread {
 								prepared = null;
 							}
 						} else if (FileDistributionService.checkShardFilename(msg.filename)) { // Is a shard
-							System.out.println("Chunk Server can't forward or receive shards at the moment. Add the code to do so in the FileDistributionService.");
-							break;
+							String[] parts = msg.filename.split("_chunk");
+							int sequence = Integer.valueOf(parts[1].split("_shard")[0]);
+							int shardnumber = Integer.valueOf(parts[1].split("_shard")[1]);
+							int version = 0;
+							prepared = fileservice.readyShardForStorage(sequence,shardnumber,version,msg.filedata);
 						} else {
 							break;
 						}
 						boolean saved;
-						if (prepared != null)
+						if (prepared != null) {
 							saved = fileservice.overwriteNewFile(fileservice.getDirectory()+msg.filename,prepared);
-						else
+						} else {
 							saved = false;
+						}
 						Vector<String> unreachableServers = new Vector<String>();
 						if (msg.servers != null) {
 							for (int i = 0; i < msg.servers.length; i++) {
 								String address = msg.servers[i].split(":")[0];
 								int port = Integer.valueOf(msg.servers[i].split(":")[1]);
 								try {
-									System.out.println("Trying to reach the server " + i + ".");
+									//System.out.println("Trying to reach the server " + i + ".");
 									Socket storeAttempt = new Socket(address,port);
 									storeAttempt.setSoTimeout(2000);
 									TCPSender sender = new TCPSender(storeAttempt);
@@ -318,17 +319,17 @@ public class TCPReceiverThread extends Thread {
 									byte[] reply = sender.receiveData();
 									if (reply[0] == Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FOR_STORAGE)	{
 										ChunkServerAcknowledgesFileForStorage msgreply = new ChunkServerAcknowledgesFileForStorage(reply);
-										System.out.println("Chunk Server " + msg.servers[i] + " acknowledges it should store " + msgreply.filename + ".");
+										//System.out.println("Chunk Server " + msg.servers[i] + " acknowledges it should store " + msgreply.filename + ".");
 										storeAttempt.close();
 										break; // break out of loop
 									} else {
-										System.out.println("No store acknowledgement was received for file " + msg.filename + " during the one second interval.");
+										//System.out.println("No store acknowledgement was received for file " + msg.filename + " during the one second interval.");
 										unreachableServers.add(msg.servers[i]);
 										storeAttempt.close();
 									}
 								} catch (Exception e) {
-									System.out.println(e);
-									e.printStackTrace();
+									//System.out.println(e);
+									//e.printStackTrace();
 									unreachableServers.add(msg.servers[i]);
 								}
 							}
@@ -365,6 +366,7 @@ public class TCPReceiverThread extends Thread {
 						// Deny if for some reason nothing was read
 						if (filedata == null) {
 							ChunkServerDeniesRequest response = new ChunkServerDeniesRequest(msg.filename);
+							// If the file is gone, the Controller should figure it out on the next major heartbeat
 							respond(response.getBytes());
 							break;
 						}
@@ -392,7 +394,6 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
-					// UNFINISHED
 					case Protocol.REQUESTS_SHARD: {
 						if (controller) break;
 						RequestsShard msg = new RequestsShard(data);
@@ -409,10 +410,27 @@ public class TCPReceiverThread extends Thread {
 						if (filedata == null) {
 							ChunkServerDeniesRequest response = new ChunkServerDeniesRequest(msg.filename);
 							respond(response.getBytes());
+							// If the file is gone, the Controller should figure it out on the next major heartbeat
 							break;
 						}
-						System.out.println("Need to write proper functions for reading and checking shard for errors. Denying request for shard.");
-						ChunkServerDeniesRequest response = new ChunkServerDeniesRequest(msg.filename);
+						// Start new code here
+						boolean corrupt;
+						try {
+							corrupt = fileservice.checkShardForCorruption(filedata);
+						} catch (NoSuchAlgorithmException nsae) {
+							System.out.println("TCPReceiverThread at REQUESTS_SHARD: Can't use SHA1.");
+							corrupt = false;
+						}
+						if (corrupt) { // Need to report the file corruption and deny the request.
+							ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(fileservice.getIdentifier(),msg.filename,null);
+							fileservice.addToQueue(event);
+							ChunkServerDeniesRequest response = new ChunkServerDeniesRequest(msg.filename);
+							respond(response.getBytes());
+							break;
+						}
+						// There were no errors
+						byte[] justdata = fileservice.getDataFromShard(fileservice.removeHashFromShard(filedata));
+						ChunkServerServesFile response = new ChunkServerServesFile(msg.filename,justdata);
 						respond(response.getBytes());
 						break;
 					}
@@ -462,14 +480,12 @@ public class TCPReceiverThread extends Thread {
 							chunkcache.markShardCorrupt(filename,sequence,shardnumber,msg.identifier);
 						}
 						String info = chunkcache.getChunkStorageInfo(filename,sequence);
-						System.out.println("TRYING TO DEAL WITH FILE CORRUPTION.");
 						if (info.equals("|")) { // Nothing we can do
 							msg = null;
 							filename = null;
 							info = null;
 							break;
 						}
-						System.out.println("CORRUPTION SERVER INFO: " + info);
 						String[] parts = info.split("\\|",-1);
 						String[] replications = parts[0].split(",");
 						String[] shards = parts[1].split(",");
@@ -485,12 +501,12 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
-					case Protocol.CONTROLLER_REQUESTS_FILE_FORWARD: {
+					case Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE: {
 						if (controller || fileservice == null) break;
 						Event event = EventFactory.getEvent(data[0],data);
 						this.fileservice.addToQueue(event); // Add to fileservice queue
-						ControllerRequestsFileForward cast = (ControllerRequestsFileForward)event;
-						ChunkServerAcknowledgesFileForward response = new ChunkServerAcknowledgesFileForward(cast.filename);
+						ControllerRequestsFileAcquire cast = (ControllerRequestsFileAcquire)event;
+						ChunkServerAcknowledgesFileAcquire response = new ChunkServerAcknowledgesFileAcquire(cast.filename);
 						respond(response.getBytes());
 						break;
 					}
@@ -602,7 +618,7 @@ public class TCPReceiverThread extends Thread {
 						ClientRequestsFileStorageInfo msg = new ClientRequestsFileStorageInfo(data);
 						String filename;
 						int sequence;
-						System.out.println(msg.filename + " " + FileDistributionService.checkChunkFilename(msg.filename));
+						//System.out.println(msg.filename + " " + FileDistributionService.checkChunkFilename(msg.filename));
 						if (FileDistributionService.checkChunkFilename(msg.filename)) { // This is a Chunk
 							String[] parts = msg.filename.split("_chunk");
 							filename = parts[0];
@@ -614,7 +630,7 @@ public class TCPReceiverThread extends Thread {
 							sequence = Integer.parseInt(parts2[0]);
 						}
 						String info = chunkcache.getChunkStorageInfo(filename,sequence);
-						System.out.println("INFO FOR CHUNK " + sequence + " OF " + filename + ": " + info);
+						//System.out.println("INFO FOR CHUNK " + sequence + " OF " + filename + ": " + info);
 						if (info.equals("|")) { // Nothing we can do
 							msg = null;
 							filename = null;
@@ -637,13 +653,67 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
-					// May only need to deal with it in the fileservice event queue
-					/*
-					case Protocol.CHUNK_SERVER_SERVES_SLICES: {
-
+					// Data is sent out including the hashes and metadata.
+					case Protocol.CHUNK_SERVER_REQUESTS_FILE: {
+						if (controller || fileservice == null) break;
+						ChunkServerRequestsFile msg = new ChunkServerRequestsFile(data);
+						byte[] filedata = fileservice.readBytesFromFile(fileservice.getDirectory()+msg.filename);
+						if (filedata == null) {
+							ChunkServerDeniesRequest deny = new ChunkServerDeniesRequest(msg.filename);
+							respond(deny.getBytes());
+							break;
+						}
+						if (FileDistributionService.checkChunkFilename(msg.filename)) { // It's a Chunk
+							Vector<Integer> errors;
+							try {
+								errors = FileDistributionService.checkChunkForCorruption(filedata);
+							} catch (NoSuchAlgorithmException nsae) {
+								System.out.println(nsae);
+								break;
+							}
+							if (errors.size() != 0) {
+								int[] slices = new int[errors.size()];
+								for (int i = 0; i < errors.size(); i++) 
+									slices[i] = errors.elementAt(i);
+								ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(fileservice.getIdentifier(),msg.filename,slices);
+								fileservice.addToQueue(event);
+								ChunkServerDeniesRequest response = new ChunkServerDeniesRequest(msg.filename);
+								respond(response.getBytes());
+								break;
+							}
+							byte[] sendData;
+							if (filedata.length != 65720) {
+								sendData = Arrays.copyOfRange(filedata,0,65720);
+							} else {
+								sendData = filedata;
+							}
+							ChunkServerServesFile serve = new ChunkServerServesFile(msg.filename,sendData);
+							respond(serve.getBytes());
+						}  else { // It's a Shard
+							boolean corrupt;
+							try {
+								corrupt = FileDistributionService.checkShardForCorruption(filedata);
+							} catch (NoSuchAlgorithmException nsae) {
+								System.out.println(nsae);
+								break;
+							}
+							if (corrupt) {
+								ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(fileservice.getIdentifier(),msg.filename,null);
+								fileservice.addToQueue(event);
+								ChunkServerDeniesRequest response = new ChunkServerDeniesRequest(msg.filename);
+								respond(response.getBytes());
+								break;
+							}
+							byte[] sendData = FileDistributionService.getDataFromShard(FileDistributionService.removeHashFromShard(filedata));
+							ChunkServerServesFile serve = new ChunkServerServesFile(msg.filename,sendData);
+							respond(serve.getBytes());
+						}
 						break;
 					}
-					*/ 
+
+					case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE: {
+						break;
+					}
 
 					default : {
 						System.out.println("Unknown message received.");
@@ -651,15 +721,13 @@ public class TCPReceiverThread extends Thread {
 					}
 				}
 			} catch (SocketException se) {
-				se.printStackTrace();
-				System.err.println("TCPReceiverThread run SocketException: " + se);
+				//System.err.println("TCPReceiverThread run SocketException: " + se);
 				break;
 			} catch (IOException ioe) {
-				ioe.printStackTrace();
-				System.err.println("TCPReceiverThread run IOException: " + ioe);
+				//System.err.println("TCPReceiverThread run IOException: " + ioe);
 				break;
 			}
 		}
-		this.close();
+		this.close(); // Try to close the receiver if the while loop has exited.
 	}
 }

@@ -87,8 +87,8 @@ public class EventFactory {
 				return new ControllerSendsStorageList(msg);
 			}
 
-			case Protocol.CONTROLLER_REQUESTS_FILE_FORWARD: {
-				return new ControllerRequestsFileForward(msg);
+			case Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE: {
+				return new ControllerRequestsFileAcquire(msg);
 			}
 		}
 		return null;

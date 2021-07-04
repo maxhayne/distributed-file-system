@@ -15,6 +15,39 @@ public class DistributedFileCache {
 		this.filecache = new TreeMap<String,DistributedFile>();
 	}
 
+	// Remove entries from the filecache that have no chunks or shards associated with them
+	public synchronized void prune() {
+		Vector<String> toRemove = new Vector<String>();
+		for (Map.Entry<String,DistributedFile> entry : filecache.entrySet()) {
+			boolean empty = true;
+			DistributedFile file = entry.getValue();
+			if (file.chunks.size() == 0 && file.shards.size() == 0) {
+				empty = true;
+			} else {
+				Collection<Vector<Chunk>> chunkVectorCollection = file.chunks.values();
+				for (Vector<Chunk> chunkVector : chunkVectorCollection) {
+					if (chunkVector.size() != 0) {
+						empty = false;
+						break;
+					}
+				}
+				Collection<Vector<Shard>> shardVectorCollection = file.shards.values();
+				for (Vector<Shard> shardVector : shardVectorCollection) {
+					if (shardVector.size() != 0) {
+						empty = false;
+						break;
+					}
+				}
+			}
+			if (empty) toRemove.add(entry.getKey());
+		}
+		// Remove the empty distributed files
+		for (String filename : toRemove) {
+			filecache.get(filename).clear();
+			filecache.remove(filename);
+		}
+	}
+
 	public synchronized String[] getFileList() {
 		int size = filecache.size();
 		if (size == 0) return null;
@@ -31,8 +64,16 @@ public class DistributedFileCache {
 	public synchronized int getFileSize(String filename) {
 		DistributedFile file = filecache.get(filename);
 		if (file == null) return 0;
-		if (file.chunks == null) return 0;
-		return file.chunks.size();
+		int size;
+		if (file.chunks == null && file.shards != null) {
+			return file.shards.size();
+		} else if (file.chunks != null && file.shards == null) {
+			return file.chunks.size();
+		} else if (file.shards == null && file.chunks == null) {
+			return 0;
+		} else {
+			return file.shards.size() >= file.chunks.size() ? file.shards.size() : file.chunks.size();
+		}
 	}
 
 	public synchronized String getChunkStorageInfo(String filename, int sequence) {
@@ -49,21 +90,22 @@ public class DistributedFileCache {
 					added = true;
 				}
 			}
-			if (added) // remove last comma
-				info = info.substring(0,info.length()-1);
+			if (added) info = info.substring(0,info.length()-1);
 		}
 		info += "|"; // divides chunks from shards
 		if (file.shards.get(sequence) != null && file.shards.get(sequence).size() != 0) {
 			Vector<Shard> shards = file.shards.get(sequence);
+			//System.out.println("DistributedFileCache getChunkStorageInfo: Shards vector length: " + shards.size());
 			for (int i = 0; i < 9; i++) {
 				boolean found = false;
 				for (Shard shard : shards) {
-					info += shard.serveridentifier + ",";
-					found = true;
-					break;
+					if (shard.shardnumber == i) {
+						info += shard.serveridentifier + ",";
+						found = true;
+						break;
+					}
 				}
-				if (!found)
-					info += String.valueOf(-1) + ",";
+				if (!found) info += String.valueOf(-1) + ",";
 			}
 			info = info.substring(0,info.length()-1);
 		}
@@ -72,8 +114,8 @@ public class DistributedFileCache {
 	}
 
 	// Returns all the chunks removed so that new homes can be found for them.
-	public synchronized Set<Chunk> removeAllFilesAtServer(int identifier) {
-		Set<Chunk> totalRemoved = new TreeSet<Chunk>(); // remove duplicates if there are any
+	public synchronized Vector<ServerFile> removeAllFilesAtServer(int identifier) {
+		Vector<ServerFile> totalRemoved = new Vector<ServerFile>(); // remove duplicates if there are any
 		Vector<Chunk> removeChunks = new Vector<Chunk>();
 		Vector<Shard> removeShards = new Vector<Shard>();
 		Vector<String> removeFiles = new Vector<String>();
@@ -101,8 +143,10 @@ public class DistributedFileCache {
 				Collection<Vector<Shard>> shardVectors = file.shards.values();
 				for (Vector<Shard> shardVector : shardVectors) {
 					for (Shard shard : shardVector) {
-						if (shard.serveridentifier == identifier)
+						if (shard.serveridentifier == identifier) {
 							removeShards.add(shard);
+							totalRemoved.add(shard);
+						}
 					}
 					for (Shard shard : removeShards) {
 						shardVector.removeElement(shard);
@@ -270,7 +314,7 @@ public class DistributedFileCache {
 				// entry2.getValue().contains(Chunk) will tell you if the Chunk is present
 				for (Chunk chunk : entry2.getValue()) {
 					if (!passedcache.containsChunk(chunk)) {
-						differences.add("chunk" + "," + filename + "," + sequence  + "," + chunk.version + "," + chunk.serveridentifier);
+						differences.add("chunk" + "," + filename + "," + sequence  + "," + chunk.version + "," + chunk.serveridentifier + "," + chunk.created);
 					}
 				}
 			}
@@ -278,8 +322,7 @@ public class DistributedFileCache {
 				int sequence = entry2.getKey();
 				for (Shard shard : entry2.getValue()) {
 					if (!passedcache.containsShard(shard)) {
-						differences.add("shard" + "," + filename + "," + sequence  + "," + shard.shardnumber + "," + shard.serveridentifier);
-						//differences.add(filename + "," + sequence + ",shard," + shard.serveridentifier);
+						differences.add("shard" + "," + filename + "," + sequence  + "," + shard.shardnumber + "," + shard.serveridentifier + "," + shard.created);
 					}
 				}
 			}

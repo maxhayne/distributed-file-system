@@ -4,6 +4,7 @@ import cs555.overlay.wireformats.Protocol;
 import cs555.overlay.transport.TCPSender;
 import cs555.overlay.node.ChunkServer;
 import cs555.overlay.wireformats.*;
+import cs555.overlay.node.Client;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.BlockingQueue;
@@ -15,11 +16,14 @@ import java.security.MessageDigest;
 import java.nio.channels.FileLock;
 import java.io.RandomAccessFile;
 import java.io.FilenameFilter;
+import erasure.ReedSolomon;
 import java.nio.ByteBuffer;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Vector;
 import java.net.Socket;
+import java.util.HashMap;
+import java.util.Map;
 import java.io.File;
 
 // Shouldn't have to know much, because it will be given ServerAddress:ServerPort pairs to work with
@@ -89,6 +93,60 @@ public class FileDistributionService extends Thread {
 		return hash; 
 	}
 
+	public static byte[][] makeShardsFromChunk(byte[] chunk) {
+		if (chunk.length != 65720) return null;
+		int fileSize = 65720;
+		int storedSize = fileSize + ChunkServer.BYTES_IN_INT;
+		int shardSize = storedSize / ChunkServer.DATA_SHARDS;
+		int bufferSize = shardSize * ChunkServer.DATA_SHARDS;
+		byte[] allBytes = new byte[bufferSize];
+		ByteBuffer allBytesBuffer = ByteBuffer.wrap(allBytes);
+		allBytesBuffer.putInt(chunk.length);
+		allBytesBuffer.put(chunk);
+		byte[][] shards = new byte[ChunkServer.TOTAL_SHARDS][shardSize];
+		for (int i = 0; i < ChunkServer.DATA_SHARDS; i++) {
+			System.arraycopy(allBytes, i * shardSize, shards[i], 0, shardSize); 
+		}
+		ReedSolomon reedSolomon = new ReedSolomon(ChunkServer.DATA_SHARDS, ChunkServer.PARITY_SHARDS); 
+		reedSolomon.encodeParity(shards, 0, shardSize);
+		return shards;
+	}
+
+	public static byte[][] getShardsFromShards(byte[][] shards) {
+		if (shards.length != ChunkServer.TOTAL_SHARDS) 
+			return null;
+		boolean [] shardPresent = new boolean [ChunkServer.TOTAL_SHARDS];
+		int shardCount = 0;
+		int shardSize = 0;
+		for (int i = 0; i < ChunkServer.TOTAL_SHARDS; i++) {
+			if (shards[i] != null) {
+				shardPresent[i] = true;
+				shardCount++;
+				shardSize = shards[i].length;
+			}
+		}
+		if (shardCount < ChunkServer.DATA_SHARDS)
+			return null;
+		for (int i = 0; i < ChunkServer.TOTAL_SHARDS; i++) {
+			if (!shardPresent[i]) {
+				shards[i] = new byte[shardSize];
+			}
+		}
+		ReedSolomon reedSolomon = new ReedSolomon(ChunkServer.DATA_SHARDS, ChunkServer.PARITY_SHARDS);
+		reedSolomon.decodeMissing(shards, shardPresent, 0, shardSize);
+		return shards;
+	}
+
+	public static byte[] getChunkFromShards(byte[][] shards) {
+		int shardSize = shards[0].length;
+		byte[] decodedChunk = new byte[shardSize*ChunkServer.DATA_SHARDS];
+		for (int i = 0; i < ChunkServer.DATA_SHARDS; i++) {
+        	System.arraycopy(shards[i], 0, decodedChunk, shardSize * i, shardSize);
+    	}    	
+    	byte[] correctedDecode = Arrays.copyOfRange(decodedChunk,4,65724);
+    	return correctedDecode; // Will then have to removeHashesFromChunk(correctedDecode) and getDataFromChunk()
+	}
+
 	public static synchronized byte[] getNextChunkFromFile(String filename, int sequence) {
 		int position = sequence*65536;
 		try (RandomAccessFile file = new RandomAccessFile(filename, "r");
@@ -121,7 +179,7 @@ public class FileDistributionService extends Thread {
 
 	// Takes chunk data, combines with metadata and hashes, basically prepares it for 
 	// writing to a file.
-	public byte[] readyChunkForStorage(int sequence, int version, byte[] chunkArray) throws NoSuchAlgorithmException {
+	public static byte[] readyChunkForStorage(int sequence, int version, byte[] chunkArray) throws NoSuchAlgorithmException {
 		int chunkArrayRemaining = chunkArray.length;
 		byte[] chunkToFileArray = new byte[65720]; // total size of stored chunk
 		byte[] sliceArray = new byte[8195];
@@ -167,6 +225,28 @@ public class FileDistributionService extends Thread {
 		return chunkToFileArray;
 	}
 
+	public byte[] readyShardForStorage(int sequence, int shardnumber, int version, byte[] shardArray) {
+		byte[] shardToFileArray = new byte[20 + (3*ChunkServer.BYTES_IN_INT) + ChunkServer.BYTES_IN_LONG + 10954]; // Hash+Sequence+Shardnumber+Version+Timestamp+Shard
+		byte[] shardWithMetaData = new byte[(3*ChunkServer.BYTES_IN_INT) + ChunkServer.BYTES_IN_LONG + 10954];
+		ByteBuffer shardMetaWrap = ByteBuffer.wrap(shardWithMetaData);
+		shardMetaWrap.putInt(sequence);
+		shardMetaWrap.putInt(shardnumber);
+		shardMetaWrap.putInt(version);
+		shardMetaWrap.putLong(System.currentTimeMillis());
+		shardMetaWrap.put(shardArray);
+		byte[] hash = null;
+		try {
+			hash = SHA1FromBytes(shardWithMetaData);
+			ByteBuffer shardFileArrayWrap = ByteBuffer.wrap(shardToFileArray);
+			shardFileArrayWrap.put(hash);
+			shardFileArrayWrap.put(shardWithMetaData);
+			return shardToFileArray;
+		} catch (NoSuchAlgorithmException nsae) {
+			System.out.println("readyShardForStorage error: Can't access algorithm for SHA1.");
+			return null;
+		}
+	} 
+
 	// Read any file and return a byte[] of the data
 	public synchronized byte[] readBytesFromFile(String filename) {
 		File tryFile = new File(filename);
@@ -192,11 +272,12 @@ public class FileDistributionService extends Thread {
 	}
 
 	// Check chunk for errors and return integer array containing slice numbers
-	public Vector<Integer> checkChunkForCorruption(byte[] chunkArray) throws NoSuchAlgorithmException {
-		ByteBuffer chunk = ByteBuffer.wrap(chunkArray);
+	public static Vector<Integer> checkChunkForCorruption(byte[] chunkArray) throws NoSuchAlgorithmException {
 		Vector<Integer> corrupt = new Vector<Integer>();
 		for (int i = 0; i < 8; i++)
 			corrupt.add(i);
+		if (chunkArray == null) { return corrupt; }
+		ByteBuffer chunk = ByteBuffer.wrap(chunkArray);
 		byte[] hash = new byte[20];
 		byte[] slice = new byte[8195];
 		try {
@@ -219,8 +300,27 @@ public class FileDistributionService extends Thread {
 		return corrupt;
 	}
 
+	public static boolean checkShardForCorruption(byte[] shardArray) throws NoSuchAlgorithmException {
+		if (shardArray == null) { return true; }
+		ByteBuffer shardArrayBuffer = ByteBuffer.wrap(shardArray);
+		boolean corrupt = false;
+		byte[] hash = new byte[20];
+		byte[] shard = new byte[(3*ChunkServer.BYTES_IN_INT) + ChunkServer.BYTES_IN_LONG + 10954];
+		try {
+			shardArrayBuffer.get(hash);
+			shardArrayBuffer.get(shard);
+			byte[] computedHash = SHA1FromBytes(shard);
+			if (Arrays.equals(hash,computedHash)) {
+				return false;
+			}
+		} catch (BufferUnderflowException bue) {
+			return true;
+		}
+		return true;
+	}
+
 	// Removes hashes from chunk
-	public byte[] removeHashesFromChunk(byte[] chunkArray) {
+	public static byte[] removeHashesFromChunk(byte[] chunkArray) {
 		ByteBuffer chunk = ByteBuffer.wrap(chunkArray);
 		byte[] cleanedChunk = new byte[65560];
 		for (int i = 0; i < 8; i++) {
@@ -236,13 +336,37 @@ public class FileDistributionService extends Thread {
 		// Timestamp (long)
 	}
 
+	// Removes hash from shard
+	public static byte[] removeHashFromShard(byte[] shardArray) {
+		ByteBuffer shard = ByteBuffer.wrap(shardArray);
+		byte[] cleanedShard = new byte[(3*ChunkServer.BYTES_IN_INT) + ChunkServer.BYTES_IN_LONG + 10954];
+		shard.position(shard.position()+20);
+		shard.get(cleanedShard,0,cleanedShard.length);
+		return cleanedShard;
+		// cleanedShard will start like this:
+		// Sequence (int)
+		// ShardNumber (int)
+		// Version (int)
+		// Timestamp (long)
+		// Data
+	}
+
 	// Removes metadata, and strips padding from end of array
-	public byte[] getDataFromChunk(byte[] chunkArray) {
+	public static byte[] getDataFromChunk(byte[] chunkArray) {
 		ByteBuffer chunk = ByteBuffer.wrap(chunkArray);
 		int chunkLength = chunk.getInt(12);
 		chunk.position(24);
 		byte[] data = new byte[chunkLength];
 		chunk.get(data);
+		return data;
+	}
+
+	// Removes metadata from shard
+	public static byte[] getDataFromShard(byte[] shardArray) {
+		ByteBuffer shard = ByteBuffer.wrap(shardArray);
+		shard.position(20);
+		byte[] data = new byte[10954];
+		shard.get(data);
 		return data;
 	}
 
@@ -354,6 +478,21 @@ public class FileDistributionService extends Thread {
 		return sliceData;
 	}
 
+	public byte[] getFileFromServer(String filename, TCPSender sender) {
+		try {
+			ChunkServerRequestsFile request = new ChunkServerRequestsFile(filename);
+			sender.sendData(request.getBytes());
+			byte[] filedata = sender.receiveData();
+			if (filedata == null || filedata[0] == Protocol.CHUNK_SERVER_DENIES_REQUEST) {
+				//System.out.println("NULL");
+				return null;
+			}
+			ChunkServerServesFile msg = new ChunkServerServesFile(filedata);
+			//System.out.println(msg.filedata.length);
+			return msg.filedata;
+		} catch (Exception e) { return null; }
+	}
+
 	public String getDirectory() {
 		return this.directory;
 	}
@@ -370,10 +509,10 @@ public class FileDistributionService extends Thread {
 		return this.activestatus;
 	}
 
-	// WILL ONLY BE USED TO FORWARD FILES, OR DEAL WITH CORRUPT FILES OF ITS OWN
 	@Override
 	public void run() {
 		System.out.println("FileDistributionService running.");
+		Map<String,TCPSender> tcpConnections = new HashMap<String,TCPSender>();
 		this.setActiveStatus(true);
 		while(this.getActiveStatus()) {
 			Event event = null;
@@ -387,51 +526,64 @@ public class FileDistributionService extends Thread {
 			try {
 				byte eventType = event.getType();
 				if (eventType == Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION) {
-					System.out.println("DEALING WITH A FILE CORRUPTION EVENT.");
+					//System.out.println("File corruption event.");
 					ChunkServerReportsFileCorruption msg = (ChunkServerReportsFileCorruption)event;
 					// Send message to controller about file corruption, wait for reply about where to
 					// find the replacements. Try the servers that have the replacements. If no server
 					// successfully can server the file, decide what to do next.
 					boolean fullyFixed = false;
+					byte[] reply = null;
+					TCPSender controllerSender = Client.getTCPSender(tcpConnections,ChunkServer.CONTROLLER_HOSTNAME + ":" + String.valueOf(ChunkServer.CONTROLLER_PORT));
+					if (controllerSender == null) continue;
+					// Get Storage list
 					try {
-						Socket controllerSocket = new Socket(ChunkServer.CONTROLLER_HOSTNAME,ChunkServer.CONTROLLER_PORT);
-						controllerSocket.setSoTimeout(2000);
-						TCPSender sender = new TCPSender(controllerSocket);
-						sender.sendData(msg.getBytes());
-						byte[] reply = sender.receiveData();
-						controllerSocket.close();
-						if (reply == null) {
-							System.out.println("CORRUPTION EVENT: NO REPLY FROM CONTROLLER.");
-							controllerSocket.close();
-							continue;
+						controllerSender.sendData(msg.getBytes());
+						reply = controllerSender.receiveData();
+						if (reply == null || reply[0] != Protocol.CONTROLLER_SENDS_STORAGE_LIST) { continue; }
+					} catch (Exception e) {}
+					ControllerSendsStorageList list = new ControllerSendsStorageList(reply);
+					// Decide if we're a shard or a chunk
+					if (checkShardFilename(msg.filename)) { // We are a Shard
+						String[] servers = list.shardservers;
+						if (servers == null) continue;
+						// Get all shards you can, and try to reconstruct the shard you need from it.
+						byte[][] shards = new byte[ChunkServer.TOTAL_SHARDS][];
+						int index = -1;
+						for (String server : servers) {
+							index++;
+							if (server.equals("-1") || server.split(":").length != 2) continue;
+							TCPSender sender = Client.getTCPSender(tcpConnections,server);
+							if (sender == null) continue;
+							String shardname = msg.filename.split("_shard")[0] + "_shard" + String.valueOf(index);
+							byte[] filedata = getFileFromServer(shardname,sender);
+							if (filedata == null) continue;
+							shards[index] = filedata;
 						}
-						if (reply[0] != Protocol.CONTROLLER_SENDS_STORAGE_LIST) {
-							System.out.println("CORRUPTION EVENT: WRONG REPLY FROM CONTROLLER.");
-							controllerSocket.close();
-							continue;
-						}
+						byte[][] correctedShards = getShardsFromShards(shards);
+						if (correctedShards == null) continue;
+						int sequence = Integer.valueOf(msg.filename.split("_shard")[0].split("_chunk")[1]);
+						int shardnumber = Integer.valueOf(msg.filename.split("_chunk")[1].split("_shard")[1]);
+						byte[] shardFileArray = readyShardForStorage(sequence,shardnumber,0,correctedShards[shardnumber]);
+						overwriteNewFile(getDirectory()+msg.filename,shardFileArray);
+						fullyFixed = true;
+					} else { // We are a Chunk
 						// Keep track of what we've repaired.
 						Vector<Integer> slicesToRepair = new Vector<Integer>();
 						for (int i = 0; i < msg.slices.length; i++)
 							slicesToRepair.add(msg.slices[i]);
-						ControllerSendsStorageList list = new ControllerSendsStorageList(reply);
 						if (list.replicationservers == null) continue;
 						for (String replicationserver : list.replicationservers) {
-							System.out.println(replicationserver);
-							String address = replicationserver.split(":")[0];
-							int port = Integer.valueOf(replicationserver.split(":")[1]);
+							if (replicationserver.equals("-1") || replicationserver.split(":").length != 2) continue;
 							if (replicationserver.equals(getServerAddress())) continue; // Don't send request to self.
+							TCPSender slicesender = Client.getTCPSender(tcpConnections,replicationserver);
+							if (slicesender == null) continue;
 							try {
-								Socket replicationSocket = new Socket(address,port);
 								int[] replaceslices = new int[slicesToRepair.size()];
 								for (int i = 0; i < slicesToRepair.size(); i++)
 									replaceslices[i] = slicesToRepair.elementAt(i);
 								RequestsSlices request = new RequestsSlices(msg.filename,replaceslices);
-								replicationSocket.setSoTimeout(2000);
-								TCPSender slicesender = new TCPSender(replicationSocket);
 								slicesender.sendData(request.getBytes());
 								byte[] slicereply = slicesender.receiveData();
-								replicationSocket.close();
 								if (slicereply == null || slicereply[0] != Protocol.CHUNK_SERVER_SERVES_SLICES) continue;
 								ChunkServerServesSlices serve = new ChunkServerServesSlices(slicereply);
 								int sliceLength = serve.slices.length;
@@ -451,19 +603,13 @@ public class FileDistributionService extends Thread {
 								}
 								// Replace the slices
 								replaceSlices(getDirectory()+msg.filename,serve.slices,replacements);
-								for (int i = 0; i < serve.slices.length; i++) {
-									slicesToRepair.removeElement(serve.slices[i]);
-								}
+								for (int i = 0; i < serve.slices.length; i++) { slicesToRepair.removeElement(serve.slices[i]); }
 								if (slicesToRepair.size() == 0) {
 									fullyFixed = true;
 									break;
 								}
-							} catch (Exception e) {
-								// Nothing to do here but to try to continue to the next server
-							}
+							} catch (Exception e) {} // Nothing to do here but to try to continue to the next server
 						}
-					} catch (Exception e) {
-						// Nothing to do here but continue to the next instruction.
 					}
 					if (fullyFixed) { // If it is fixed, tell the Controller that the chunk is healthy
 						try {
@@ -477,56 +623,63 @@ public class FileDistributionService extends Thread {
 							// This is best effort.
 						}
 					}
-				} else if (eventType == Protocol.CONTROLLER_REQUESTS_FILE_FORWARD) {
-					System.out.println("DEALING WITH A FILE FORWARD EVENT.");
-					ControllerRequestsFileForward msg = (ControllerRequestsFileForward)event;
-					// Read the file you're supposed to forward to make sure that it isn't corrupt.
-					// If it is corrupt, stop what you're doing and report it to the controller.
-					// If you get a message back about where to find the chunk to repair it, try to 
-					// repair it and then move on with the forwarding.
-					// Forward the file to the servers in the list to foward to.
-					byte[] filedata  = readBytesFromFile(this.directory+msg.filename);
-					if (filedata == null) continue;
-					Vector<Integer> errors;
-					try {
-						errors = checkChunkForCorruption(filedata);
-					} catch (NoSuchAlgorithmException nsae) {
-						System.out.println("FileDistributionService at CONTROLLER_REQUESTS_FILE_FORWARD: Can't use SHA1.");
-						errors = new Vector<Integer>();
-					}
-					if (errors.size() != 0) { // Add an event to repair the corruption, forget the forward.
-						int[] slices = new int[errors.size()];
-						for (int i = 0; i < errors.size(); i++) 
-							slices[i] = errors.elementAt(i);
-						ChunkServerReportsFileCorruption newevent = new ChunkServerReportsFileCorruption(getIdentifier(),msg.filename,slices);
-						addToQueue(newevent);
-						addToQueue(event); // might be risky if the file can't be fixed
-						continue;
-					}
-					// Try to forward the file to the servers
-					byte[] justdata = getDataFromChunk(removeHashesFromChunk(filedata));
-					SendsFileForStorage sendFile = new SendsFileForStorage(msg.filename,justdata,null); // Don't forward more than one hop
-					if (msg.servers == null) continue;
-					for (String server : msg.servers) {
-						String address = server.split(":")[0];
-						int port = Integer.valueOf(server.split(":")[1]);
-						if (server.equals(getServerAddress())) continue; // Don't forward file to self.
-						try {
-							Socket forwardSocket = new Socket(address,port);
-							forwardSocket.setSoTimeout(2000);
-							TCPSender filesender = new TCPSender(forwardSocket);
-							filesender.sendData(sendFile.getBytes());
-							byte[] filereply = filesender.receiveData();
-							forwardSocket.close();
-						} catch (Exception e) {
-							// This is best effort.
+				} else if (eventType == Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE) {
+					//System.out.println("File aquisition event.");
+					ControllerRequestsFileAcquire msg = (ControllerRequestsFileAcquire)event;
+					if (checkChunkFilename(msg.filename)) { // It's a chunk
+						byte[] data = readBytesFromFile(getDirectory() + msg.filename);
+						if (data != null) {
+							Vector<Integer> errors = checkChunkForCorruption(data);
+							if (errors.size() == 0) continue;
 						}
+						for (String server : msg.servers) {
+							if (server.equals("-1") || server.split(":").length != 2) {
+								//System.out.println("Server isn't an address: " + server);
+								continue;
+							}
+							TCPSender sender = Client.getTCPSender(tcpConnections,server);
+							if (sender == null) continue;
+							byte[] filedata = getFileFromServer(msg.filename,sender);
+							if (filedata == null) continue;
+							overwriteNewFile(getDirectory()+msg.filename,filedata);
+							break;
+						}
+					} else if (checkShardFilename(msg.filename)) {
+						byte[] data = readBytesFromFile(getDirectory() + msg.filename);
+						if (data != null) {
+							boolean corrupt = checkShardForCorruption(data);
+							if (!corrupt) continue;
+						}
+						// Get all shards you can, and try to reconstruct the shard you need from it.
+						byte[][] shards = new byte[ChunkServer.TOTAL_SHARDS][];
+						int index = -1;
+						for (String server : msg.servers) {
+							index++;
+							if (server.equals("-1") || server.split(":").length != 2) {
+								//System.out.println("Server isn't an address: " + server);
+								continue;
+							}
+							TCPSender sender = Client.getTCPSender(tcpConnections,server);
+							if (sender == null) continue;
+							String shardname = msg.filename.split("_shard")[0] + "_shard" + String.valueOf(index);
+							byte[] filedata = getFileFromServer(shardname,sender);
+							if (filedata == null) continue;
+							shards[index] = filedata;
+						}
+						byte[][] correctedShards = getShardsFromShards(shards);
+						if (correctedShards == null) continue;
+						int sequence = Integer.valueOf(msg.filename.split("_shard")[0].split("_chunk")[1]);
+						int shardnumber = Integer.valueOf(msg.filename.split("_chunk")[1].split("_shard")[1]);
+						byte[] shardFileArray = readyShardForStorage(sequence,shardnumber,0,correctedShards[shardnumber]);
+						overwriteNewFile(getDirectory()+msg.filename,shardFileArray);
+					} else {
+						continue;
 					}
 				}
 			} catch (Exception e) {
 				System.out.println("FileDistributionService run Exception: There was a problem processing the event.");
+				e.printStackTrace();
 			}
 		}
-
 	}
 }

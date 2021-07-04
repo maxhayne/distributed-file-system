@@ -172,6 +172,10 @@ public class ChunkServerConnection extends Thread {
 		activestatus = status;
 	}
 
+	public void close() {
+		receiver.close();
+	}
+
 	// use to send to this chunk server
 	public boolean addToSendQueue(byte[] msg) {
 		try {
