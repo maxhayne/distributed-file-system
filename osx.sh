@@ -8,7 +8,7 @@
 # Originally written by Jason Stock, Graduate Student at CSU in Computer Science
 # I've taken the base file and modified it so that it works with my code
 
-# When running './osx.sh c', can append another argument 'repication' or 'ersasure' to use as an argument for the Client
+# When running './osx.sh c', can append another argument 'replication' or 'erasure' to use as an argument for the Client
 
 if [ -z "$2" ]
 then

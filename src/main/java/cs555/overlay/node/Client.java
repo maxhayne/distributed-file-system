@@ -25,9 +25,8 @@ public class Client {
 	public static final int TOTAL_SHARDS = 9;
 	public static final int BYTES_IN_INT = 4;
 	public static final int BYTES_IN_LONG = 8;
-	public static final String CONTROLLER_HOSTNAME = "192.168.68.65";
+	public static final String CONTROLLER_HOSTNAME = "192.168.68.59";
 	public static final int CONTROLLER_PORT = 50000;
-
 
 
 	private static byte[] getShardFromServer(String filename, String address, Map<String,TCPSender> tcpConnections) {
@@ -428,7 +427,7 @@ public class Client {
 			storageSchema = 0;
 		}
 
-		Map tcpConnections = new HashMap<String,TCPSender>();
+		Map<String,TCPSender> tcpConnections = new HashMap<String,TCPSender>();
 
 		Scanner scanner = new Scanner(System.in);
 		while (true) {

@@ -152,9 +152,8 @@ public class FileDistributionService extends Thread {
 		try (RandomAccessFile file = new RandomAccessFile(filename, "r");
       		FileChannel channel = file.getChannel();
       		FileLock lock = channel.lock(position, 65536, true)) {
-			if (position > channel.size())
-				return null;
-			byte[] data = new byte[65536]; 
+			if (position > channel.size()) { return null; }
+			byte[] data = (channel.size()-position) < 65536 ? new byte[(int)channel.size()-position] : new byte[65536];
 			ByteBuffer buffer = ByteBuffer.wrap(data);
 			int read = 1;
 			while (buffer.hasRemaining() && read > 0) {

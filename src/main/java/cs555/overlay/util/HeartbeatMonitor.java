@@ -112,7 +112,7 @@ public class HeartbeatMonitor extends TimerTask {
 						String[] split = name.split(",");
 						int version = Integer.valueOf(split[1]);
 						if (version == -1) { // shard
-							if (!checkShardFilename(split[0])) continue;
+							if (!checkShardFilename(split[0])) { continue; }
 							String[] chunkSplit = split[0].split("_chunk");
 							// chunkSplit[0] is the filename
 							String[] shardSplit = split[0].split("_shard");
@@ -121,7 +121,7 @@ public class HeartbeatMonitor extends TimerTask {
 							Shard newShard = new Shard(chunkSplit[0],sequence,shardnumber,connection.getIdentifier(),false);
 							newShards.add(newShard);
 						} else { // chunk
-							if (!checkChunkFilename(split[0])) continue;
+							if (!checkChunkFilename(split[0])) { continue; }
 							String[] chunkSplit = split[0].split("_chunk");
 							int sequence = Integer.valueOf(chunkSplit[1]);
 							Chunk newChunk = new Chunk(chunkSplit[0],sequence,version,connection.getIdentifier(),false);
@@ -160,12 +160,15 @@ public class HeartbeatMonitor extends TimerTask {
 				if (now-connection.getStartTime() > ChunkServer.HEARTRATE && lastMajorHeartbeat == -1)
 					unhealthy += 1;
 
+				// Add a 'poke' message to send to the ChunkServer, and on the next heartbeat, add to 'unhealthy'
+				// the descrepancy between the 'pokes' and the 'poke replies'.
+
 				// Can have total of 4 strikes the server, 2 or more should be considered unhealthy
-				if (unhealthy >= 2) connection.incrementUnhealthy();
-				else connection.decrementUnhealthy();
+				if (unhealthy >= 2) { connection.incrementUnhealthy(); }
+				else { connection.decrementUnhealthy(); }
 
 				// If this node has failed 3 times in a row, remove it from the cache of chunkservers
-				if (connection.getUnhealthy() > 3) toRemove.add(connection.getIdentifier());
+				if (connection.getUnhealthy() > 3) { toRemove.add(connection.getIdentifier()); }
 			}
 
 			// Prune these data structures to remove stragglers
@@ -214,9 +217,7 @@ public class HeartbeatMonitor extends TimerTask {
 					ControllerRequestsFileAcquire acquire = new ControllerRequestsFileAcquire(filename,servers);
 					connectioncache.sendToChunkServer(Integer.valueOf(parts[4]),acquire.getBytes());
 				}
-			} catch (Exception e) { 
-				// All of this is best effort, so don't let anything derail the HeartbeatMonitor 
-			}
+			} catch (Exception e) {} // All of this is best effort, so don't let anything derail the HeartbeatMonitor 
 
 			/*
 			// Try to delete files from Chunk Servers that shouldn't be there.
