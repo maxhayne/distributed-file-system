@@ -72,7 +72,7 @@ public class ChunkServerConnectionCache {
 			for (ChunkServerConnection connection : values) {
 				addresses += connection.getServerAddress() + ":" + String.valueOf(connection.getServerPort()) + ",";
 			}
-			addresses = addresses.substring(0,addresses.length()-1);
+			if (!addresses.equals("")) addresses = addresses.substring(0,addresses.length()-1);
 		}
 		return addresses;
 	}

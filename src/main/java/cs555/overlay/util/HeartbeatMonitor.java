@@ -55,8 +55,10 @@ public class HeartbeatMonitor extends TimerTask {
 	public synchronized void run() {
 		Vector<Integer> toRemove = new Vector<Integer>();
 		synchronized(chunkcache) { // get lock on the chunkcache
-			if (chunkcache == null || chunkcache.size() == 0)
+			if (chunkcache == null || chunkcache.size() == 0) {
+				System.out.println("NO CHUNKSERVERS ARE REPORTING HEARTBEAT INFORMATION.");
 				return;
+			}
 			System.out.println("LISTING HEARTBEAT INFORMATION FOR ALL CHUNKSERVERS:");
 			long now = System.currentTimeMillis();
 			for (Map.Entry<Integer,ChunkServerConnection> entry : this.chunkcache.entrySet()) {
