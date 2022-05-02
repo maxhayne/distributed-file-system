@@ -428,10 +428,11 @@ public class Client {
 		}
 
 		Map<String,TCPSender> tcpConnections = new HashMap<String,TCPSender>();
+		System.out.println("Use command 'help' to list available commands and usage.");
 
 		Scanner scanner = new Scanner(System.in);
 		while (true) {
-			System.out.println("COMMAND:");
+			System.out.print("COMMAND: ");
 			String command = scanner.nextLine();
 			String[] parts = command.split("\\s+");
 			if (parts.length > 3) {
