@@ -12,6 +12,8 @@ If you've followed the directions correctly, and my directions are clear, you sh
 
 The *Client* offers directions on how to it is to be used when you run the 'help' command (or when it is given a known command with improper usage).
 
+The *Controller*, the *Client*, and the *ChunkServers* can all be run on different machines, but this script, for demo purposes, runs them locally on one machine. It does this by creating a folder for each *ChunkServer* in another folder called 'serverDirectories'. This way, any files stored on the distributed file system are contained within the project directory, albeit spread across folders in chunks or shards. After storing file, it can be neat to watch the folders populate, or repair themselves after deletions.
+
 ## A quick overview
 
 This project is an assignment taken from a graduate course in distributed systems at CSU. I haven't taken the course, but I took its undergraduate prerequisite during my senior year. Since I haven't attended the lectures or the recitations, I can't guarantee that my work for this projects meets the unmentioned-in-the-assignment-description-but-tested-in-their-grading requirements. This project involves a lot of code with a bunch of interacting parts, so there will be behavior that is unexpected if the right inputs are supplied.
