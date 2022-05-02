@@ -14,6 +14,12 @@ The *Client* offers directions on how to it is to be used when you run the 'help
 
 ## A quick overview
 
-This project is an assignment taken from a graduate course in distributed systems at CSU. I haven't taken the course, but I took its undergraduate prerequisite during my senior year. Since I haven't attended the lectures or the recitations, I can't guarantee that my work for this projects meets the unmentioned-in-the-assignment-description-but-tested-in-their-grading requirements. This project involves a lot of code (at least for me) with a bunch of interacting parts, so there will be behavior that is unexpected if the right inputs are supplied.
+This project is an assignment taken from a graduate course in distributed systems at CSU. I haven't taken the course, but I took its undergraduate prerequisite during my senior year. Since I haven't attended the lectures or the recitations, I can't guarantee that my work for this projects meets the unmentioned-in-the-assignment-description-but-tested-in-their-grading requirements. This project involves a lot of code with a bunch of interacting parts, so there will be behavior that is unexpected if the right inputs are supplied.
 
 As was briefly mentioned in the *How to try it out* section, the project is based around three types of nodes -- a node being a computer in a network executing a specific program from the project. The three types of nodes are the *Controller*, the *ChunkServer*, and the *Client*.
+
+The *Controller* communicates with both the *Client* and the *ChunkServers*. It keeps track of the files that have been distributed over the *ChunkServers*, and at which specific server each chunk or shard resides. It is also responsible for deciding, upon receiving from the *Client* a request to store a file, which *ChunkServers* will store which portion of that file. Additionally, it receives, at regular intervals, status updates from each of the *ChunkServers* called *heartbeats*. From information contained in each heartbeat, the *Controller* must determine whether the *ChunkServer* is ripe for storage, or if it has failed. If it notices that a *ChunkServer* has failed, it will orchestrate the relocation of the lost data to another *ChunkServer*, if possible.
+
+The *ChunkServer* is responsible for storing chunks or shards of files, sending regular heartbeat messages to the *Controller*, and serving data to the *Client*.
+
+The *Client* communicates with the *Controller* when it wants to receive a list of the stored files, store a file, delete a file, or retrieve a file. It only interacts directly with the *ChunkServers* when it sends to them pieces of the files it wishes to store, or when it requests pieces of files for retrieval.
