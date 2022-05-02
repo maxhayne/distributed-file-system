@@ -23,7 +23,7 @@ public class Controller {
 		// Create server thread, will listen and be able to accept connections with chunk servers and clients
 		TCPServerThread server = new TCPServerThread(serversocket,chunkcache);
 		server.start();
-		System.out.println("Controller's ServerThread has started.");
+		System.out.println("Controller's ServerThread has started at [" + host + ":" + Integer.toString(controllerPort) + "]");
 		// Loop here for user input about statistics for the state of the Distributed File System
 	}
 }
