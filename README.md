@@ -1,4 +1,4 @@
-# distributed-file-system
+# Distributed File System
 Creating a distributed, fault tolerant file system in Java. When it works, it should replicate data across multiple servers and repair pieces of files that have become corrupt.
 
 I've been using a macbook running catalina to develop this code, and as such have used SDKMAN! to install the necessary packages. 'sdk current' tells me I'm using gradle 7.4.2 and java 17.0.2-tem, both of which work for me. I haven't tested how much leniency there is with respect to how current gradle and java must be to run this code, but probably I'd say having a newish version of gradle is more important than java. 
