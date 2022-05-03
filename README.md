@@ -24,7 +24,7 @@ The *Controller* communicates with both the *Client* and the *ChunkServers*. It 
 
 The *ChunkServer* is responsible for storing chunks or shards of files, sending regular heartbeat messages to the *Controller*, and serving data to the *Client*.
 
-The *Client* communicates with the *Controller* when it wants to receive a list of the stored files, store a file, delete a file, or retrieve a file. It only interacts directly with the *ChunkServers* when it sends to them pieces of the files (chunks or shards) it wishes to store, or when it requests pieces of files for retrieval.
+The *Client* communicates with the *Controller* when it wants to receive a list of the stored files, store a file, delete a file, or retrieve a file. It only interacts directly with the *ChunkServers* when it sends to them pieces of the files (chunks or shards) it wishes to store, or when it requests pieces of files for retrieval. The *Client* has more complexity built into it than one might first assume, as it must be capable of dealing with unresponsive *ChunkServers* when storing or retrieving files. When the *Client* wishes to retrieve a file, it must collect all chunks, and therefore, in the case of replication, contact a maximum of three servers per chunk (nine for erasure coding), and stitch them together to reconstruct the original file.
 
 ## Two techniques for fault tolerance
 
