@@ -14,7 +14,7 @@ The *Client* offers directions on how it is to be used when you run the 'help' c
 
 The *Controller*, the *Client*, and the *ChunkServers* can all be run on different machines, but this script, for demo purposes, runs them locally on one machine. It does this by creating a folder for each *ChunkServer* in another folder called 'serverDirectories'. This way, any files stored on the distributed file system are contained within the project directory, albeit spread across folders in chunks or shards. After storing a file, it can be neat to watch the folders populate, or repair themselves after deletions.
 
-*** An update: I've written 'ubuntu.sh' to work in Ubuntu 20.04.4 LTS with Gradle 4.4.1 and Java openjdk version "1.8.0_312". To use in Ubuntu, just follow the above steps, replacing *./osx.sh* with *./ubuntu.sh* in all cases.
+*** An update: I've written 'ubuntu.sh' to work in Ubuntu 20.04.4 LTS with Gradle 4.4.1 and Java openjdk 1.8.0_312. To use in Ubuntu, just follow the above steps, replacing *./osx.sh* with *./ubuntu.sh* in all cases.
 
 ## A quick overview
 
