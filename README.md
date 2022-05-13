@@ -14,7 +14,7 @@ The *Client* offers directions on how it is to be used when you run the 'help' c
 
 The *Controller*, the *Client*, and the *ChunkServers* can all be run on different machines, but this script, for demo purposes, runs them locally on one machine. It does this by creating a folder for each *ChunkServer* in another folder called 'serverDirectories'. This way, any files stored on the distributed file system are contained within the project directory, albeit spread across folders in chunks or shards. After storing a file, it can be neat to watch the folders populate, or repair themselves after deletions.
 
-*** An update: I've written 'ubuntu.sh' to work in Ubuntu 20.04.4 LTS with Gradle 4.4.1 and Java openjdk 1.8.0_312. To use in Ubuntu, just follow the above steps, replacing *./osx.sh* with *./ubuntu.sh* in all cases.
+An update: I've written 'ubuntu.sh' to work in Ubuntu 20.04.4 LTS with Gradle 4.4.1 and Java openjdk 1.8.0_312. To use in Ubuntu, just follow the above steps, replacing *./osx.sh* with *./ubuntu.sh* in all cases.
 
 ## A quick overview
 
@@ -48,4 +48,4 @@ https://user-images.githubusercontent.com/32202629/168397869-c92b4b98-2dd0-4b68-
 
 In this demo, I again use the 'osx.sh' script. But this time, I use *./osx.sh c erasure* to start the *Client* in **erasure coding** mode, which creates nine shards for every chunk of the file. I then store, retrieve, and delete a file called 'small', which can be seen in the project directory in the upper right terminal. Next, I store a file called 'medium', but delete all of the shards on *ChunkServer* one before I attempt to retrieve it. Despite the missing shards, the retrieval is still successful, and when I navigate back to the 'server1' directory, the missing shards have been replaced. I then delete 'medium' and close the program. 
 
-Note that the look of the statistics reported by the *Controller* have changed between the two demos. This demo is slightly more recent, and I've changed the code slightly.
+Note that the look of the statistics reported by the *Controller* has changed between the two demos. This demo is slightly more recent, and I've modified the code slightly.
