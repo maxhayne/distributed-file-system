@@ -30,7 +30,7 @@ The *Client* communicates with the *Controller* when it wants to receive a list 
 
 ## Two techniques for fault tolerance
 
-This project uses two techniques for fault tolerance, **erasure coding** and **replication**.
+This project uses two techniques for fault tolerance, namely **erasure coding** and **replication**.
 
 Erasure coding splits every file into **chunks**, which can vary in size, but for this project, chunks are fixed at 64KB. A chunk is further split into nine **shards**. Six of the nine shards are *data* shards, and the other three are *parity* shards. The data shards contain, as you might expect, one-sixth of the chunk's data, along with a hash of that data and other identifying information. The parity shards contain between the three of them a linear algebraic representation of the data which are capable, when combined with other data and parity shards in a specific manner, of recreating missing or corrupt data shards. *Backblaze* has provided the code used in the project for encoding, decoding, and repairing shards with Reed-Solomon erasure coding. A detailed explanation of how they work can be found [here](https://www.backblaze.com/blog/reed-solomon/).
 
