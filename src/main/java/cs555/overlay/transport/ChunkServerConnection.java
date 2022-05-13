@@ -78,11 +78,8 @@ public class ChunkServerConnection extends Thread {
 		} 
 
 		String returnable = "";
-		returnable += "Server Identifier : " + identifier + '\n';
-		returnable += "Socket: " + localAddress + ":" + localPort + " -> " + remoteAddress + ":" + remotePort + '\n';
-		returnable += "Free space: " + freespace + '\n';
-		returnable += "Active Status: " + activestatus + '\n';
-		returnable += "Unhealthy Status: " + unhealthy + '\n';
+		String activeString = activestatus ? "active" : "inactive";
+		returnable += "[ " + identifier + ", " + remoteAddress + ":" + remotePort + ", " + freespace + ", " + activeString + ", health:" + unhealthy + " ]\n";
 		return returnable;
 	}
 

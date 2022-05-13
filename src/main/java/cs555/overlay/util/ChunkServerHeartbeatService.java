@@ -164,7 +164,7 @@ public class ChunkServerHeartbeatService extends TimerTask {
 					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(connection.getIdentifier(),filename,null);
 					fileservice.addToQueue(event); // Send message to Controller about corruption
 				} else {
-					majorFiles.put(filename, new FileMetadata(filename));
+					minorFiles.put(filename, new FileMetadata(filename));
 				}
 			}
 		}
@@ -186,7 +186,7 @@ public class ChunkServerHeartbeatService extends TimerTask {
 		int totalchunks = majorFiles.size();
 		long freespace = fileservice.getUsableSpace();
 		ChunkServerSendsHeartbeat heartbeat = new ChunkServerSendsHeartbeat(0,totalchunks,freespace,concattednames);
-		byte[] bytes = null;;
+		byte[] bytes = null;
 		try {
 			bytes = heartbeat.getBytes();
 		} catch (IOException ioe) {

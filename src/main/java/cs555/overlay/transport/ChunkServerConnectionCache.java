@@ -242,7 +242,7 @@ public class ChunkServerConnectionCache {
 			for (int i = 0; i < 9; i++) {
 				Shard shard = new Shard(filename,sequence,i,(int)(long)servers.elementAt(i)[1],false);
 				recommendations.addShard(shard);
-				System.out.println(shard.print());
+				//System.out.println(shard.print());
 				returnable += getChunkServerServerAddress((int)(long)servers.elementAt(i)[1]) + ",";
 			}
 			returnable = returnable.substring(0,returnable.length()-1);

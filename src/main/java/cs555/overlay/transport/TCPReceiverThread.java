@@ -216,7 +216,7 @@ public class TCPReceiverThread extends Thread {
 							break;
 						}
 						String[] serverarray = servers.split(",");
-						ControllerSendsClientValidChunkServers response = new ControllerSendsClientValidChunkServers(msg.filename,msg.sequence,serverarray);
+						ControllerSendsClientValidShardServers response = new ControllerSendsClientValidShardServers(msg.filename,msg.sequence,serverarray);
 						respond(response.getBytes());
 						break;
 					}

@@ -52,7 +52,6 @@ public class ControllerSendsClientValidShardServers implements Event {
 			dout.writeInt(server.length);
 			dout.write(server); 
 		}
-
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();

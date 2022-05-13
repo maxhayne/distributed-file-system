@@ -56,31 +56,25 @@ public class HeartbeatMonitor extends TimerTask {
 		Vector<Integer> toRemove = new Vector<Integer>();
 		synchronized(chunkcache) { // get lock on the chunkcache
 			if (chunkcache == null || chunkcache.size() == 0) {
-				System.out.println("NO CHUNKSERVERS ARE REPORTING HEARTBEAT INFORMATION.");
+				//System.out.println("NO CHUNKSERVERS ARE REPORTING HEARTBEAT INFORMATION.");
 				return;
 			}
-			System.out.println("LISTING HEARTBEAT INFORMATION FOR ALL CHUNKSERVERS:");
+			System.out.println("HEARBEAT INFORMATION:");
 			long now = System.currentTimeMillis();
 			for (Map.Entry<Integer,ChunkServerConnection> entry : this.chunkcache.entrySet()) {
 				ChunkServerConnection connection = entry.getValue();
 				try {
-					System.out.println("---------------------------------------------");
 					System.out.print(connection.print());
 				} catch (UnknownHostException uhe) {
 					System.err.println("This machine doesn't know its host address.");
 				}
 				byte[] temp = connection.retrieveHeartbeatInfo();
-				//System.out.println("HeartbeatInfo Length: " + temp.length);
 				ByteBuffer data = ByteBuffer.wrap(temp);
 				long lastMajorHeartbeat = data.getLong();
 				long lastMinorHeartbeat = data.getLong();
 				Vector<String> newfiles = new Vector<String>();
 				int newchunks = data.getInt();
-				//System.out.println("Last Major Heartbeat: " + lastMajorHeartbeat);
-				//System.out.println("Last Minor Heartbeat: " + lastMinorHeartbeat);
-				System.out.println("Total new files: " + newchunks);
 				if (newchunks != 0) {
-					//System.out.print("New files: ");
 					String newnames = "";
 					for (int i = 0; i < newchunks; i++) {
 						int namelength = data.getInt();
@@ -92,7 +86,7 @@ public class HeartbeatMonitor extends TimerTask {
 						newnames += name + ", ";
 					}
 					newnames = newnames.substring(0,newnames.length()-2);
-					//System.out.print(newnames + "\n");
+					System.out.print("[ " + newnames + " ]\n");
 				}
 
 				long lastHeartbeat;
@@ -110,7 +104,7 @@ public class HeartbeatMonitor extends TimerTask {
 					Vector<Chunk> newChunks = new Vector<Chunk>();
 					Vector<Shard> newShards = new Vector<Shard>();
 					for (String name : newfiles) {
-						System.out.println(name);
+						//System.out.println(name);
 						String[] split = name.split(",");
 						int version = Integer.valueOf(split[1]);
 						if (version == -1) { // shard

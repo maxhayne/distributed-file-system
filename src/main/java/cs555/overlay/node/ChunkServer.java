@@ -14,7 +14,7 @@ public class ChunkServer {
 	public static final int TOTAL_SHARDS = 9;
 	public static final int BYTES_IN_INT = 4;
 	public static final int BYTES_IN_LONG = 8;
-	public static final String CONTROLLER_HOSTNAME = "192.168.68.59";
+	public static final String CONTROLLER_HOSTNAME = "192.168.68.64";
 	public static final int CONTROLLER_PORT = 50000;
 	
 	public static void main(String[] args) throws Exception {
