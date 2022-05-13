@@ -47,3 +47,5 @@ In this demo, I use the 'osx.sh' script. It first cleans and builds the project,
 https://user-images.githubusercontent.com/32202629/168397869-c92b4b98-2dd0-4b68-bc77-178a8076c3d8.mp4
 
 In this demo, I again use the 'osx.sh' script. But this time, I use *./osx.sh c erasure* to start the *Client* in **erasure coding** mode, which creates nine shards for every chunk of the file. I then store, retrieve, and delete a file called 'small', which can be seen in the project directory in the upper right terminal. Next, I store a file called 'medium', but delete all of the shards on *ChunkServer* one before I attempt to retrieve it. Despite the missing shards, the retrieval is still successful, and when I navigate back to the 'server1' directory, the missing shards have been replaced. I then delete 'medium' and close the program. 
+
+Note that the look of the statistics reported by the *Controller* have changed between the two demos. This demo is slightly more recent, and I've changed the code slightly.
