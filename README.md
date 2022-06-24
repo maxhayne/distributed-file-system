@@ -1,8 +1,8 @@
 # Distributed File System
 Creating a distributed, fault-tolerant file system in Java. When it works, it should replicate data across multiple servers and repair pieces of files that have become corrupt.
 
-## How to try it out
-I've been using a Macbook running Catalina to develop this code, and as such have used SDKMAN! to install the necessary packages. *sdk current* tells me I'm using Gradle 7.4.2 and Java 17.0.2-tem, both of which work for me. I haven't tested how much leniency there is with respect to how current Gradle and Java must be to run this code, but probably I'd say having a newish version of Gradle is more important than Java. 
+## Try it out
+I've been using an old macbook running macOS Catalina to develop this code, and as such have used SDKMAN! to install the necessary packages. *sdk current* tells me I'm using Gradle 7.4.2 and Java 17.0.2-tem, both of which work for me. I haven't tested how much leniency there is with respect to how current Gradle and Java must be to run this code, but probably I'd say having a newish version of Gradle is more important than Java. 
 
 The *Controller*, one of the three types of nodes in the program, has been written to identify the local IP address of its machine so that it may bind to it. Since the *ChunkServer* and the *Client* are designed to communicate with the *Controller*, line 17 of 'ChunkServer.java' and line 28 of 'Client.java', each located in the 'node' subdirectory of the 'src' folder, must be modified before compilation to be the same IP to that which the *Controller* binds. You can find this IP by executing *ifconfig* in a macOS terminal window. This is what my local IP looks like: 192.168.68.59. Once those two lines of code have been correctly modified, open a terminal and navigate to the highest directory of the project, which contains the 'build', 'libs', and 'src' folders. 
 
