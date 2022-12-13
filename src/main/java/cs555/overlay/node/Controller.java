@@ -16,9 +16,10 @@ public class Controller {
 		
 		// Create chunk server cache, will also start heartbeat monitor
 		ChunkServerConnectionCache chunkcache = new ChunkServerConnectionCache(recommendations,state); // this will start the heartbeats
-		InetAddress inetAddress = InetAddress.getLocalHost(); // grabbing local address to pass in registration
+		//InetAddress inetAddress = InetAddress.getLocalHost(); // grabbing local address to pass in registration
+		InetAddress inetAddress = InetAddress.getByName( "localhost" ); // making the local address the loopback
 		String host = inetAddress.getHostAddress().toString();
-		ServerSocket serversocket = new ServerSocket(controllerPort, 32, inetAddress);
+		ServerSocket serversocket = new ServerSocket( controllerPort, 32, inetAddress );
 		
 		// Create server thread, will listen and be able to accept connections with chunk servers and clients
 		TCPServerThread server = new TCPServerThread(serversocket,chunkcache);

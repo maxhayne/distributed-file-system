@@ -17,6 +17,7 @@ import java.net.Socket;
 import java.io.File;
 import java.util.Map;
 import java.util.HashMap;
+import java.lang.Math;
 
 public class Client {
 
@@ -25,7 +26,7 @@ public class Client {
 	public static final int TOTAL_SHARDS = 9;
 	public static final int BYTES_IN_INT = 4;
 	public static final int BYTES_IN_LONG = 8;
-	public static final String CONTROLLER_HOSTNAME = "192.168.68.64";
+	public static final String CONTROLLER_HOSTNAME = "127.0.0.1";
 	public static final int CONTROLLER_PORT = 50000;
 
 
@@ -180,6 +181,9 @@ public class Client {
 			return;
 		}
 		try {
+			double totalChunks = Math.ceil( FileDistributionService.getFileSize( filename )/65536 );
+			double tenth = totalChunks/10, prints = 0; // For updating an upload progress bar
+			//System.out.println( "totalChunks: " + totalChunks + ", tenth: " + tenth );
 			int index = 0;
 			boolean finished = false;
 			while (!finished) {
@@ -188,6 +192,16 @@ public class Client {
 					finished = true;
 					break;
 				}
+				// Printing an upload progress bar
+				if ( prints == 0 ) {
+					System.out.print( "Uploading: 0%.." );
+					++prints;
+				} else {
+					if ( index >= prints*tenth && prints != 10 ) {
+						System.out.print( ((int)prints*10) + "%.." );
+						++prints;
+					}
+				}
 				if (!finished) {
 					boolean sentToServers = false;
 					if (schema == 0) { // We are replicating
@@ -195,11 +209,11 @@ public class Client {
 						connection.sendData(request.getBytes());
 						byte[] data = connection.receiveData();
 						if (data == null) {
-							System.out.println("No message received from Controller for chunk " + index);
+							System.out.println("\nNo message received from Controller for chunk " + index + ".");
 							finished = false;
 							break;
 						} else if (data[0] == Protocol.CONTROLLER_DENIES_STORAGE_REQUEST) {
-							System.out.println("The Controller denied the storage request of chunk " + index);
+							System.out.println("\nThe Controller denied the storage request of chunk " + index + ".");
 							finished = false;
 							break;
 						}
@@ -234,11 +248,11 @@ public class Client {
 						connection.sendData(request.getBytes());
 						byte[] data = connection.receiveData();
 						if (data == null) {
-							System.out.println("No message received from Controller for chunk " + index);
+							System.out.println("\nNo message received from Controller for chunk " + index + ".");
 							finished = false;
 							break;
 						} else if (data[0] == Protocol.CONTROLLER_DENIES_STORAGE_REQUEST) {
-							System.out.println("The Controller denied the storage request of chunk " + index);
+							System.out.println("\nThe Controller denied the storage request of chunk " + index + ".");
 							finished = false;
 							break;
 						}
@@ -248,14 +262,14 @@ public class Client {
 						try {
 							chunkForStorage = FileDistributionService.readyChunkForStorage(index,0,newchunk);
 						} catch (Exception e) {
-							System.out.println("store: SHA1 is not available.");
+							System.out.println("\nstore: SHA1 is not available.");
 							break;
 						}
 						byte[][] shards = FileDistributionService.makeShardsFromChunk(chunkForStorage);
 						for (int i = 0; i < response.servers.length; i++) {
 							TCPSender serverConnection = getTCPSender(tcpConnections,response.servers[i]);
 							if (serverConnection == null) {
-								System.out.println("Couldn't establish a connection with " + response.servers[i] + ". Stopping.");
+								System.out.println("\nCouldn't establish a connection with " + response.servers[i] + ". Stopping.");
 								break;
 							}
 							try {
@@ -265,7 +279,7 @@ public class Client {
 								serverConnection.sendData(storeShard.getBytes());
 								byte[] storeResponse = serverConnection.receiveData();
 								if (storeResponse == null) { // Try the next server
-									System.out.println("Shard server didn't acknowledge storage request for '" + shardFilename + "', stopping the storage operation.");
+									System.out.println("\nShard server didn't acknowledge storage request for '" + shardFilename + "', stopping the storage operation.");
 									sentToServers = false;
 									break;
 								}
@@ -275,7 +289,6 @@ public class Client {
 							}
 							if (i == response.servers.length-1) sentToServers = true;
 						}
-
 					}
 					if (sentToServers == false) break;
 				}
@@ -287,20 +300,21 @@ public class Client {
 				connection.sendData(delete.getBytes());
 				byte[] deleteResponse = connection.receiveData();
 				if (deleteResponse == null) {
-					System.out.println("The storage operation was unsuccessful. Controller didn't respond to a delete request.");
+					System.out.println("\nThe storage operation was unsuccessful. Controller didn't respond to a request to delete the incomplete file.");
 				} else if (deleteResponse[0] == Protocol.CONTROLLER_APPROVES_FILE_DELETE) {
-					System.out.println("The storage operation was unsuccessful. Controller approved the deletion of the file.");
+					System.out.println("\nThe storage operation was unsuccessful. Controller approved the deletion of the incomplete file.");
 				}
 				return;
 			}
+			System.out.print("100%\n");
 			System.out.println("The storage operation was successful.");
 			connection = null;
 		} catch (SocketTimeoutException ste) {
-			System.out.println("Socket timed out: " + ste);
+			System.out.println("\nSocket timed out: " + ste);
 		} catch (SocketException se) {
-			System.out.println("Socket exception: " + se);
+			System.out.println("\nSocket exception: " + se);
 		} catch (IOException ioe) {
-			System.out.println("IOException: " + ioe);
+			System.out.println("\nIOException: " + ioe);
 		}
 	}
 
@@ -357,18 +371,29 @@ public class Client {
 				System.out.println("The Controller didn't respond to the size request for file '" + basename + "'");
 				return;
 			}
-			ControllerReportsFileSize reportedsize = new ControllerReportsFileSize(reply); // read for total chunks
+			ControllerReportsFileSize reportedSize = new ControllerReportsFileSize(reply); // read for total chunks
 			boolean finished = false;
-			int lastchunk = 0;
-			System.out.println("total chunks: " + reportedsize.totalchunks);
+			int lastChunk = 0;
+			//System.out.println("total chunks: " + reportedSize.totalchunks);
+			int tenth = reportedSize.totalchunks/10, prints = 0; // For updating a download progress bar
 			// Loop here for every chunk that needs retrieving
-			for (int i = 0; i < reportedsize.totalchunks; i++) {
+			for (int i = 0; i < reportedSize.totalchunks; i++) {
+				// For printing a progress bar for the download
+				if ( prints == 0 ) {
+					System.out.print( "Downloading: 0%.." );
+					++prints;
+				} else {
+					if ( i >= prints*tenth && prints != 10 ) {
+						System.out.print( (prints*10) + "%.." );
+						++prints;
+					}
+				}
 				String chunkName = basename + "_chunk" + String.valueOf(i);
 				ClientRequestsFileStorageInfo infoRequest = new ClientRequestsFileStorageInfo(chunkName);
 				connection.sendData(infoRequest.getBytes());
 				reply = connection.receiveData();
 				if (reply == null) {
-					System.out.println("The Controller didn't respond to the info request for '" + chunkName + "'");
+					System.out.println("\nThe Controller didn't respond to the info request for '" + chunkName + "'");
 					return;
 				}
 				ControllerSendsStorageList storageList = new ControllerSendsStorageList(reply);
@@ -385,21 +410,24 @@ public class Client {
 					}
 				}				
 				if (download == null) {
-					System.out.println("Couldn't retrieve '" + chunkName + "'. Stopping the download.");
+					System.out.println("\nCouldn't get '" + chunkName + "'. Stopping the download.");
 					break;
 				} else {
 					// We have the data, now need to write the data to a file.
 					FileDistributionService.appendFile(location+basename,download);
-					lastchunk++;
-					if (i == reportedsize.totalchunks-1) finished = true;
+					lastChunk++;
+					if (i == reportedSize.totalchunks-1) {
+						finished = true;
+						System.out.print("100%\n");
+					}
 				}
 			}
 			// Supposedly we are done writing the file to disk.
 			if (finished) {
-				System.out.println("'" + basename + "' has been successfully saved to '" + location + "'.");
+				System.out.println("'" + basename + "' has been successfully saved to '" + location + "'");
 			} else {
-				System.out.println("'" + basename + "' was downloaded until chunk number " + lastchunk + "'.");
-				System.out.println("It is stored on disk in the location specified, though uncomplete.");
+				System.out.println("'" + basename + "' was downloaded until chunk number " + lastChunk + ".");
+				System.out.println("It is stored on disk in the location specified, though incomplete.");
 			}
 		} catch (SocketTimeoutException ste) {
 			System.out.println("Socket timed out: " + ste);
@@ -440,14 +468,14 @@ public class Client {
 				continue;
 			}
 			if (parts[0].equalsIgnoreCase("help")) {
-				System.out.println("'list' -- print a list all files stored in the file system.");
-				System.out.println("'store' [path/FILENAME] -- store a file on the distributed file system.");
-				System.out.println("'delete' [FILENAME] -- delete a file from the distributed file system.");
-				System.out.println("'retrieve' [FILENAME] [path/DOWNLOAD_LOCATION] -- retrieve a file from the distributed file system and deposit it in a select location.");
+				System.out.println("'ls' -- print a list all files stored in the file system.");
+				System.out.println("'put' [PATH/FILENAME] -- store a file on the distributed file system.");
+				System.out.println("'get' [FILENAME] [SAVE_PATH] -- retrieve a file from the distributed file system and save it locally.");
+				System.out.println("'rm' [FILENAME] -- delete a file from the distributed file system.");
 				System.out.println("'exit' -- stop the program on the client's side.");
-			} else if (parts[0].equalsIgnoreCase("list")) {
+			} else if (parts[0].equalsIgnoreCase("ls")) {
 				System.out.print(listfiles(tcpConnections));
-			} else if (parts[0].equalsIgnoreCase("store")) {
+			} else if (parts[0].equalsIgnoreCase("put")) {
 				if (parts.length != 2) {
 					System.out.println("Use the command 'help' for usage.");
 					continue;
@@ -455,18 +483,18 @@ public class Client {
 				parts[1] = parts[1].replaceFirst("^~", System.getProperty("user.home"));
 				File test = new File(parts[1]);
 				if (test.isFile()) {
-					System.out.println("Attempting to store '" + parts[1] + "'.");
+					System.out.println("Attempting to store '" + parts[1] + "'");
 					store(storageSchema,parts[1],tcpConnections);
 				} else {
 					System.out.println("'" + parts[1] + "' is not a valid file.");
 				}
-			} else if (parts[0].equalsIgnoreCase("delete")) {
+			} else if (parts[0].equalsIgnoreCase("rm")) {
 				if (parts.length != 2) {
 					System.out.println("Use the command 'help' for usage.");
 					continue;
 				}
 				delete(parts[1],tcpConnections);
-			} else if (parts[0].equalsIgnoreCase("retrieve")) {
+			} else if (parts[0].equalsIgnoreCase("get")) {
 				if (parts.length != 3) {
 					System.out.println("Use the command 'help' for usage.");
 					continue;
@@ -474,7 +502,7 @@ public class Client {
 				parts[2] = parts[2].replaceFirst("^~", System.getProperty("user.home"));
 				File test = new File(parts[2]);
 				if (test.isDirectory()) {
-					System.out.println("Attempting to retrieve '" + parts[1] + "' into '" + parts[2] + "'.");
+					System.out.println("Attempting to retrieve '" + parts[1] + "' to save into '" + parts[2] + "'");
 					retrieve(storageSchema,parts[1],parts[2],tcpConnections);
 				} else {
 					System.out.println("'" + parts[2] + "' is not a valid directory.");

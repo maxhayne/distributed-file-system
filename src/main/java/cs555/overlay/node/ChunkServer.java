@@ -14,7 +14,7 @@ public class ChunkServer {
 	public static final int TOTAL_SHARDS = 9;
 	public static final int BYTES_IN_INT = 4;
 	public static final int BYTES_IN_LONG = 8;
-	public static final String CONTROLLER_HOSTNAME = "192.168.68.64";
+	public static final String CONTROLLER_HOSTNAME = "127.0.0.1";
 	public static final int CONTROLLER_PORT = 50000;
 	
 	public static void main(String[] args) throws Exception {
@@ -47,7 +47,8 @@ public class ChunkServer {
 
 		// Let's try to connect to the Controller as a chunk server
 		try {
-			InetAddress inetAddress = InetAddress.getLocalHost(); // grabbing local address to pass in registration
+			//InetAddress inetAddress = InetAddress.getLocalHost(); // grabbing local address to pass in registration
+			InetAddress inetAddress = InetAddress.getByName( "localhost" ); // making the local address the loopback
 			String host = inetAddress.getHostAddress().toString();
 			ServerSocket serverSocket = new ServerSocket(0,32,inetAddress);
 			Socket controllerSocket = new Socket(ChunkServer.CONTROLLER_HOSTNAME, ChunkServer.CONTROLLER_PORT);

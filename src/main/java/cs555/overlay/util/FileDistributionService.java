@@ -51,6 +51,12 @@ public class FileDistributionService extends Thread {
         };
 	}
 
+	public static double getFileSize(String filename) {
+		File file = new File( filename );
+		double length = file.length();
+    	return length;
+	}
+
 	public long getUsableSpace() {
 		return this.directoryfile.getUsableSpace();
 	}
@@ -86,7 +92,7 @@ public class FileDistributionService extends Thread {
 		return false;
 	}
 
-		// Function for generating hash
+	// Function for generating hash
 	public static byte[] SHA1FromBytes(byte[] data) throws NoSuchAlgorithmException {
 		MessageDigest digest = MessageDigest.getInstance("SHA1");
 		byte[] hash = digest.digest(data);
