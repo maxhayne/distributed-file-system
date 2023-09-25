@@ -1,27 +1,13 @@
-apply plugin: 'java-library'
+plugins { id 'java'}
 
-repositories {
-   flatDir {
-       dirs 'libs'
-   }
-}
+repositories { mavenCentral() }
 
-dependencies {
-	implementation name: 'reed-solomon-erasure-coding'
-}
+// Project depends on this jar for erasure coding
+dependencies { implementation files('libs/reed-solomon-erasure-coding.jar') }
 
-compileJava {
-    options.compilerArgs << '-Xlint:unchecked'
-}
-
+// Bundles dependency jar with application jar
 jar {
     from {
-        configurations
-        .runtimeClasspath
-        .collect {
-            if(it.name.equalsIgnoreCase("reed-solomon-erasure-coding.jar")) {
-                zipTree(it)
-            }
-        }
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
 }

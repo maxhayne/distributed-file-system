@@ -2,7 +2,7 @@ The reed-solomon-erasure-coding.jar file contains three pre-compiled .class
 files. They are ReedSolomon.class, Galois.class, and Matrix.class. These class
 files are located in a folder called 'erasure', which becomes visible when the
 jar file is extracted using 'jar xf reed-solomon-erasure-coding.jar'. The 
-build.gradle file was modified to compile jar files found in the lib folder,
+build.gradle file was modified to compile jar files found in the libs folder,
 which is where this jar has been moved. The package that this compilation 
 creates is 'erasure', so to import the ReedSolomon class file for use in other
 java files in the project, 'import erasure.ReedSolomon' must be added to the

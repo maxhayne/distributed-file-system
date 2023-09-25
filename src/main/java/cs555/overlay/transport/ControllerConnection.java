@@ -2,6 +2,7 @@ package cs555.overlay.transport;
 import cs555.overlay.node.ChunkServer;
 import cs555.overlay.util.ChunkServerHeartbeatService;
 import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.Constants;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.BlockingQueue;
@@ -64,7 +65,7 @@ public class ControllerConnection extends Thread {
 		this.heartbeattimer = new Timer();
 		long randomOffset = (long)ThreadLocalRandom.current().nextInt(2, 15 + 1);
 		long heartbeatstart = randomOffset*1000L;
-		this.heartbeattimer.scheduleAtFixedRate(heartbeatservice,heartbeatstart,ChunkServer.HEARTRATE);
+		this.heartbeattimer.scheduleAtFixedRate(heartbeatservice,heartbeatstart,Constants.HEARTRATE);
 	}
 
 	public synchronized void stopHeartbeatService() {

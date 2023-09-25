@@ -1,0 +1,46 @@
+# Author: Max Hayne
+
+version: '3'
+
+name: 'dfs'
+
+# Create network for all containers
+# Container names can be used w/ DNS
+networks:
+  dfsNetwork:
+    driver: bridge
+
+services:
+  controller:
+    build:
+      context: ../ # context is shifted to project parent directory
+      dockerfile: ./docker/Dockerfile # provide path to Dockerfile from parent directory
+      target: controller # uses 'Controller run stage' from Dockerfile
+    stdin_open: true # equivalent to -i
+    tty: true # equivalent to -t
+    networks:
+      - dfsNetwork
+  
+  chunkserver:
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
+      target: chunkserver
+    depends_on: 
+      - controller
+    deploy:
+      replicas: 9 # adjustable
+    networks:
+      - dfsNetwork
+  
+  client:
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
+      target: client
+    depends_on:
+      - controller
+    stdin_open: true
+    tty: true
+    networks:
+      - dfsNetwork

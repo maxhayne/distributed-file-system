@@ -12,4 +12,39 @@ TODO:
 
 6. Finish the logic in the FileDistributionService's run method so that it can handle messages of corruption and forwarding as they come through. /// DONE/REWORKED
 
-7. Finish the 'deregister' function in the ChunkServerConnectionCache. New nomes must be found for files that the deregistering node is taking down with it. /// DONE
+7. Finish the 'deregister' function in the ChunkServerConnectionCache. New homes must be found for files that the deregistering node is taking down with it. /// DONE
+
+--never-wait-on-replies--
+No thread that is responsible for dealing with received messages should send a message over the network AND block for a reply, even if there is a timeout on the blocking. This happens occasionally in the TCPReceiverThread (which itself needs to be rethought), and in the Client. The first rule of a distributed system is that you cannot tell the difference between a dead node and a slow node. Therefore, the message logic should be set up so that if a message is received, it is dealt with in a specific way, and a response is sent back out (if necessary). If sending out a response elicits another message, then THAT message will be dealt with on the next loop of the receiver thread, not the current loop. In this way, nodes can be slow or dead, and we can deal with them in other ways.
+
+--read-write-in-blocks--
+At the Client, files are read one chunk at a time, and sent to their respective ChunkServers for storage. This is inefficient (obviously). Instead, the Client should read in blocks of chunks -- twenty at a time? -- and then work through chunkizing/sharding that data and sending it off to ChunkServers. Likewise should be done when the Client is retrieving a file from the ChunkServers -- multiple chunks should be gotten and assembled in memory, and then written to disk, instead of writing to disk one chunk at a time.
+
+--better-control-flow-nodes--
+The Controller, ChunkServer, and Client main methods are a mess right now -- especially the Client -- and are in need of a re-write for readability and maintainability. To bring them more up to speed with the principles I've been using for the pastry network.
+
+--de-monolith-tcpreceiverthread--
+The TCPReceiverThread is a monster, but fret not! There are good alternatives to how it currently works! The Client should not have access to methods for receiving messages that are only to be used by the Controller, or the ChunkServer. Same for the other two node types. Changing how this works requires moving to the EventFactory model, which means adding a couple of classes to the project (which have already been written for the pastry project), and then slowly working your way through the TCPReceiverThread -- moving functions for dealing with specific message types into main node classes. Doing so will also create an opportunity to fix most of the occurences of the --never-wait-on-replies-- todo item.
+
+LOG:
+
+--tmux--
+Created a TMUX script which, instead of spawning new terminal windows and tabs to house the running ChunkServers and the Client, does the same thing using TMUX windows. I was hoping it could be a cleaner solution to running the app locally, perhaps less vulnerable to bugs which could occur in the timing of the creation of those new windows and tabs.
+
+--fat-jar--
+The 'build.gradle' file was giving me trouble. I didn't understand how it worked, and still don't fully, but I simplified it while maintaining its functionality. The tricky part is forcing gradle to bundle the 'reed-solomon-erasure-coding.jar' with the project jar at the end so that the classes like FileDistributionService can find the ReedSolomon functions during execution.
+
+--docker--
+Created a new folder in the upmost project directory called 'docker', which contains both a 'Dockerfile' and a 'docker-compose' file. Having just taken a course covering the basics of docker, I wanted to use what I had learned to provide a way of running this app in an isolated environment. It's a complete building and running solution which uses a Gradle container to compile, and a Java container to run the necessary components. Each node type -- controller, chunkserver, and client -- has a slightly different container setup which is specified in the dockerfile. A Gradle container compiles the project once, and a copy of the compiled JAR file is given to each of the node containers to execute. Once started, the containers communicate with one another via a docker virtual network (created in the compose file), which allows containers to route to eachother via their container names. To run the app with docker, the user must first change the 'controllerHost' variable inside the 'application.properties' file to 'controller'. Then, from inside the 'docker' folder, the user must run 'docker compose build' in the command line, followed by 'docker compose up -d'. The first command builds the project, and the second command creates and starts container nodes in the background. Then, the user can use 'docker attach dfs-client-1' to attach to the running Client's I/O stream, so that they may run commands like 'put', 'get', 'ls', etc. To exit out of the I/O stream the user can use the docker escape sequence: Ctrl-p Ctrl-q. 'docker compose down' will stop all of the containers and remove them.
+
+--properties--
+After adding a docker option for running the app, it was clear that it would be too complicated to ask the user to change the values of variables within the Controller, ChunkServer, and Client classes to reflect the hostname and port where the Controller could be found. I had recently been working on another distributed systems project for the same course, and had borrowed a solution which uses Java Properties to read a file for variables that the user should be able to change. So, I copied two classes I'd completed in that project into this project, and created another folder in the upmost project directory called 'config', which contains a file called 'application.properties'. This file contains values for variables that the user can change, specifically the ones that need to be changed when running the app locally, in docker, or in a distributed environment. With this new file, the user no longer passes either 'erasure' or 'replication' to the Client as a command line argument, but chagnes the value in the 'application.properties' file.
+
+--osx-tab--
+The 'osx.sh' script was producing strange behavior. Newly created terminals/tabs default their working directory to the home directory (~/), and if a command is executed too quickly, the tab has no chance to change it to the directory of the parent terminal. Therefore, the newly created ChunkServers couldn't find the 'application.properties' file, which is found by concatenating the path from which the JAR was started with '/config/application.properties'. Worked around this issue by adding a delay between spawning the new terminal tab and executing the start command.
+
+--refactor-nodes--
+Working on refactoring the code at the Client and the Controller to be more readable, and to be more in the style of the code of the nodes in the pastry network assignment. Also have been fixing some formatting issues throughout the project -- function and variable names that go against the camelCase style that I've been using dominantly.
+
+--brainstorming-client--
+The Client doesn't need to to make use of the TCPReceiverThread that must be modified for use by Controller and the ChunkServer, so what is the best way for the Controller to communicate with the other nodes? The Client has a main thread which receives commands from the user, and although in a perfect world it would be better to keep the main thread free to take commands from the user, even while a write or a read to or from the dfs is happening, to start, I'll just write a ClientWriter and ClientReader which will be Runnable, and can perform those jobs while the main thread waits, or checks for progress on the job. 

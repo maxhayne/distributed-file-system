@@ -11,44 +11,52 @@ import java.io.IOException;
 import java.util.Vector;
 import java.net.Socket;
 
-// This class should maintain an active connection with a chunkserver, which means
-// that it should mostly receive heartbeats, and information about storage capacity
+/**
+ * Maintains an active connection with a ChunkServer. Its function is to
+ * maintain status information and to actively send messages in its
+ * queue to the ChunkServer it's connected with.
+ */
 public class ChunkServerConnection extends Thread {
 
-	private String serveraddress;
-	private int serverport;
-	private TCPReceiverThread receiver;
+	// Identifying/Connection information
 	private int identifier;
-	private long freespace;
-	private int totalchunks;
-	private boolean activestatus;
-	private int unhealthy;
-	private long starttime;
+	private String serverAddress;
+	private int serverPort;
+	private TCPReceiverThread receiver;
 	private BlockingQueue<byte[]> sendQueue;
 	private DataOutputStream dout;	
-	private HeartbeatInfo heartbeatinfo; // information about heartbeats
+	
+	// Status information
+	private long freeSpace;
+	private int totalChunks;
+	private boolean activeStatus;
+	private int unhealthy;
+	private long startTime;
+	private HeartbeatInfo heartbeatInfo; // information about heartbeats
 	private int pokes;
 	private int pokeReplies;
 
 	public ChunkServerConnection() {
-		this.heartbeatinfo = new HeartbeatInfo();
+		this.heartbeatInfo = new HeartbeatInfo();
 	}
 
-	public ChunkServerConnection(TCPReceiverThread tcpreceiverthread, int identifier, String serveraddress, int serverport) throws IOException {
-		this.serveraddress = serveraddress;
-		this.serverport = serverport;
-		this.receiver = tcpreceiverthread;
+	public ChunkServerConnection(TCPReceiverThread receiver, int identifier, 
+			String serverAddress, int serverPort) throws IOException {
 		this.identifier = identifier;
-		this.freespace = -1;
-		this.totalchunks = -1;
-		this.starttime = -1;
-		this.unhealthy = 0;
-		this.activestatus = false;
+		this.serverAddress = serverAddress;
+		this.serverPort = serverPort;
+		this.receiver = receiver;
 		this.sendQueue = new LinkedBlockingQueue<byte[]>();
-		this.dout = new DataOutputStream(new BufferedOutputStream(tcpreceiverthread.getDataOutputStream(), 8192));
-		this.heartbeatinfo = new HeartbeatInfo();
+		this.dout = new DataOutputStream(
+			new BufferedOutputStream(receiver.getDataOutputStream(), 8192));
+		this.freeSpace = -1;
+		this.totalChunks = -1;
+		this.startTime = -1;
+		this.unhealthy = 0;
+		this.activeStatus = false;
+		this.heartbeatInfo = new HeartbeatInfo();
 		this.pokes = 0;
-		this.pokes = 0;
+		this.pokeReplies = 0;
 	}
 
 	public synchronized void incrementPokes() {
@@ -63,48 +71,43 @@ public class ChunkServerConnection extends Thread {
 		return (this.pokes-this.pokeReplies);
 	}
 
-	public synchronized String print() throws UnknownHostException {
-		String localAddress = "Unknown";
-		int localPort = -1;
+	public synchronized String print() {
 		String remoteAddress = "Unknown";
 		int remotePort = -1;
 		try {
-			localAddress = this.getLocalAddress();
-			localPort = this.getLocalPort();
 			remoteAddress = this.getRemoteAddress();
 			remotePort = this.getRemotePort();
-		} catch(Exception e) {
-			// Nothing to do...
-		} 
+		} catch(Exception e) {} 
 
 		String returnable = "";
-		String activeString = activestatus ? "active" : "inactive";
-		returnable += "[ " + identifier + ", " + remoteAddress + ":" + remotePort + ", " + freespace + ", " + activeString + ", health:" + unhealthy + " ]\n";
+		String activeString = activeStatus ? "active" : "inactive";
+		returnable += "[ " + identifier + ", " + remoteAddress + ":" + remotePort 
+			+ ", " + freeSpace + ", " + activeString + ", health:" + unhealthy + " ]\n";
 		return returnable;
 	}
 
 	public void updateHeartbeatInfo(long time, int type, byte[] files) {
-		synchronized(heartbeatinfo) {
-			heartbeatinfo.update(time,type,files);
+		synchronized(heartbeatInfo) {
+			heartbeatInfo.update(time,type,files);
 		}
 	}
 
-	public synchronized void updateFreeSpaceAndChunks(long freespace, int totalchunks) {
-		this.freespace = freespace;
-		this.totalchunks = totalchunks;
+	public synchronized void updateFreeSpaceAndChunks(long freeSpace, int totalChunks) {
+		this.freeSpace = freeSpace;
+		this.totalChunks = totalChunks;
 	}
 
 	public synchronized void setStartTime(long time) {
-		this.starttime = time;
+		this.startTime = time;
 	}
 
 	public synchronized long getStartTime() {
-		return this.starttime;
+		return this.startTime;
 	}
 
 	public byte[] retrieveHeartbeatInfo() {
-		synchronized(heartbeatinfo) {
-			return heartbeatinfo.retrieve();
+		synchronized(heartbeatInfo) {
+			return heartbeatInfo.retrieve();
 		}
 	}
 
@@ -129,11 +132,11 @@ public class ChunkServerConnection extends Thread {
 	}
 
 	public String getServerAddress() {
-		return serveraddress;
+		return serverAddress;
 	}
 
 	public int getServerPort() {
-		return serverport;
+		return serverPort;
 	}
 
 	public synchronized int getUnhealthy() {
@@ -154,19 +157,19 @@ public class ChunkServerConnection extends Thread {
 	}
 
 	public synchronized void setFreeSpace(long space) {
-		freespace = space;
+		freeSpace = space;
 	}
 
 	public synchronized long getFreeSpace() {
-		return freespace;
+		return freeSpace;
 	}
 
 	public synchronized boolean getActiveStatus() {
-		return activestatus;
+		return activeStatus;
 	}
 
 	public synchronized void setActiveStatus(boolean status) {
-		activestatus = status;
+		activeStatus = status;
 	}
 
 	public void close() {

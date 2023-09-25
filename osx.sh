@@ -8,15 +8,6 @@
 # Originally written by Jason Stock, Graduate Student at CSU in Computer Science
 # I've taken the base file and modified it so that it works with my code
 
-# When running './osx.sh c', can append another argument 'replication' or 'erasure' to use as an argument for the Client
-
-if [[ -z "$2" ]] || [[ "$2" != "erasure" ]]
-then
-    TYPE="replication"
-else
-    TYPE=$2
-fi
-
 MULTI="1 2 3 4 5 6 7 8 9"
 
 DIR="$( cd "$( dirname "$0" )" && pwd )"
@@ -25,10 +16,14 @@ COMPILE="$( ps -ef | grep [c]s555.overlay.node.Controller )"
 
 SCRIPT="java -cp $JAR_PATH cs555.overlay.node.ChunkServer"
 
+# Needed to add 'delay 1' to osascript, as if the ChunkServer is started
+# to quickly after the tab is created, the tab will start the app from the
+# home directory, and not from the directory the new window was spawned to.
 function new_tab() {
     osascript \
         -e "tell application \"Terminal\"" \
         -e "tell application \"System Events\" to keystroke \"t\" using {command down}" \
+        -e "delay 1" \
         -e "do script \"$SCRIPT $1;\" in front window" \
         -e "end tell" > /dev/null
 }
@@ -44,7 +39,7 @@ LINES=`find . -name "*.java" -print | xargs wc -l | grep "total" | awk '{$1=$1};
     java -cp $JAR_PATH cs555.overlay.node.Controller;
 elif [[ $1 = "c" ]]
 then
-    java -cp $JAR_PATH cs555.overlay.node.Client $TYPE;
+    java -cp $JAR_PATH cs555.overlay.node.Client;
 else
     if [[ -n "$MULTI" ]]
     then
@@ -55,5 +50,4 @@ else
             new_tab "$DIR/servers/server$tab"
         done
     fi
-    #eval $SCRIPT
 fi

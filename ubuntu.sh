@@ -8,15 +8,6 @@
 # Originally written by Jason Stock, Graduate Student at CSU in Computer Science
 # I've taken the base file and modified it so that it works with my code
 
-# When running './ubuntu.sh c', can append another argument 'replication' or 'erasure' to use as an argument for the Client
-
-if [[ -z "$2" ]] || [[ "$2" != "erasure" ]]
-then
-	TYPE="replication"
-else
-	TYPE=$2
-fi
-
 MULTI="1 2 3 4 5 6 7 8 9"
 
 DIR="$( cd "$( dirname "$0" )" && pwd )"
@@ -40,7 +31,7 @@ LINES=`find . -name "*.java" -print | xargs wc -l | grep "total" | awk '{$1=$1};
     java -cp $JAR_PATH cs555.overlay.node.Controller;
 elif [[ -n "$1" ]] && [[ $1 == "c" ]]
 then
-    java -cp $JAR_PATH cs555.overlay.node.Client $TYPE;
+    java -cp $JAR_PATH cs555.overlay.node.Client;
 else
     if [[ -n "$MULTI" ]]
     then
@@ -51,5 +42,4 @@ else
             new_tab "$DIR/servers/server$tab"
         done
     fi
-    #eval $SCRIPT
 fi

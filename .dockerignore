@@ -1,0 +1,8 @@
+* 
+!src/
+!libs/
+!config/
+!build.gradle
+!data/small.txt
+!data/medium.pdf
+!data/large.jpg

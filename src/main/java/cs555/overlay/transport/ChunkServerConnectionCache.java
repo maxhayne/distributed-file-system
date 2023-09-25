@@ -8,6 +8,7 @@ import cs555.overlay.transport.TCPSender;
 import cs555.overlay.wireformats.Protocol;
 import cs555.overlay.node.ChunkServer;
 import cs555.overlay.util.ServerFile;
+import cs555.overlay.util.Constants;
 import cs555.overlay.util.Chunk;
 import cs555.overlay.util.Shard;
 import java.util.Collections;
@@ -29,46 +30,46 @@ import java.net.Socket;
 
 public class ChunkServerConnectionCache {
 
-	private Map<Integer,ChunkServerConnection> chunkcache;
+	private Map<Integer,ChunkServerConnection> chunkCache;
 	private Vector<Integer> identifierList;
-	private DistributedFileCache recommendations;
-	private DistributedFileCache state;
-	private HeartbeatMonitor heartbeatmonitor;
-	private Timer heartbeattimer;
+	private DistributedFileCache idealState;
+	private DistributedFileCache reportedState;
+	private HeartbeatMonitor heartbeatMonitor;
+	private Timer heartbeatTimer;
 
-	public ChunkServerConnectionCache(DistributedFileCache recommendations, DistributedFileCache state) {
-		this.chunkcache = new TreeMap<Integer,ChunkServerConnection>();
+	public ChunkServerConnectionCache(DistributedFileCache idealState, DistributedFileCache reportedState) {
+		this.idealState = idealState;
+		this.reportedState = reportedState;
+		this.chunkCache = new TreeMap<Integer,ChunkServerConnection>();
 		this.identifierList = new Vector<Integer>();
 		for (int i = 0; i < 32; i++)
 			this.identifierList.add(i);
 		Collections.shuffle(this.identifierList);
-		this.recommendations = recommendations;
-		this.state = state;
-		this.heartbeatmonitor = new HeartbeatMonitor(this,chunkcache,recommendations,state);
-		heartbeattimer = new Timer();
-		heartbeattimer.scheduleAtFixedRate(heartbeatmonitor,0,ChunkServer.HEARTRATE);
+		this.heartbeatMonitor = new HeartbeatMonitor(this,chunkCache,idealState,reportedState);
+		heartbeatTimer = new Timer();
+		heartbeatTimer.scheduleAtFixedRate(heartbeatMonitor,0,Constants.HEARTRATE);
 	}
 
 	public String[] getFileList() {
-		return recommendations.getFileList();
+		return idealState.getFileList();
 	}
 
 	public int getFileSize(String filename) {
-		return recommendations.getFileSize(filename);
+		return idealState.getFileSize(filename);
 	}
 
-	public void removeFileFromRecommendations(String filename) {
-		recommendations.removeFile(filename);
+	public void removeFileFromIdealState(String filename) {
+		idealState.removeFile(filename);
 	}
 
-	public void removeChunkFromRecommendations(Chunk chunk) {
-		recommendations.removeChunk(chunk);
+	public void removeChunkFromIdealState(Chunk chunk) {
+		idealState.removeChunk(chunk);
 	}
 
 	public String getAllServerAddresses() {
 		String addresses = "";
-		synchronized(chunkcache) {
-			Collection<ChunkServerConnection> values = chunkcache.values();
+		synchronized(chunkCache) {
+			Collection<ChunkServerConnection> values = chunkCache.values();
 			for (ChunkServerConnection connection : values) {
 				addresses += connection.getServerAddress() + ":" + String.valueOf(connection.getServerPort()) + ",";
 			}
@@ -78,8 +79,8 @@ public class ChunkServerConnectionCache {
 	}
 
 	public int getChunkServerIdentifier(String serveraddress, int serverport) {
-		synchronized(chunkcache) {
-			Collection<ChunkServerConnection> values = chunkcache.values();
+		synchronized(chunkCache) {
+			Collection<ChunkServerConnection> values = chunkCache.values();
 			for (ChunkServerConnection connection : values) {
 				if (connection.getServerAddress().equals(serveraddress) && connection.getServerPort() == serverport)
 					return connection.getIdentifier();
@@ -89,16 +90,16 @@ public class ChunkServerConnectionCache {
 	}
 
 	public String getChunkServerServerAddress(int identifier) {
-		synchronized(chunkcache) {
-			if (chunkcache.get(identifier) != null)
-				return chunkcache.get(identifier).getServerAddress() + ":" + chunkcache.get(identifier).getServerPort();
+		synchronized(chunkCache) {
+			if (chunkCache.get(identifier) != null)
+				return chunkCache.get(identifier).getServerAddress() + ":" + chunkCache.get(identifier).getServerPort();
 			return "";
 		}
 	}
 
 	public String getChunkStorageInfo(String filename, int sequence) {
 		String info;
-		info = state.getChunkStorageInfo(filename,sequence);
+		info = reportedState.getChunkStorageInfo(filename,sequence);
 		if (info.equals("|"))
 			return "|";
 		String[] parts = info.split("\\|",-1);
@@ -131,8 +132,8 @@ public class ChunkServerConnectionCache {
 
 	public String listFreestServers() {
 		Vector<Long[]> servers = new Vector<Long[]>();
-		synchronized(chunkcache) {
-			Collection<ChunkServerConnection> connections = chunkcache.values();
+		synchronized(chunkCache) {
+			Collection<ChunkServerConnection> connections = chunkCache.values();
 			for (ChunkServerConnection connection : connections) {
 				if (connection.getUnhealthy() > 3 || connection.getFreeSpace() == -1 || connection.getFreeSpace() < 65720)
 					continue;
@@ -161,8 +162,8 @@ public class ChunkServerConnectionCache {
 	public String availableChunkServers(String filename, int sequence) {
 		// Need three freest servers
 		Vector<Long[]> servers = new Vector<Long[]>();
-		synchronized(chunkcache) {
-			Collection<ChunkServerConnection> connections = chunkcache.values();
+		synchronized(chunkCache) {
+			Collection<ChunkServerConnection> connections = chunkCache.values();
 			for (ChunkServerConnection connection : connections) {
 				if (connection.getUnhealthy() > 3 || connection.getFreeSpace() == -1 || connection.getFreeSpace() < 65720)
 					continue;
@@ -179,9 +180,9 @@ public class ChunkServerConnectionCache {
 				return comparespace;
 		}});
 		Collections.reverse(servers);
-		synchronized(recommendations) { // If already allocated, return the same three servers
-			if (!recommendations.getChunkStorageInfo(filename,sequence).split("\\|",-1)[0].equals("")) {
-				String[] temp = recommendations.getChunkStorageInfo(filename,sequence).split("\\|",-1)[0].split(",");
+		synchronized(idealState) { // If already allocated, return the same three servers
+			if (!idealState.getChunkStorageInfo(filename,sequence).split("\\|",-1)[0].equals("")) {
+				String[] temp = idealState.getChunkStorageInfo(filename,sequence).split("\\|",-1)[0].split(",");
 				String allocatedservers = "";
 				for (String server : temp) {
 					allocatedservers += getChunkServerServerAddress(Integer.parseInt(server)) + ",";
@@ -193,7 +194,7 @@ public class ChunkServerConnectionCache {
 			String returnable = "";
 			for (int i = 0; i < 3; i++) {
 				Chunk chunk = new Chunk(filename,sequence,0,(int)(long)servers.elementAt(i)[1],false);
-				recommendations.addChunk(chunk);
+				idealState.addChunk(chunk);
 				returnable += String.valueOf(getChunkServerServerAddress((int)(long)servers.elementAt(i)[1])) + ",";
 			}
 			returnable = returnable.substring(0,returnable.length()-1);
@@ -205,8 +206,8 @@ public class ChunkServerConnectionCache {
 	public String availableShardServers(String filename, int sequence) {
 		// Need nine freest servers
 		Vector<Long[]> servers = new Vector<Long[]>();
-		synchronized(chunkcache) {
-			Collection<ChunkServerConnection> connections = chunkcache.values();
+		synchronized(chunkCache) {
+			Collection<ChunkServerConnection> connections = chunkCache.values();
 			for (ChunkServerConnection connection : connections) {
 				if (connection.getUnhealthy() > 3 || connection.getFreeSpace() == -1 || connection.getFreeSpace() < 65720)
 					continue;
@@ -223,9 +224,9 @@ public class ChunkServerConnectionCache {
 				return comparespace;
 		}});
 		Collections.reverse(servers);
-		synchronized(recommendations) { // If already allocated, return the same three servers
-			if (!recommendations.getChunkStorageInfo(filename,sequence).split("\\|",-1)[1].equals("")) {
-				String[] temp = recommendations.getChunkStorageInfo(filename,sequence).split("\\|",-1)[1].split(",");
+		synchronized(idealState) { // If already allocated, return the same three servers
+			if (!idealState.getChunkStorageInfo(filename,sequence).split("\\|",-1)[1].equals("")) {
+				String[] temp = idealState.getChunkStorageInfo(filename,sequence).split("\\|",-1)[1].split(",");
 				String allocatedservers = "";
 				for (String server : temp) {
 					if (server.equals("-1")) {
@@ -241,7 +242,7 @@ public class ChunkServerConnectionCache {
 			String returnable = "";
 			for (int i = 0; i < 9; i++) {
 				Shard shard = new Shard(filename,sequence,i,(int)(long)servers.elementAt(i)[1],false);
-				recommendations.addShard(shard);
+				idealState.addShard(shard);
 				//System.out.println(shard.print());
 				returnable += getChunkServerServerAddress((int)(long)servers.elementAt(i)[1]) + ",";
 			}
@@ -251,8 +252,8 @@ public class ChunkServerConnectionCache {
 	}
 
 	public boolean isRegistered(String serveraddress, int serverport) {
-		synchronized(chunkcache) {
-			for (Map.Entry<Integer,ChunkServerConnection> entry : chunkcache.entrySet()) {
+		synchronized(chunkCache) {
+			for (Map.Entry<Integer,ChunkServerConnection> entry : chunkCache.entrySet()) {
 				if (serveraddress.equals(entry.getValue().getServerAddress())
 					&& serverport == entry.getValue().getServerPort())
 					return true;
@@ -264,10 +265,10 @@ public class ChunkServerConnectionCache {
 	// Will return a valid ChunkServerConnection if successful, otherwise, a null pointer
 	public ChunkServerConnection register(TCPReceiverThread tcpreceiverthread, String serveraddress, int serverport) throws IOException {
 		// Check if already connected
-		synchronized(chunkcache) {
+		synchronized(chunkCache) {
 			String ip = tcpreceiverthread.getRemoteAddress();
 			int port = tcpreceiverthread.getRemotePort();
-			for (Map.Entry<Integer,ChunkServerConnection> entry : chunkcache.entrySet()) {
+			for (Map.Entry<Integer,ChunkServerConnection> entry : chunkCache.entrySet()) {
 				if (ip.equals(entry.getValue().getRemoteAddress())
 					&& port == entry.getValue().getRemotePort())
 					return null;
@@ -282,10 +283,10 @@ public class ChunkServerConnectionCache {
 				return null;
 			}
 		}
-		// Create new ChunkServerConnection and add it to the chunkcache
+		// Create new ChunkServerConnection and add it to the chunkCache
 		ChunkServerConnection newConnection = new ChunkServerConnection(tcpreceiverthread,identifier,serveraddress,serverport);
-		synchronized(chunkcache) {
-			chunkcache.put(identifier,newConnection);
+		synchronized(chunkCache) {
+			chunkCache.put(identifier,newConnection);
 			newConnection.start();
 		}
 		return newConnection;
@@ -293,24 +294,24 @@ public class ChunkServerConnectionCache {
 
 	// Must find new servers for its data before it goes offline
 	public void deregister(int identifier) {
-		// Remove it from the chunkcache
-		synchronized(chunkcache) {
-			chunkcache.get(identifier).setActiveStatus(false); // stop sending thread
-			chunkcache.get(identifier).close(); // stop the receiver 
-			chunkcache.remove(identifier); // remove from the cache
+		// Remove it from the chunkCache
+		synchronized(chunkCache) {
+			chunkCache.get(identifier).setActiveStatus(false); // stop sending thread
+			chunkCache.get(identifier).close(); // stop the receiver 
+			chunkCache.remove(identifier); // remove from the cache
 		}
 		synchronized(identifierList){
 			identifierList.add(identifier);
 		}
-		Vector<ServerFile> removedStates = state.removeAllFilesAtServer(identifier);
-		Vector<ServerFile> removedRecommendations = recommendations.removeAllFilesAtServer(identifier);
+		Vector<ServerFile> removedReportedStates = reportedState.removeAllFilesAtServer(identifier);
+		Vector<ServerFile> removedIdealStates = idealState.removeAllFilesAtServer(identifier);
 		String list = listFreestServers();
 		if (list.equals("")) return;
 		String[] freestServers = list.split(",");
-		for (ServerFile file : removedRecommendations) {
+		for (ServerFile file : removedIdealStates) {
 			String[] servers;
-			if (file.getType().equals("CHUNK")) servers = recommendations.getChunkStorageInfo(((Chunk)file).filename,((Chunk)file).sequence).split("\\|",-1)[0].split(",");
-			else servers = recommendations.getChunkStorageInfo(((Shard)file).filename,((Shard)file).sequence).split("\\|",-1)[1].split(",");
+			if (file.getType().equals("CHUNK")) servers = idealState.getChunkStorageInfo(((Chunk)file).filename,((Chunk)file).sequence).split("\\|",-1)[0].split(",");
+			else servers = idealState.getChunkStorageInfo(((Shard)file).filename,((Shard)file).sequence).split("\\|",-1)[1].split(",");
 			if (servers[0].equals("")) continue;
 			List<String> chunkservers = Arrays.asList(servers);
 			for (String freeServer : freestServers) {
@@ -324,16 +325,16 @@ public class ChunkServerConnectionCache {
 					if (serverAddresses[0].equals("")) continue;
 					acquire = new ControllerRequestsFileAcquire(fullFilename,serverAddresses);
 					chunk.serveridentifier = serveridentifier;
-					recommendations.addChunk(chunk);
+					idealState.addChunk(chunk);
 				} else { // Shard
-					if (chunkservers.size() < ChunkServer.DATA_SHARDS) break; // Don't bother if we can't rebuild
+					if (chunkservers.size() < Constants.DATA_SHARDS) break; // Don't bother if we can't rebuild
 					Shard shard = (Shard)file;
 					String fullFilename = shard.filename + "_chunk" + String.valueOf(shard.sequence) + "_shard" + String.valueOf(shard.shardnumber);
 					String[] serverAddresses = getChunkStorageInfo(shard.filename,shard.sequence).split("\\|",-1)[1].split(",");
 					if (serverAddresses[0].equals("")) continue;
 					acquire = new ControllerRequestsFileAcquire(fullFilename,servers);
 					shard.serveridentifier = serveridentifier;
-					recommendations.addShard(shard);
+					idealState.addShard(shard);
 				}
 				try { sendToChunkServer(serveridentifier,acquire.getBytes()); }
 				catch (IOException ioe) {} // Best effort
@@ -343,24 +344,24 @@ public class ChunkServerConnectionCache {
 	}
 
 	public void markChunkCorrupt(String filename, int sequence, int serveridentifier) {
-		this.state.markChunkCorrupt(filename,sequence,serveridentifier);
+		this.reportedState.markChunkCorrupt(filename,sequence,serveridentifier);
 	}
 
 	public void markChunkHealthy(String filename, int sequence, int serveridentifier) {
-		this.state.markChunkHealthy(filename,sequence,serveridentifier);
+		this.reportedState.markChunkHealthy(filename,sequence,serveridentifier);
 	}
 
 	public void markShardCorrupt(String filename, int sequence, int shardnumber, int serveridentifier) {
-		this.state.markShardCorrupt(filename,sequence,shardnumber,serveridentifier);
+		this.reportedState.markShardCorrupt(filename,sequence,shardnumber,serveridentifier);
 	}
 
 	public void markShardHealthy(String filename, int sequence, int shardnumber, int serveridentifier) {
-		this.state.markShardHealthy(filename,sequence,shardnumber,serveridentifier);
+		this.reportedState.markShardHealthy(filename,sequence,shardnumber,serveridentifier);
 	}
 
 	public boolean sendToChunkServer(int i, byte[] msg) {
-		synchronized(chunkcache) {
-			ChunkServerConnection connection = chunkcache.get(i);
+		synchronized(chunkCache) {
+			ChunkServerConnection connection = chunkCache.get(i);
 			if (connection != null) {
 				connection.addToSendQueue(msg);
 				return true;

@@ -9,22 +9,20 @@ public class TCPServerThread extends Thread {
 	private ServerSocket server;
 	private boolean controller;
 
-	// Will only be used at the controller
-	private ChunkServerConnectionCache chunkcache = null;
-	// Will only be used at a chunk server
-	private FileDistributionService fileservice = null;
+	private ChunkServerConnectionCache connectionCache; // used at Controller
+	private FileDistributionService fileService; // used at ChunkServer
 
-	// Constructor for controller
-	public TCPServerThread(ServerSocket socket, ChunkServerConnectionCache chunkcache) {
+	// Constructor for Controller
+	public TCPServerThread(ServerSocket socket, ChunkServerConnectionCache connectionCache) {
 		this.server = socket;
-		this.chunkcache = chunkcache;
+		this.connectionCache = connectionCache;
 		this.controller = true;
 	}
 
-	// Constructor for chunk server
-	public TCPServerThread(ServerSocket socket, FileDistributionService fileservice) {
+	// Constructor for ChunkServer
+	public TCPServerThread(ServerSocket socket, FileDistributionService fileService) {
 		this.server = socket;
-		this.fileservice = fileservice;
+		this.fileService = fileService;
 		this.controller = false;
 	}
 
@@ -45,8 +43,8 @@ public class TCPServerThread extends Thread {
 				Socket incomingConnectionSocket = server.accept(); // accept new connections
 				// Ternary operator for creating a new receiver, is the receiver at the controller or not?
 				Thread receiverThread = this.controller 
-					? new Thread(new TCPReceiverThread(incomingConnectionSocket,this,this.chunkcache)) 
-					: new Thread(new TCPReceiverThread(incomingConnectionSocket,this,this.fileservice));
+					? new Thread(new TCPReceiverThread(incomingConnectionSocket,this,this.connectionCache)) 
+					: new Thread(new TCPReceiverThread(incomingConnectionSocket,this,this.fileService));
 				receiverThread.start();
 			}
 		} catch (IOException ioe) {

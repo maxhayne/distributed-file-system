@@ -16,16 +16,18 @@ import java.util.Map;
 
 public class HeartbeatMonitor extends TimerTask {
 
-	private ChunkServerConnectionCache connectioncache;
-	private Map<Integer,ChunkServerConnection> chunkcache;
-	private DistributedFileCache recommendations;
-	private DistributedFileCache state;
+	private ChunkServerConnectionCache connectionCache;
+	private Map<Integer,ChunkServerConnection> chunkCache;
+	private DistributedFileCache idealState;
+	private DistributedFileCache reportedState;
 
-	public HeartbeatMonitor(ChunkServerConnectionCache connectioncache, Map<Integer,ChunkServerConnection> chunkcache, DistributedFileCache recommendations, DistributedFileCache state) {
-		this.connectioncache = connectioncache;
-		this.chunkcache = chunkcache;
-		this.recommendations = recommendations;
-		this.state = state;
+	public HeartbeatMonitor(ChunkServerConnectionCache connectionCache, 
+			Map<Integer,ChunkServerConnection> chunkCache, DistributedFileCache idealState, 
+			DistributedFileCache reportedState) {
+		this.connectionCache = connectionCache;
+		this.chunkCache = chunkCache;
+		this.idealState = idealState;
+		this.reportedState = reportedState;
 	}
 
 	private boolean checkChunkFilename(String filename) {
@@ -54,25 +56,20 @@ public class HeartbeatMonitor extends TimerTask {
 
 	public synchronized void run() {
 		Vector<Integer> toRemove = new Vector<Integer>();
-		synchronized(chunkcache) { // get lock on the chunkcache
-			if (chunkcache == null || chunkcache.size() == 0) {
-				//System.out.println("NO CHUNKSERVERS ARE REPORTING HEARTBEAT INFORMATION.");
-				return;
-			}
-			System.out.println("HEARBEAT INFORMATION:");
+		
+		synchronized(chunkCache) { // lock the chunkCache
+			if (chunkCache == null || chunkCache.size() == 0) { return; } // no information to report
+			
+			System.out.println("\nHEARBEAT INFORMATION:");
 			long now = System.currentTimeMillis();
-			for (Map.Entry<Integer,ChunkServerConnection> entry : this.chunkcache.entrySet()) {
+			for (Map.Entry<Integer,ChunkServerConnection> entry : this.chunkCache.entrySet()) {
 				ChunkServerConnection connection = entry.getValue();
-				try {
-					System.out.print(connection.print());
-				} catch (UnknownHostException uhe) {
-					System.err.println("This machine doesn't know its host address.");
-				}
+				System.out.print(connection.print());
 				byte[] temp = connection.retrieveHeartbeatInfo();
 				ByteBuffer data = ByteBuffer.wrap(temp);
 				long lastMajorHeartbeat = data.getLong();
 				long lastMinorHeartbeat = data.getLong();
-				Vector<String> newfiles = new Vector<String>();
+				Vector<String> newFiles = new Vector<String>();
 				int newchunks = data.getInt();
 				if (newchunks != 0) {
 					String newnames = "";
@@ -81,7 +78,7 @@ public class HeartbeatMonitor extends TimerTask {
 						byte[] array = new byte[namelength];
 						data.get(array);
 						String name = new String(array);
-						newfiles.add(name);
+						newFiles.add(name);
 						name = name.split(",")[0];
 						newnames += name + ", ";
 					}
@@ -90,20 +87,20 @@ public class HeartbeatMonitor extends TimerTask {
 				}
 
 				long lastHeartbeat;
-				int beattype;
+				int beatType;
 				if (now-lastMajorHeartbeat < now-lastMinorHeartbeat) {
 					lastHeartbeat = now-lastMajorHeartbeat;
-					beattype = 1;
+					beatType = 1;
 				} else {
 					lastHeartbeat = now-lastMinorHeartbeat;
-					beattype = 0;
+					beatType = 0;
 				}
 
-				// Do some logic on the state DistributedFileCache, assuming this is a healthy heartbeat
-				if (lastHeartbeat < ChunkServer.HEARTRATE) {
+				// Do some logic on the reportedState DistributedFileCache, assuming this is a healthy heartbeat
+				if (lastHeartbeat < Constants.HEARTRATE) {
 					Vector<Chunk> newChunks = new Vector<Chunk>();
 					Vector<Shard> newShards = new Vector<Shard>();
-					for (String name : newfiles) {
+					for (String name : newFiles) {
 						//System.out.println(name);
 						String[] split = name.split(",");
 						int version = Integer.valueOf(split[1]);
@@ -124,22 +121,22 @@ public class HeartbeatMonitor extends TimerTask {
 							newChunks.add(newChunk);
 						}
 					}
-					if (beattype == 0) {
+					if (beatType == 0) {
 						// Add all the new files...
 						for (Chunk chunk : newChunks)
-							state.addChunk(chunk);
+							reportedState.addChunk(chunk);
 						for (Shard shard : newShards)
-							state.addShard(shard);
+							reportedState.addShard(shard);
 						newChunks.clear();
 						newShards.clear();
 					} else {
 						// Remove all of this node's old files from the filecache
-						state.removeAllFilesAtServer(connection.getIdentifier());
+						reportedState.removeAllFilesAtServer(connection.getIdentifier());
 						// and add all the new files...
 						for (Chunk chunk : newChunks)
-							state.addChunk(chunk);
+							reportedState.addChunk(chunk);
 						for (Shard shard : newShards)
-							state.addShard(shard);
+							reportedState.addShard(shard);
 						newChunks.clear();
 						newShards.clear();
 					}
@@ -147,13 +144,13 @@ public class HeartbeatMonitor extends TimerTask {
 
 				// Now need to handle some logic having to do with whether a chunkserver is alive
 				int unhealthy = 0;
-				if (lastMajorHeartbeat != -1 && now-lastMajorHeartbeat > (ChunkServer.HEARTRATE*11))
+				if (lastMajorHeartbeat != -1 && now-lastMajorHeartbeat > (Constants.HEARTRATE*11))
 					unhealthy += 1;
-				if (lastMinorHeartbeat != -1 && now-lastMinorHeartbeat > (ChunkServer.HEARTRATE*2))
-					unhealthy += 1 + (int)((now-lastMinorHeartbeat-(ChunkServer.HEARTRATE*2))/ChunkServer.HEARTRATE); // extra unhealthy for more missed minor heartbeats
-				if (now-connection.getStartTime() > (ChunkServer.HEARTRATE*2) && lastMinorHeartbeat == -1)
+				if (lastMinorHeartbeat != -1 && now-lastMinorHeartbeat > (Constants.HEARTRATE*2))
+					unhealthy += 1 + (int)((now-lastMinorHeartbeat-(Constants.HEARTRATE*2))/Constants.HEARTRATE); // extra unhealthy for more missed minor heartbeats
+				if (now-connection.getStartTime() > (Constants.HEARTRATE*2) && lastMinorHeartbeat == -1)
 					unhealthy += 1;
-				if (now-connection.getStartTime() > ChunkServer.HEARTRATE && lastMajorHeartbeat == -1)
+				if (now-connection.getStartTime() > Constants.HEARTRATE && lastMajorHeartbeat == -1)
 					unhealthy += 1;
 
 				// Add a 'poke' message to send to the ChunkServer, and on the next heartbeat, add to 'unhealthy'
@@ -168,22 +165,22 @@ public class HeartbeatMonitor extends TimerTask {
 			}
 
 			// Prune these data structures to remove stragglers
-			recommendations.prune();
-			state.prune();
+			idealState.prune();
+			reportedState.prune();
 			
 			// Can use this to try to replace files that have somehow vanished from their correct nodes.
 			try {
-				//System.out.println("Files in 'recommendations' that aren't in 'state':");
-				Vector<String> diffs1 = recommendations.differences(state);
+				//System.out.println("Files in 'idealState' that aren't in 'reportedState':");
+				Vector<String> diffs1 = idealState.differences(reportedState);
 				for (String diff : diffs1) {
 					// filetype,basename,sequence,version,serveridentifier,createdTime
 					String[] parts = diff.split(",");
 					// Need to send to this server information about the filename of what it should acquire, along with the list of servers
-					if (System.currentTimeMillis()-Long.valueOf(parts[5]) < ChunkServer.HEARTRATE) continue; // If the chunk is new, might just not have been stored yet.
-					String serverInfo = connectioncache.getChunkServerServerAddress(Integer.valueOf(parts[4]));
+					if (System.currentTimeMillis()-Long.valueOf(parts[5]) < Constants.HEARTRATE) continue; // If the chunk is new, might just not have been stored yet.
+					String serverInfo = connectionCache.getChunkServerServerAddress(Integer.valueOf(parts[4]));
 					if (serverInfo.equals("")) continue;
 					String filename;
-					String storageInfo = connectioncache.getChunkStorageInfo(parts[1],Integer.valueOf(parts[2]));
+					String storageInfo = connectionCache.getChunkStorageInfo(parts[1],Integer.valueOf(parts[2]));
 					String[] servers;
 					if (parts[0].equals("chunk")) { // It is a chunk
 						filename = parts[1] + "_chunk" + parts[2];
@@ -211,7 +208,7 @@ public class HeartbeatMonitor extends TimerTask {
 						if (servers.length == 1 && servers[0].equals("")) continue;
 					}
 					ControllerRequestsFileAcquire acquire = new ControllerRequestsFileAcquire(filename,servers);
-					connectioncache.sendToChunkServer(Integer.valueOf(parts[4]),acquire.getBytes());
+					connectionCache.sendToChunkServer(Integer.valueOf(parts[4]),acquire.getBytes());
 				}
 			} catch (Exception e) {} // All of this is best effort, so don't let anything derail the HeartbeatMonitor 
 
@@ -219,8 +216,8 @@ public class HeartbeatMonitor extends TimerTask {
 			// Try to delete files from Chunk Servers that shouldn't be there.
 			try {
 				// Can use this one to delete files that should no longer be where they are.
-				//System.out.println("Files in 'state' that aren't in 'recommendations':");
-				Vector<String> diffs2 = state.differences(recommendations);
+				//System.out.println("Files in 'reportedState' that aren't in 'idealState':");
+				Vector<String> diffs2 = reportedState.differences(idealState);
 				for (String diff : diffs2) {
 					// filetype,basename,sequence,shardnumber,serveridentifier,createdTime
 					//System.out.println(diff);
@@ -235,7 +232,7 @@ public class HeartbeatMonitor extends TimerTask {
 					}
 					int identifier = Integer.valueOf(parts[4]);
 					try {
-						String address = connectioncache.getChunkServerServerAddress(identifier);
+						String address = connectionCache.getChunkServerServerAddress(identifier);
 						if (address.equals("")) continue;
 						String hostname = address.split(":")[0];
 						int port = Integer.valueOf(address.split(":")[1]);
@@ -244,11 +241,11 @@ public class HeartbeatMonitor extends TimerTask {
 						sender.sendData(msg.getBytes());
 						connection.close();
 						sender = null;
-						// Remove the file from state
+						// Remove the file from reportedState
 						if (parts[0].equals("shard")) {
-							state.removeShard(new Shard(parts[1],Integer.valueOf(parts[2]),Integer.valueOf(parts[3]),Integer.valueOf(parts[4]),false));
+							reportedState.removeShard(new Shard(parts[1],Integer.valueOf(parts[2]),Integer.valueOf(parts[3]),Integer.valueOf(parts[4]),false));
 						} else {
-							state.removeChunk(new Chunk(parts[1],Integer.valueOf(parts[2]),Integer.valueOf(parts[3]),Integer.valueOf(parts[4]),false));
+							reportedState.removeChunk(new Chunk(parts[1],Integer.valueOf(parts[2]),Integer.valueOf(parts[3]),Integer.valueOf(parts[4]),false));
 						}
 					} catch (Exception e) {
 						// This is best effort.
@@ -262,7 +259,7 @@ public class HeartbeatMonitor extends TimerTask {
 			System.out.println();
 		}
 		for (Integer i : toRemove) {
-			connectioncache.deregister(i);
+			connectionCache.deregister(i);
 		}
 		toRemove.clear();
 		toRemove = null;

@@ -1,8 +1,8 @@
 package cs555.overlay.util;
 import cs555.overlay.transport.ControllerConnection;
+import cs555.overlay.util.ApplicationProperties;
 import cs555.overlay.wireformats.Protocol;
 import cs555.overlay.transport.TCPSender;
-import cs555.overlay.node.ChunkServer;
 import cs555.overlay.wireformats.*;
 import cs555.overlay.node.Client;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -102,51 +102,51 @@ public class FileDistributionService extends Thread {
 	public static byte[][] makeShardsFromChunk(byte[] chunk) {
 		if (chunk.length != 65720) return null;
 		int fileSize = 65720;
-		int storedSize = fileSize + ChunkServer.BYTES_IN_INT;
-		int shardSize = storedSize / ChunkServer.DATA_SHARDS;
-		int bufferSize = shardSize * ChunkServer.DATA_SHARDS;
+		int storedSize = fileSize + Constants.BYTES_IN_INT;
+		int shardSize = storedSize / Constants.DATA_SHARDS;
+		int bufferSize = shardSize * Constants.DATA_SHARDS;
 		byte[] allBytes = new byte[bufferSize];
 		ByteBuffer allBytesBuffer = ByteBuffer.wrap(allBytes);
 		allBytesBuffer.putInt(chunk.length);
 		allBytesBuffer.put(chunk);
-		byte[][] shards = new byte[ChunkServer.TOTAL_SHARDS][shardSize];
-		for (int i = 0; i < ChunkServer.DATA_SHARDS; i++) {
+		byte[][] shards = new byte[Constants.TOTAL_SHARDS][shardSize];
+		for (int i = 0; i < Constants.DATA_SHARDS; i++) {
 			System.arraycopy(allBytes, i * shardSize, shards[i], 0, shardSize); 
 		}
-		ReedSolomon reedSolomon = new ReedSolomon(ChunkServer.DATA_SHARDS, ChunkServer.PARITY_SHARDS); 
+		ReedSolomon reedSolomon = new ReedSolomon(Constants.DATA_SHARDS, Constants.PARITY_SHARDS); 
 		reedSolomon.encodeParity(shards, 0, shardSize);
 		return shards;
 	}
 
 	public static byte[][] getShardsFromShards(byte[][] shards) {
-		if (shards.length != ChunkServer.TOTAL_SHARDS) 
+		if (shards.length != Constants.TOTAL_SHARDS) 
 			return null;
-		boolean [] shardPresent = new boolean [ChunkServer.TOTAL_SHARDS];
+		boolean [] shardPresent = new boolean [Constants.TOTAL_SHARDS];
 		int shardCount = 0;
 		int shardSize = 0;
-		for (int i = 0; i < ChunkServer.TOTAL_SHARDS; i++) {
+		for (int i = 0; i < Constants.TOTAL_SHARDS; i++) {
 			if (shards[i] != null) {
 				shardPresent[i] = true;
 				shardCount++;
 				shardSize = shards[i].length;
 			}
 		}
-		if (shardCount < ChunkServer.DATA_SHARDS)
+		if (shardCount < Constants.DATA_SHARDS)
 			return null;
-		for (int i = 0; i < ChunkServer.TOTAL_SHARDS; i++) {
+		for (int i = 0; i < Constants.TOTAL_SHARDS; i++) {
 			if (!shardPresent[i]) {
 				shards[i] = new byte[shardSize];
 			}
 		}
-		ReedSolomon reedSolomon = new ReedSolomon(ChunkServer.DATA_SHARDS, ChunkServer.PARITY_SHARDS);
+		ReedSolomon reedSolomon = new ReedSolomon(Constants.DATA_SHARDS, Constants.PARITY_SHARDS);
 		reedSolomon.decodeMissing(shards, shardPresent, 0, shardSize);
 		return shards;
 	}
 
 	public static byte[] getChunkFromShards(byte[][] shards) {
 		int shardSize = shards[0].length;
-		byte[] decodedChunk = new byte[shardSize*ChunkServer.DATA_SHARDS];
-		for (int i = 0; i < ChunkServer.DATA_SHARDS; i++) {
+		byte[] decodedChunk = new byte[shardSize*Constants.DATA_SHARDS];
+		for (int i = 0; i < Constants.DATA_SHARDS; i++) {
         	System.arraycopy(shards[i], 0, decodedChunk, shardSize * i, shardSize);
     	}    	
     	byte[] correctedDecode = Arrays.copyOfRange(decodedChunk,4,65724);
@@ -231,8 +231,8 @@ public class FileDistributionService extends Thread {
 	}
 
 	public byte[] readyShardForStorage(int sequence, int shardnumber, int version, byte[] shardArray) {
-		byte[] shardToFileArray = new byte[20 + (3*ChunkServer.BYTES_IN_INT) + ChunkServer.BYTES_IN_LONG + 10954]; // Hash+Sequence+Shardnumber+Version+Timestamp+Shard
-		byte[] shardWithMetaData = new byte[(3*ChunkServer.BYTES_IN_INT) + ChunkServer.BYTES_IN_LONG + 10954];
+		byte[] shardToFileArray = new byte[20 + (3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG + 10954]; // Hash+Sequence+Shardnumber+Version+Timestamp+Shard
+		byte[] shardWithMetaData = new byte[(3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG + 10954];
 		ByteBuffer shardMetaWrap = ByteBuffer.wrap(shardWithMetaData);
 		shardMetaWrap.putInt(sequence);
 		shardMetaWrap.putInt(shardnumber);
@@ -310,7 +310,7 @@ public class FileDistributionService extends Thread {
 		ByteBuffer shardArrayBuffer = ByteBuffer.wrap(shardArray);
 		boolean corrupt = false;
 		byte[] hash = new byte[20];
-		byte[] shard = new byte[(3*ChunkServer.BYTES_IN_INT) + ChunkServer.BYTES_IN_LONG + 10954];
+		byte[] shard = new byte[(3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG + 10954];
 		try {
 			shardArrayBuffer.get(hash);
 			shardArrayBuffer.get(shard);
@@ -344,7 +344,7 @@ public class FileDistributionService extends Thread {
 	// Removes hash from shard
 	public static byte[] removeHashFromShard(byte[] shardArray) {
 		ByteBuffer shard = ByteBuffer.wrap(shardArray);
-		byte[] cleanedShard = new byte[(3*ChunkServer.BYTES_IN_INT) + ChunkServer.BYTES_IN_LONG + 10954];
+		byte[] cleanedShard = new byte[(3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG + 10954];
 		shard.position(shard.position()+20);
 		shard.get(cleanedShard,0,cleanedShard.length);
 		return cleanedShard;
@@ -538,7 +538,8 @@ public class FileDistributionService extends Thread {
 					// successfully can server the file, decide what to do next.
 					boolean fullyFixed = false;
 					byte[] reply = null;
-					TCPSender controllerSender = Client.getTCPSender(tcpConnections,ChunkServer.CONTROLLER_HOSTNAME + ":" + String.valueOf(ChunkServer.CONTROLLER_PORT));
+					TCPSender controllerSender = Client.getTCPSender(tcpConnections,
+						ApplicationProperties.controllerHost + ":" + String.valueOf(ApplicationProperties.controllerPort));
 					if (controllerSender == null) continue;
 					// Get Storage list
 					try {
@@ -552,7 +553,7 @@ public class FileDistributionService extends Thread {
 						String[] servers = list.shardservers;
 						if (servers == null) continue;
 						// Get all shards you can, and try to reconstruct the shard you need from it.
-						byte[][] shards = new byte[ChunkServer.TOTAL_SHARDS][];
+						byte[][] shards = new byte[Constants.TOTAL_SHARDS][];
 						int index = -1;
 						for (String server : servers) {
 							index++;
@@ -618,7 +619,7 @@ public class FileDistributionService extends Thread {
 					}
 					if (fullyFixed) { // If it is fixed, tell the Controller that the chunk is healthy
 						try {
-							Socket controllerSocket = new Socket(ChunkServer.CONTROLLER_HOSTNAME,ChunkServer.CONTROLLER_PORT);
+							Socket controllerSocket = new Socket(ApplicationProperties.controllerHost,ApplicationProperties.controllerPort);
 							TCPSender sender = new TCPSender(controllerSocket);
 							ChunkServerReportsFileFix fix = new ChunkServerReportsFileFix(getIdentifier(),msg.filename);
 							sender.sendData(fix.getBytes());
@@ -656,7 +657,7 @@ public class FileDistributionService extends Thread {
 							if (!corrupt) continue;
 						}
 						// Get all shards you can, and try to reconstruct the shard you need from it.
-						byte[][] shards = new byte[ChunkServer.TOTAL_SHARDS][];
+						byte[][] shards = new byte[Constants.TOTAL_SHARDS][];
 						int index = -1;
 						for (String server : msg.servers) {
 							index++;

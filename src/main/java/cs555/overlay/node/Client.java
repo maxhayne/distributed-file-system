@@ -1,8 +1,9 @@
 package cs555.overlay.node;
 import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.ApplicationProperties;
 import cs555.overlay.transport.TCPSender;
 import cs555.overlay.wireformats.*;
-import cs555.overlay.node.ChunkServer;
+import cs555.overlay.util.Constants;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.net.ConnectException;
@@ -17,18 +18,23 @@ import java.net.Socket;
 import java.io.File;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.TreeMap;
 import java.lang.Math;
 
 public class Client {
 
-	public static final int DATA_SHARDS = 6; 
-	public static final int PARITY_SHARDS = 3; 
-	public static final int TOTAL_SHARDS = 9;
-	public static final int BYTES_IN_INT = 4;
-	public static final int BYTES_IN_LONG = 8;
-	public static final String CONTROLLER_HOSTNAME = "127.0.0.1";
-	public static final int CONTROLLER_PORT = 50000;
+	private int storageType;
+	private Map<String,TCPSender> connections;
 
+	/**
+	 * Default constuctor.
+	 * 
+	 * @param storageType
+	 */
+	public Client( int storageType ) {
+		this.storageType = storageType;
+		this.connections = new TreeMap<String,TCPSender>();
+	}
 
 	private static byte[] getShardFromServer(String filename, String address, Map<String,TCPSender> tcpConnections) {
 		TCPSender connection = getTCPSender(tcpConnections,address);
@@ -83,7 +89,7 @@ public class Client {
 	private static byte[][] getShardsFromServers(String filename, String[] servers, Map<String,TCPSender> tcpConnections) {
 		//for (String server : servers) System.out.println(server);
 		if (servers == null) return null;
-		byte[][] shards = new byte[ChunkServer.TOTAL_SHARDS][];
+		byte[][] shards = new byte[Constants.TOTAL_SHARDS][];
 		int index = -1;
 		for (String server : servers) {
 			index++;
@@ -95,25 +101,6 @@ public class Client {
 			shards[index] = filedata;
 		}
 		return FileDistributionService.getShardsFromShards(shards);
-	}
-
-	private static Socket getSocket(String hostname, int port, int timeout) {
-		try {
-			Socket socket = new Socket(hostname,port);
-			socket.setSoTimeout(timeout);
-			socket.setKeepAlive(true);
-			return socket;
-		} catch(ConnectException ce) {
-			System.out.println("Failed to connect: " + ce);
-			return null;
-		} catch(UnknownHostException uhe) {
-			System.out.println("Failed to connect: " + uhe);
-			return null;
-		} catch(IOException ioe) {
-			System.out.println("The connection was terminated: " + ioe);
-			ioe.printStackTrace();
-			return null;
-		}
 	}
 
 	public static TCPSender getTCPSender(Map<String,TCPSender> tcpConnections, String address) {
@@ -140,33 +127,29 @@ public class Client {
 		}
 	}
 
-	private static String listfiles(Map<String,TCPSender> tcpConnections) {
-		String returnable = "";
-		String address = CONTROLLER_HOSTNAME + ":" + String.valueOf(CONTROLLER_PORT);
-		TCPSender connection = getTCPSender(tcpConnections,address);
+	private String[] listFiles() {
+		String address = ApplicationProperties.controllerHost + ":" 
+			+ String.valueOf( ApplicationProperties.controllerPort );
+		TCPSender connection = getTCPSender(connections, address);
 		if (connection == null) {
 			System.out.println("Couldn't esablish a connection with the Controller.");
-			return "";
+			return new String[]{""};
 		}
 		try {
 			ClientRequestsFileList listRequest = new ClientRequestsFileList();
 			connection.sendData(listRequest.getBytes());
 			byte[] reply = connection.receiveData();
 			if (reply == null) {
-				System.out.println("The Controller didn't respond for a request of files.");
-				return "";
+				System.out.println("The Controller didn't respond to a request for files.");
+				return new String[]{""};
 			}
 			ControllerSendsFileList list = new ControllerSendsFileList(reply);
-			if (list.list == null) {
-				return "";
-			}
-			for (String file : list.list) {
-				returnable += file + "\n";
-			}
-			return returnable;
+			if (list.list == null)
+				return new String[]{""};
+			return list.list;
 		} catch (IOException ioe) {
 			System.out.println("There was a problem receiving the file list.");
-			return "";
+			return new String[]{""};
 		}
 	}
 
@@ -174,7 +157,8 @@ public class Client {
 		Path path = Paths.get(filename);
 		Path name = path.getFileName();
 		String basename = name.toString();
-		String address = CONTROLLER_HOSTNAME + ":" + String.valueOf(CONTROLLER_PORT);
+		String address = ApplicationProperties.controllerHost + ":" 
+			+ String.valueOf(ApplicationProperties.controllerPort);
 		TCPSender connection = getTCPSender(tcpConnections,address);
 		if (connection == null) {
 			System.out.println("Couldn't establish a connection with the Controller.");
@@ -318,12 +302,13 @@ public class Client {
 		}
 	}
 
-	private static void delete(String filename, Map<String,TCPSender> tcpConnections) {
+	private void delete( String filename ) {
 		Path path = Paths.get(filename);
 		Path name = path.getFileName();
 		String basename = name.toString();
-		String address = CONTROLLER_HOSTNAME + ":" + String.valueOf(CONTROLLER_PORT);
-		TCPSender connection = getTCPSender(tcpConnections,address);
+		String address = ApplicationProperties.controllerHost + ":" 
+			+ String.valueOf(ApplicationProperties.controllerPort);
+		TCPSender connection = getTCPSender(connections,address);
 		if (connection == null) {
 			System.out.println("Couldn't esablish a connection with the Controller.");
 			return;
@@ -347,19 +332,21 @@ public class Client {
 		}
 	}
 
-	private static void retrieve(int schema, String filename, String location, Map<String,TCPSender> tcpConnections) {
+	private void retrieve( String filename, String location ) {
 		Path path = Paths.get(filename);
 		Path name = path.getFileName();
 		String basename = name.toString();
 		if (!location.endsWith("/")) location += "/";
 		File test = new File(location+basename);
 		if (test.exists()) {
-			System.out.println("'" + location + basename + "' already exists. This operation will append it.");
+			System.out.println("'" + location + basename 
+				+ "' already exists. This operation will append it.");
 		}
-		String address = CONTROLLER_HOSTNAME + ":" + String.valueOf(CONTROLLER_PORT);
-		TCPSender connection = getTCPSender(tcpConnections,address);
+		String address = ApplicationProperties.controllerHost + ":" 
+			+ String.valueOf(ApplicationProperties.controllerPort);
+		TCPSender connection = getTCPSender(connections,address);
 		if (connection == null) {
-			System.out.println("Couldn't esablish a connection with the Controller.");
+			System.err.println("Couldn't esablish a connection with the Controller.");
 			return;
 		}
 		byte[] reply = null;
@@ -399,10 +386,10 @@ public class Client {
 				ControllerSendsStorageList storageList = new ControllerSendsStorageList(reply);
 				// Check which schema we are using...
 				byte[] download = null;
-				if (schema == 0) {
-					download = getChunkFromReplicationServers(chunkName,storageList.replicationservers,tcpConnections);
+				if (storageType == 0) {
+					download = getChunkFromReplicationServers(chunkName,storageList.replicationservers,connections);
 				} else {
-					byte[][] shards = getShardsFromServers(chunkName,storageList.shardservers,tcpConnections);
+					byte[][] shards = getShardsFromServers(chunkName,storageList.shardservers,connections);
 					if (shards != null) {
 						download = FileDistributionService.getChunkFromShards(shards);
 						download = FileDistributionService.removeHashesFromChunk(download);
@@ -438,84 +425,154 @@ public class Client {
 		}
 	}
 
-	public static void main(String[] args){
-		int storageSchema;
-		// Only one optional command line argument -- type of storage to use: 'erasure' or 'replication'
-		if (args.length > 0) {
-			if (args[0].equalsIgnoreCase("replication")) {
-				storageSchema = 0;
-			} else if (args[0].equalsIgnoreCase("erasure")) {
-				storageSchema = 1;
-			} else {
-				System.out.println("'" + args[0] + "' does not match 'replication' or 'erasure', defaulting to replication.");
-				storageSchema = 0;
-			}
+	/**
+	 * Entry point for the Client. Creates a Client using the
+	 * storageType specified in the application.properties file.
+	 * @param args
+	 */
+	public static void main (String[] args ){
+		
+		// Read storageType from Properties
+		int storageType;
+		if ( ApplicationProperties.storageType.equalsIgnoreCase("erasure") ) {
+			storageType = 1;
+		} else if ( ApplicationProperties.storageType.equalsIgnoreCase("replication") ) {
+			storageType = 0;
 		} else {
-			System.out.println("No storage schema specified. Defaulting to replication.");
-			storageSchema = 0;
+			System.out.println("storageType set in application.properties file is neither 'replication'"
+				+ "nor 'erasure', defaulting to 'replication'.");
+			storageType = 0;
 		}
 
-		Map<String,TCPSender> tcpConnections = new HashMap<String,TCPSender>();
-		System.out.println("Use command 'help' to list available commands and usage.");
+		// Create Client and let user interact
+		Client client = new Client( storageType );
+		client.interact();
+	}
 
-		Scanner scanner = new Scanner(System.in);
-		while (true) {
-			System.out.print("COMMAND: ");
+	/**
+	 * Receives commands from the user of the Client.
+	 */
+	private void interact() {
+		boolean exit = false;
+		Scanner scanner = new Scanner( System.in );
+		while ( !exit ) {
+			System.out.print( "client> ");
 			String command = scanner.nextLine();
-			String[] parts = command.split("\\s+");
-			if (parts.length > 3) {
-				System.out.println("No command uses more than three arguments. Use 'help' for help.");
-				continue;
-			}
-			if (parts[0].equalsIgnoreCase("help")) {
-				System.out.println("'ls' -- print a list all files stored in the file system.");
-				System.out.println("'put' [PATH/FILENAME] -- store a file on the distributed file system.");
-				System.out.println("'get' [FILENAME] [SAVE_PATH] -- retrieve a file from the distributed file system and save it locally.");
-				System.out.println("'rm' [FILENAME] -- delete a file from the distributed file system.");
-				System.out.println("'exit' -- stop the program on the client's side.");
-			} else if (parts[0].equalsIgnoreCase("ls")) {
-				System.out.print(listfiles(tcpConnections));
-			} else if (parts[0].equalsIgnoreCase("put")) {
-				if (parts.length != 2) {
-					System.out.println("Use the command 'help' for usage.");
-					continue;
-				}
-				parts[1] = parts[1].replaceFirst("^~", System.getProperty("user.home"));
-				File test = new File(parts[1]);
-				if (test.isFile()) {
-					System.out.println("Attempting to store '" + parts[1] + "'");
-					store(storageSchema,parts[1],tcpConnections);
-				} else {
-					System.out.println("'" + parts[1] + "' is not a valid file.");
-				}
-			} else if (parts[0].equalsIgnoreCase("rm")) {
-				if (parts.length != 2) {
-					System.out.println("Use the command 'help' for usage.");
-					continue;
-				}
-				delete(parts[1],tcpConnections);
-			} else if (parts[0].equalsIgnoreCase("get")) {
-				if (parts.length != 3) {
-					System.out.println("Use the command 'help' for usage.");
-					continue;
-				}
-				parts[2] = parts[2].replaceFirst("^~", System.getProperty("user.home"));
-				File test = new File(parts[2]);
-				if (test.isDirectory()) {
-					System.out.println("Attempting to retrieve '" + parts[1] + "' to save into '" + parts[2] + "'");
-					retrieve(storageSchema,parts[1],parts[2],tcpConnections);
-				} else {
-					System.out.println("'" + parts[2] + "' is not a valid directory.");
-				}
-			} else if (parts[0].equalsIgnoreCase("exit")) {
-				Collection<TCPSender> values = tcpConnections.values();
-				for (TCPSender sender : values) {
-					sender.close();
-				}
-				System.out.println("Goodbye.");
-				break;
+			String[] splitCommand = command.split("\\s+");
+			switch( splitCommand[0].toLowerCase() ) {
+				case "ls":
+					ls();
+					break;
+				case "put":
+					put( splitCommand );
+					break;
+				case "get":
+					get( splitCommand );
+					break;
+				case "rm":
+					rm( splitCommand );
+					break;
+				case "exit":
+					closeSockets();
+					exit = true;
+					break;
+				case "help":
+					showHelp();
+					break;
+				default:
+					System.err.println( "Unrecognized command. Use 'help' command." );
+					break;
 			}
 		}
 		scanner.close();
 	}
+
+	/**
+	 * Calls delete() with the filename provided by the user.
+	 * @param command
+	 */
+	private void rm( String[] command ) {
+		if (command.length < 2) {
+			System.out.println("Use the 'help' command for usage.");
+			return;
+		}
+		delete(command[1]);
+	}
+
+	/**
+	 * Calls retrieve() with the filename provided by the user.
+	 * @param command 
+	 */
+	private void get( String[] command ){
+		if (command.length < 3) {
+			System.out.println("Use the 'help' command for usage.");
+			return;
+		}
+		command[2] = command[2].replaceFirst("^~", System.getProperty("user.home"));
+		File file = new File(command[2]);
+		if (file.isDirectory()) {
+			System.out.println("Attempting to retrieve '" + command[1]
+				+ "' to save into '" + command[2] + "'");
+			retrieve(command[1],command[2]);
+		} else {
+			System.out.println("'" + command[2] + "' is not a valid directory.");
+		}
+	}
+
+	/**
+	 * Calls store() for with the filename provided by the user.
+	 * @param command
+	 */
+	private void put( String[] command ) {
+		if (command.length < 2) {
+			System.out.println("Use the 'help' command for usage.");
+			return;
+		}
+		command[1] = command[1].replaceFirst("^~", System.getProperty("user.home"));
+		File file = new File(command[1]);
+		if (file.isFile()) {
+			System.out.println("Attempting to store '" + command[1] + "'");
+			store(storageType,command[1],connections);
+		} else {
+			System.out.println("'" + command[1] + "' is not a valid file.");
+		}
+	}
+
+	/**
+	 * Print list of files stored in the DFS by asking the Controller.
+	 */
+	private void ls() {
+		String[] files = listFiles();
+		for ( int i = 0; i < files.length; ++i )
+			System.out.printf( "%3s%s%n", "", files[i] );
+	}
+
+	/**
+     * Print a list of valid commands for the user.
+     */
+    private void showHelp() {
+        System.out.printf( "%3s%-26s : %s%n", "", "ls",
+                "print a list all files stored in the DFS" );
+		System.out.printf( "%3s%-26s : %s%n", "", "put [file_path]",
+                "store a file in the DFS" );
+		System.out.printf( "%3s%-26s : %s%n", "", "get [filename] [save_path]",
+                "retrieve a file from the DFS and save it locally" );
+		System.out.printf( "%3s%-26s : %s%n", "", "rm [filename]",
+                "delete a file from the DFS" );
+		System.out.printf( "%3s%-26s : %s%n", "", "exit",
+                "shutdown the client" );
+        System.out.printf( "%3s%-26s : %s%n", "", "help",
+                "print a list of valid commands");
+    }
+
+	/**
+	 * Closes all open sockets in TCPSenders to prepare for
+	 * shutdown.
+	 */
+	private void closeSockets() {
+		Collection<TCPSender> values = connections.values();
+		for (TCPSender sender : values)
+			sender.close();
+	}
+
 }
