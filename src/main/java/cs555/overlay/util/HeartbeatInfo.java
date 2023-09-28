@@ -1,4 +1,5 @@
 package cs555.overlay.util;
+
 import java.nio.ByteBuffer;
 import java.util.Vector;
 import java.util.Arrays;
@@ -12,14 +13,14 @@ public class HeartbeatInfo {
 	public HeartbeatInfo() {
 		this.lastMajorHeartbeat = -1;
 		this.lastMinorHeartbeat = -1;
-		this.files = null;
 	}
 
-	public synchronized void update(long time, int type, byte[] files) {
-		if (type == 1)
-			this.lastMajorHeartbeat = time;
-		else
-			this.lastMinorHeartbeat = time;
+	public synchronized void update( long time, int type, byte[] files ) {
+		if (type == 1) {
+			lastMajorHeartbeat = time;
+		} else {
+			lastMinorHeartbeat = time;
+		}
 		this.files = files;
 	}
 

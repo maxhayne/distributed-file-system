@@ -1,7 +1,9 @@
 package cs555.overlay.transport;
+
+import cs555.overlay.util.HeartbeatInfo;
+
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import cs555.overlay.util.HeartbeatInfo;
 import java.util.concurrent.TimeUnit;
 import java.net.UnknownHostException;
 import java.io.BufferedOutputStream;
@@ -17,6 +19,10 @@ import java.net.Socket;
  * queue to the ChunkServer it's connected with.
  */
 public class ChunkServerConnection extends Thread {
+
+	private String host;
+	private int port;
+	private TCPConnection connection;
 
 	// Identifying/Connection information
 	private int identifier;
@@ -40,8 +46,8 @@ public class ChunkServerConnection extends Thread {
 		this.heartbeatInfo = new HeartbeatInfo();
 	}
 
-	public ChunkServerConnection(TCPReceiverThread receiver, int identifier, 
-			String serverAddress, int serverPort) throws IOException {
+	public ChunkServerConnection( TCPReceiverThread receiver, int identifier, 
+			String serverAddress, int serverPort ) throws IOException {
 		this.identifier = identifier;
 		this.serverAddress = serverAddress;
 		this.serverPort = serverPort;
@@ -52,6 +58,24 @@ public class ChunkServerConnection extends Thread {
 		this.freeSpace = -1;
 		this.totalChunks = -1;
 		this.startTime = -1;
+		this.unhealthy = 0;
+		this.activeStatus = false;
+		this.heartbeatInfo = new HeartbeatInfo();
+		this.pokes = 0;
+		this.pokeReplies = 0;
+	}
+
+	public ChunkServerConnection( int identifier, String host, int port, 
+			TCPConnection connection ) {
+		this.identifier = identifier;
+		this.host = host;
+		this.port = port;
+		this.connection = connection;
+		this.sendQueue = new LinkedBlockingQueue<byte[]>(); // useful for TCPSender?
+
+		this.freeSpace = -1;
+		this.totalChunks = -1;
+		this.startTime = System.currentTimeMillis();
 		this.unhealthy = 0;
 		this.activeStatus = false;
 		this.heartbeatInfo = new HeartbeatInfo();
@@ -97,9 +121,11 @@ public class ChunkServerConnection extends Thread {
 		this.totalChunks = totalChunks;
 	}
 
+	/*
 	public synchronized void setStartTime(long time) {
 		this.startTime = time;
 	}
+	*/
 
 	public synchronized long getStartTime() {
 		return this.startTime;
@@ -177,9 +203,9 @@ public class ChunkServerConnection extends Thread {
 	}
 
 	// use to send to this chunk server
-	public boolean addToSendQueue(byte[] msg) {
+	public boolean addToSendQueue( byte[] msg ) {
 		try {
-			this.sendQueue.put(msg);
+			this.sendQueue.put( msg );
 		} catch (InterruptedException ie) {
 			return false;
 		}
@@ -188,15 +214,15 @@ public class ChunkServerConnection extends Thread {
 
 	public synchronized void sendData(byte[] data) throws IOException {
 		int length = data.length;
-		dout.writeInt(length);
-		dout.write(data, 0, length);
+		dout.writeInt( length );
+		dout.write( data, 0, length );
 		dout.flush();
 	}
 
 	@Override
 	public void run() {
 		this.setActiveStatus(true);
-		while(this.getActiveStatus()) {
+		while( this.getActiveStatus() ) {
 			byte[] msg = null;
 			try {
 				msg = this.sendQueue.poll(1, TimeUnit.SECONDS);
@@ -207,7 +233,7 @@ public class ChunkServerConnection extends Thread {
 				continue;
 			} else {
 				try {
-					this.sendData(msg); // send the message along
+					this.sendData( msg ); // send the message along
 				} catch (Exception e) {
 					System.err.println("ChunkServerConnection run Exception: " + e);
 				}

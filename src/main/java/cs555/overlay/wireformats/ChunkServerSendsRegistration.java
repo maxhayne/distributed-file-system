@@ -7,12 +7,12 @@ import java.nio.ByteBuffer;
 
 public class ChunkServerSendsRegistration implements Event {
 
-	public String serveraddress;
-	public int serverport;
+	public String serverAddress;
+	public int serverPort;
 
-	public ChunkServerSendsRegistration(String serveraddress, int serverport) {
-		this.serveraddress = serveraddress;
-		this.serverport = serverport;
+	public ChunkServerSendsRegistration(String serverAddress, int serverPort) {
+		this.serverAddress = serverAddress;
+		this.serverPort = serverPort;
 	}
 
 	public ChunkServerSendsRegistration(byte[] msg) {
@@ -21,31 +21,26 @@ public class ChunkServerSendsRegistration implements Event {
 		int length = buffer.getInt();
 		byte[] array = new byte[length];
 		buffer.get(array);
-		this.serveraddress = new String(array);
-		this.serverport = buffer.getInt();
-		buffer = null;
-		array = null;
+		this.serverAddress = new String(array);
+		this.serverPort = buffer.getInt();
 	}
 
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
+		byte[] marshalledBytes;
 		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
 		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
 
 		dout.writeByte(Protocol.CHUNK_SERVER_SENDS_REGISTRATION);
-		byte[] array = this.serveraddress.getBytes();
+		byte[] array = this.serverAddress.getBytes();
 		dout.writeInt(array.length);
 		dout.write(array);
-		dout.writeInt(this.serverport);
+		dout.writeInt(this.serverPort);
 
 		dout.flush();
 		marshalledBytes = baOutputStream.toByteArray();
 
 		baOutputStream.close();
 		dout.close();
-		baOutputStream = null;
-		dout = null;
-		array = null;
 		return marshalledBytes;
 	}
 

@@ -1,71 +1,84 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
 
+import java.io.*;
+
+/**
+ * For the ChunkServer to send heartbeat information to
+ * the Controller.
+ * 
+ * @author hayne
+ */
 public class ChunkServerSendsHeartbeat implements Event {
 
-	public int type; // 1 is major, 0 is minor
-	public int totalchunks;
-	public long freespace;
-	public String[] files = null;
+	public byte type;
+	public int beatType; // 1 is major, 0 is minor
+	public int totalChunks;
+	public long freeSpace;
+	public String[] files;
 
-	public ChunkServerSendsHeartbeat(int type, int totalchunks, long freespace, String[] files) {
-		this.type = type;
-		this.totalchunks = totalchunks;
-		this.freespace = freespace;
+	public ChunkServerSendsHeartbeat( int beatType, int totalChunks, 
+			long freeSpace, String[] files ) {
+		this.type = Protocol.CHUNK_SERVER_SENDS_HEARTBEAT;
+		this.beatType = type;
+		this.totalChunks = totalChunks;
+		this.freeSpace = freeSpace;
 		this.files = files;
 	}
 
-	public ChunkServerSendsHeartbeat(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		this.type = buffer.getInt();
-		this.totalchunks = buffer.getInt();
-		this.freespace = buffer.getLong();
-		int fileslength = buffer.getInt();
-		if (fileslength != 0) {
-			files = new String[fileslength];
-			for (int i = 0; i < fileslength; i++) {
-				int length = buffer.getInt();
-				byte[] array = new byte[length];
-				buffer.get(array);
-				files[i] = new String(array);
+	public ChunkServerSendsHeartbeat( byte[] marshalledBytes ) {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		beatType = din.readInt();
+
+		totalChunks = din.readInt();
+
+		freeSpace = din.readLong();
+
+		int totalFiles = din.readInt();
+		if ( totalFiles != 0 ) {
+			files = new String[totalFiles];
+			for ( int i = 0; i < totalFiles; i++ ) {
+				int len = din.readInt();
+				byte[] array = new byte[len];
+				din.readFully( array );
+				files[i] = new String( array );
 			}
-		} else {
-			files = null;
 		}
+
+		bin.close();
+		din.close();
 	}
 
+	@Override
+	public byte getType() { return type; }
+
+	@Override
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( ( bout ) );
 		
-		dout.writeByte(Protocol.CHUNK_SERVER_SENDS_HEARTBEAT);
-		dout.writeInt(type);
-		dout.writeInt(totalchunks);
-		dout.writeLong(freespace);
-		int fileslength = files == null ? 0 : files.length;
-		dout.writeInt(fileslength);
-		for (int i = 0; i < fileslength; i++) {
+		dout.writeByte( type );
+
+		dout.writeInt( beatType );
+
+		dout.writeInt( totalChunks );
+
+		dout.writeLong( freeSpace );
+
+		int totalFiles = files == null ? 0 : files.length;
+		dout.writeInt (totalFiles );
+		for ( int i = 0; i < totalFiles; i++ ) {
 			byte[] array = files[i].getBytes();
-			dout.writeInt(array.length);
-			dout.write(array);
+			dout.writeInt( array.length );
+			dout.write( array );
 		}
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
+		byte[] marshalledBytes = bout.toByteArray();
 		dout.close();
-		baOutputStream = null;
-		dout = null;
+		bout.close();
 		return marshalledBytes;
-	}
-
-	public byte getType() throws IOException {
-		return Protocol.CHUNK_SERVER_SENDS_HEARTBEAT;
 	}
 }

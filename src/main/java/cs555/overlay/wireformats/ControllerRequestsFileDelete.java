@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 
 public class ControllerRequestsFileDelete implements Event {
 
+	public byte type;
 	public String filename;
 
 	public ControllerRequestsFileDelete(String filename) {

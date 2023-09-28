@@ -1,4 +1,5 @@
 package cs555.overlay.util;
+
 import java.util.Collections;
 import java.util.Collection;
 import java.util.TreeSet;
@@ -139,7 +140,7 @@ public class DistributedFileCache {
 					removeChunks.clear();
 				}
 			}
-			if(file.shards != null && file.shards.size() != 0) {
+			if( file.shards != null && file.shards.size() != 0 ) {
 				Collection<Vector<Shard>> shardVectors = file.shards.values();
 				for (Vector<Shard> shardVector : shardVectors) {
 					for (Shard shard : shardVector) {
@@ -225,8 +226,9 @@ public class DistributedFileCache {
 
 	public synchronized void clear() {
 		Collection<DistributedFile> files = fileCache.values();
-		for (DistributedFile file : files)
+		for (DistributedFile file : files) {
 			file.clear();
+		}
 		fileCache.clear();
 	}
 
@@ -314,7 +316,8 @@ public class DistributedFileCache {
 				// entry2.getValue().contains(Chunk) will tell you if the Chunk is present
 				for (Chunk chunk : entry2.getValue()) {
 					if (!passedcache.containsChunk(chunk)) {
-						differences.add("chunk" + "," + filename + "," + sequence  + "," + chunk.version + "," + chunk.serveridentifier + "," + chunk.created);
+						differences.add("chunk" + "," + filename + "," + sequence  + "," 
+							+ chunk.version + "," + chunk.serveridentifier + "," + chunk.created);
 					}
 				}
 			}
@@ -322,7 +325,8 @@ public class DistributedFileCache {
 				int sequence = entry2.getKey();
 				for (Shard shard : entry2.getValue()) {
 					if (!passedcache.containsShard(shard)) {
-						differences.add("shard" + "," + filename + "," + sequence  + "," + shard.shardnumber + "," + shard.serveridentifier + "," + shard.created);
+						differences.add("shard" + "," + filename + "," + sequence  + ","
+							+ shard.shardnumber + "," + shard.serveridentifier + "," + shard.created);
 					}
 				}
 			}

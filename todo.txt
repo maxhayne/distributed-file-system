@@ -26,6 +26,10 @@ The Controller, ChunkServer, and Client main methods are a mess right now -- esp
 --de-monolith-tcpreceiverthread--
 The TCPReceiverThread is a monster, but fret not! There are good alternatives to how it currently works! The Client should not have access to methods for receiving messages that are only to be used by the Controller, or the ChunkServer. Same for the other two node types. Changing how this works requires moving to the EventFactory model, which means adding a couple of classes to the project (which have already been written for the pastry project), and then slowly working your way through the TCPReceiverThread -- moving functions for dealing with specific message types into main node classes. Doing so will also create an opportunity to fix most of the occurences of the --never-wait-on-replies-- todo item.
 
+--event-factory--
+EventFactory isn't formatted how it should be. Need to go through message types, and consolidate certain types of messages into more generic categories for simplicity. Having a different message type/format for every single type of message that can be sent is superfluous and confusing.
+
+
 LOG:
 
 --tmux--
@@ -47,4 +51,26 @@ The 'osx.sh' script was producing strange behavior. Newly created terminals/tabs
 Working on refactoring the code at the Client and the Controller to be more readable, and to be more in the style of the code of the nodes in the pastry network assignment. Also have been fixing some formatting issues throughout the project -- function and variable names that go against the camelCase style that I've been using dominantly.
 
 --brainstorming-client--
-The Client doesn't need to to make use of the TCPReceiverThread that must be modified for use by Controller and the ChunkServer, so what is the best way for the Controller to communicate with the other nodes? The Client has a main thread which receives commands from the user, and although in a perfect world it would be better to keep the main thread free to take commands from the user, even while a write or a read to or from the dfs is happening, to start, I'll just write a ClientWriter and ClientReader which will be Runnable, and can perform those jobs while the main thread waits, or checks for progress on the job. 
+The Client doesn't need to to make use of the TCPReceiverThread that must be modified for use by Controller and the ChunkServer, so what is the best way for the Controller to communicate with the other nodes? The Client has a main thread which receives commands from the user, and although in a perfect world it would be better to keep the main thread free to take commands from the user, even while a write or a read to or from the dfs is happening, to start, I'll just write a ClientWriter and ClientReader which will be Runnable, and can perform those jobs while the main thread waits, or checks for progress on the job.
+
+
+
+- Cleaned up eventfactory, made it a singleton
+
+- Cleaned up TCPSender
+
+- Starting to transfer TCPReceiverThread cases into appropriate node
+
+- DistributedFileCache is a mess, need to improve underlying data structures of ServerFile, DistributedFile, Shard, Chunk to really come up with something easier to maintain and understand. There are too many function calls associated with getting just one piece of information, too much conversion between String, Integer, Long for there to be any comprehension of what is going on.
+
+- Need better solution from Comparators in DistributedFileCache
+
+- Deregistration can't be one-off best effort, must be able to keep track of state of relocations and try again if relocation fails until options are exhausted
+
+- Need to go through all the messages and make getType() actually return the type stored in the message, not the predefined protocol. Also need to go through the messages and make them match GeneralMessage in their formatting for readability and consistency.
+
+- Make sure all messages that can are using the GeneralMessage instead of a superfluous specific  message type. How does changing to use the GeneralMessage at the EventFactory and the Controller affect the logic at the ChunkServers and the Client? Need to think about that.
+
+- BlockingQueue for identifiers or ConcurrentMap for ChunkServerConnectionCache? It seems like it could improve the readability of the code, with less manual locking.
+
+- Add timestamp and version information to the Chunks and Shards. Both should be easy. Timestamp information and Version count will each be updated any time a write happens to a Chunk or a Shard. If the shard is replaced at the ChunkServer, its timestamp will be updated to the time of its writing, and its version will be incremented from wherever the Shard's data came from. Whereever the shard came from, its version will be +1 of what it was before. 

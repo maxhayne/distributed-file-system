@@ -1,9 +1,12 @@
 package cs555.overlay.node;
+
 import cs555.overlay.util.FileDistributionService;
 import cs555.overlay.util.ApplicationProperties;
 import cs555.overlay.transport.TCPSender;
+import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.wireformats.*;
 import cs555.overlay.util.Constants;
+
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.net.ConnectException;
@@ -21,8 +24,10 @@ import java.util.HashMap;
 import java.util.TreeMap;
 import java.lang.Math;
 
-public class Client {
+public class Client implements Node {
 
+	private String host;
+	private int port;
 	private int storageType;
 	private Map<String,TCPSender> connections;
 
@@ -439,14 +444,25 @@ public class Client {
 		} else if ( ApplicationProperties.storageType.equalsIgnoreCase("replication") ) {
 			storageType = 0;
 		} else {
-			System.out.println("storageType set in application.properties file is neither 'replication'"
-				+ "nor 'erasure', defaulting to 'replication'.");
+			System.out.println("storageType set in application.properties file is neither" + 
+				"'replication' nor 'erasure', defaulting to 'replication'." );
 			storageType = 0;
 		}
 
 		// Create Client and let user interact
 		Client client = new Client( storageType );
 		client.interact();
+	}
+
+	@Override
+	public String getHost() { return this.host; }
+
+	@Override
+	public int getPort() { return this.port; }
+
+	@Override
+	public void onEvent( Event event, TCPConnection connection ) {
+		// Start to transfer logic from TCPReceiverThread
 	}
 
 	/**

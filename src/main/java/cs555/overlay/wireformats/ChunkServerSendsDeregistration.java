@@ -9,28 +9,28 @@ public class ChunkServerSendsDeregistration implements Event {
 
 	public int identifier;
 
-	public ChunkServerSendsDeregistration(int identifier) {
+	public ChunkServerSendsDeregistration( int identifier ) {
 		this.identifier = identifier;
 	}
 
-	public ChunkServerSendsDeregistration(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
+	public ChunkServerSendsDeregistration( byte[] msg ) {
+		ByteBuffer buffer = ByteBuffer.wrap( msg );
 		buffer.position(1);
-		this.identifier = buffer.getInt();
+		this.identifier = (int) buffer.get();
 	}
 
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
+		byte[] marshalledBytes;
 		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+		DataOutputStream dout = new DataOutputStream( new BufferedOutputStream( baOutputStream ) );
+
 		dout.writeByte(Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION);
-		dout.writeInt(identifier);
+		dout.write( (byte) identifier );
 		dout.flush();
+
 		marshalledBytes = baOutputStream.toByteArray();
 		baOutputStream.close();
 		dout.close();
-		baOutputStream = null;
-		dout = null;
 		return marshalledBytes;
 	}
 
