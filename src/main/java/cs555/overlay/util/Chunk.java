@@ -2,20 +2,25 @@ package cs555.overlay.util;
 
 public class Chunk extends ServerFile implements Comparable<Chunk> {
 
+	public byte type;
+
 	public String filename;
 	public int sequence;
 	public int version;
-	public int serveridentifier;
+	public long timestamp;
+	
+	public int serverIdentifier;
 	public boolean corrupt;
-	public long created;
 
-	public Chunk(String filename, int sequence, int version, int serveridentifier, boolean corrupt) {
+	public Chunk( String filename, int sequence, int version, 
+			int serverIdentifier, boolean corrupt ) {
+		this.type = Constants.CHUNK_TYPE;
 		this.filename = filename;
 		this.sequence = sequence;
 		this.version = version;
-		this.serveridentifier = serveridentifier;
+		this.serverIdentifier = serverIdentifier;
 		this.corrupt = corrupt;
-		this.created = System.currentTimeMillis();
+		this.timestamp = System.currentTimeMillis();
 	}
 
 	@Override
@@ -31,9 +36,9 @@ public class Chunk extends ServerFile implements Comparable<Chunk> {
 				} else if (this.version > chunk.version) {
 					return 1;
 				} else {
-					if (this.serveridentifier < chunk.serveridentifier) {
+					if (this.serverIdentifier < chunk.serverIdentifier) {
 						return -1;
-					} else if (this.serveridentifier > chunk.serveridentifier) {
+					} else if (this.serverIdentifier > chunk.serverIdentifier) {
 						return 1;
 					}
 					return 0;
@@ -56,7 +61,7 @@ public class Chunk extends ServerFile implements Comparable<Chunk> {
 		if (!this.filename.equals(chunk.filename)
 			|| this.sequence != chunk.sequence
 			//|| this.version != chunk.version
-			|| this.serveridentifier != chunk.serveridentifier)
+			|| this.serverIdentifier != chunk.serverIdentifier)
 			return false;
 		return true;
 	}
@@ -66,7 +71,7 @@ public class Chunk extends ServerFile implements Comparable<Chunk> {
 		returnable += "Filename: " + filename + '\n';
 		returnable += "Sequence: " + sequence + '\n';
 		returnable += "Version: " + version + '\n';
-		returnable += "ServerIdentifier: " + serveridentifier + '\n';
+		returnable += "ServerIdentifier: " + serverIdentifier + '\n';
 		returnable += "Corrupt Status: " + corrupt + '\n'; 
 		return returnable;
 	}

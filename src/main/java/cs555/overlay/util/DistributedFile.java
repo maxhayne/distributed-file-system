@@ -19,15 +19,15 @@ public class DistributedFile {
 	}
 
 	public void clear() {
-		Collection<Vector<Chunk>> chunkVectors = chunks.values();
-		for (Vector<Chunk> chunkVector : chunkVectors) {
-			if (chunkVector != null)
+		for ( Vector<Chunk> chunkVector : chunks.values() ) {
+			if (chunkVector != null) {
 				chunkVector.clear();
+			}
 		}
-		Collection<Vector<Shard>> shardVectors = shards.values();
-		for (Vector<Shard> shardVector : shardVectors) {
-			if (shardVector != null)
+		for ( Vector<Shard> shardVector : shards.values() ) {
+			if (shardVector != null) {
 				shardVector.clear();
+			}
 		}
 		chunks.clear();
 		shards.clear();

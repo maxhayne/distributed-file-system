@@ -19,31 +19,31 @@ import java.util.Timer;
 
 public class ControllerConnection extends Thread {
 
-	private Socket controllersocket;
+	private Socket controllerSocket;
 	private TCPServerThread server;
 	private TCPReceiverThread receiver;
 	private BlockingQueue<byte[]> sendQueue;
 	private DataOutputStream dout;
-	private boolean activestatus;
-	private ChunkServerHeartbeatService heartbeatservice;
-	private FileDistributionService fileservice;
-	private Timer heartbeattimer;
+	private boolean activeStatus;
+	private ChunkServerHeartbeatService heartbeatService;
+	private FileDistributionService fileService;
+	private Timer heartbeatTimer;
 	private String directory;
-	private int serveridentifier;
+	private int serverIdentifier;
 
 	public ControllerConnection(Socket controllerSocket, ServerSocket serverSocket, String directory) throws IOException {
-		this.controllersocket = controllerSocket;
-		this.fileservice = new FileDistributionService(directory,this);
-		this.server = new TCPServerThread(serverSocket,fileservice);
-		this.receiver = new TCPReceiverThread(controllersocket,server,this,this.fileservice);
-		this.activestatus = false;
+		this.controllerSocket = controllerSocket;
+		this.fileService = new FileDistributionService(directory,this);
+		this.server = new TCPServerThread(serverSocket,fileService);
+		this.receiver = new TCPReceiverThread(controllerSocket,server,this,this.fileService);
+		this.activeStatus = false;
 		this.sendQueue = new LinkedBlockingQueue<byte[]>();
 		this.dout = new DataOutputStream(new BufferedOutputStream(receiver.getDataOutputStream(), 8192));
 		this.directory = directory;
 		this.server.start();
 		this.receiver.start();
-		this.fileservice.start();
-		this.serveridentifier = -1;
+		this.fileService.start();
+		this.serverIdentifier = -1;
 	}
 
 	public String getServerAddress() throws UnknownHostException {
@@ -55,32 +55,34 @@ public class ControllerConnection extends Thread {
 	}
 
 	public synchronized void setIdentifier(int identifier) {
-		this.serveridentifier = identifier;
+		this.serverIdentifier = identifier;
 	}
 
 	public synchronized int getIdentifier() {
-		return this.serveridentifier;
+		return this.serverIdentifier;
 	}
 
 	public synchronized void startHeartbeatService() {
-		this.heartbeatservice = new ChunkServerHeartbeatService(this.directory,this,this.fileservice);
-		this.heartbeattimer = new Timer();
+		this.heartbeatService = new ChunkServerHeartbeatService(this.directory, this, this.fileService);
+		this.heartbeatTimer = new Timer();
 		long randomOffset = (long)ThreadLocalRandom.current().nextInt(2, 15 + 1);
-		long heartbeatstart = randomOffset*1000L;
-		this.heartbeattimer.scheduleAtFixedRate(heartbeatservice,heartbeatstart,Constants.HEARTRATE);
+		long heartbeatStart = randomOffset*1000L;
+		this.heartbeatTimer.scheduleAtFixedRate(heartbeatService ,heartbeatStart, Constants.HEARTRATE);
 	}
 
 	public synchronized void stopHeartbeatService() {
-		if (heartbeattimer != null) { heartbeattimer.cancel(); }
-		heartbeattimer = null;
+		if (heartbeatTimer != null) { 
+			heartbeatTimer.cancel();
+		}
+		heartbeatTimer = null;
 	}
 
 	public synchronized boolean getActiveStatus() {
-		return activestatus;
+		return activeStatus;
 	}
 
 	public synchronized void setActiveStatus(boolean status) {
-		activestatus = status;
+		activeStatus = status;
 	}
 
 	public boolean addToSendQueue(byte[] msg) {

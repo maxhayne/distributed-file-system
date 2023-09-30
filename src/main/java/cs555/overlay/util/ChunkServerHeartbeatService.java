@@ -21,7 +21,8 @@ public class ChunkServerHeartbeatService extends TimerTask {
 	private int heartbeatnumber;
 	private FileDistributionService fileservice; 
 
-	public ChunkServerHeartbeatService(String directory, ControllerConnection connection, FileDistributionService fileservice) {
+	public ChunkServerHeartbeatService(String directory, ControllerConnection connection, 
+			FileDistributionService fileservice) {
 		this.directorystring = directory;
 		this.connection = connection;
 		this.heartbeatnumber = 1;

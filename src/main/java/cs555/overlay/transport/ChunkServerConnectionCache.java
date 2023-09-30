@@ -55,11 +55,11 @@ public class ChunkServerConnectionCache {
 		}
 		//Collections.shuffle(this.availableIdentifiers);
 
-		this.heartbeatMonitor = new HeartbeatMonitor (this, chunkCache,idealState, 
+		this.heartbeatMonitor = new HeartbeatMonitor (this, chunkCache, idealState, 
 			reportedState );
 		heartbeatTimer = new Timer();
 		heartbeatTimer.scheduleAtFixedRate( heartbeatMonitor, 0, 
-			Constants.HEARTRATE);
+			Constants.HEARTRATE );
 	}
 
 	public DistributedFileCache getIdealState() {
@@ -94,12 +94,12 @@ public class ChunkServerConnectionCache {
 		this.reportedState.markChunkHealthy(filename,sequence,serverIdentifier);
 	}
 
-	public void markShardCorrupt(String filename, int sequence, int shardnumber, int serverIdentifier) {
-		this.reportedState.markShardCorrupt(filename,sequence,shardnumber,serverIdentifier);
+	public void markShardCorrupt(String filename, int sequence, int shardNumber, int serverIdentifier) {
+		this.reportedState.markShardCorrupt(filename,sequence,shardNumber,serverIdentifier);
 	}
 
-	public void markShardHealthy(String filename, int sequence, int shardnumber, int serverIdentifier) {
-		this.reportedState.markShardHealthy(filename,sequence,shardnumber,serverIdentifier);
+	public void markShardHealthy(String filename, int sequence, int shardNumber, int serverIdentifier) {
+		this.reportedState.markShardHealthy(filename,sequence,shardNumber,serverIdentifier);
 	}
 
 	public String getAllServerAddresses() {
@@ -448,26 +448,26 @@ public class ChunkServerConnectionCache {
 				if (file.getType().equals("CHUNK")) { // Chunk
 					Chunk chunk = (Chunk)file;
 					String fullFilename = chunk.filename + "_chunk" + String.valueOf(chunk.sequence);
-					String[] serverAddresses = getChunkStorageInfo(chunk.filename,chunk.sequence)
+					String[] serverAddresses = getChunkStorageInfo(chunk.filename, chunk.sequence)
 						.split("\\|",-1)[0].split(",");
 					if ( serverAddresses[0].equals("") ) {
 						continue;
 					}
 					acquire = new ControllerRequestsFileAcquire( fullFilename, serverAddresses );
-					chunk.serveridentifier = serverIdentifier;
+					chunk.serverIdentifier = serverIdentifier;
 					idealState.addChunk(chunk);
 				} else { // Shard
 					if (chunkServers.size() < Constants.DATA_SHARDS) break; // Don't bother if we can't rebuild
 					Shard shard = (Shard)file;
 					String fullFilename = shard.filename + "_chunk" + String.valueOf(shard.sequence)
-						+ "_shard" + String.valueOf(shard.shardnumber);
-					String[] serverAddresses = getChunkStorageInfo(shard.filename,shard.sequence)
+						+ "_shard" + String.valueOf(shard.shardNumber);
+					String[] serverAddresses = getChunkStorageInfo(shard.filename, shard.sequence)
 						.split("\\|",-1)[1].split(",");
 					if (serverAddresses[0].equals("")) {
 						continue;
 					}
-					acquire = new ControllerRequestsFileAcquire(fullFilename,servers);
-					shard.serveridentifier = serverIdentifier;
+					acquire = new ControllerRequestsFileAcquire(fullFilename, servers);
+					shard.serverIdentifier = serverIdentifier;
 					idealState.addShard(shard);
 				}
 				try { sendToChunkServer( 

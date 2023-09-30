@@ -1,10 +1,12 @@
 package cs555.overlay.util;
+
 import cs555.overlay.wireformats.ControllerRequestsFileAcquire;
 import cs555.overlay.wireformats.ControllerRequestsFileDelete;
 import cs555.overlay.transport.ChunkServerConnectionCache;
 import cs555.overlay.transport.ChunkServerConnection;
 import cs555.overlay.transport.TCPSender;
 import cs555.overlay.node.ChunkServer;
+
 import java.net.UnknownHostException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -21,9 +23,9 @@ public class HeartbeatMonitor extends TimerTask {
 	private DistributedFileCache idealState;
 	private DistributedFileCache reportedState;
 
-	public HeartbeatMonitor(ChunkServerConnectionCache connectionCache, 
+	public HeartbeatMonitor( ChunkServerConnectionCache connectionCache, 
 			Map<Integer,ChunkServerConnection> chunkCache, DistributedFileCache idealState, 
-			DistributedFileCache reportedState) {
+			DistributedFileCache reportedState ) {
 		this.connectionCache = connectionCache;
 		this.chunkCache = chunkCache;
 		this.idealState = idealState;
@@ -57,8 +59,10 @@ public class HeartbeatMonitor extends TimerTask {
 	public synchronized void run() {
 		Vector<Integer> toRemove = new Vector<Integer>();
 		
-		synchronized(chunkCache) { // lock the chunkCache
-			if (chunkCache == null || chunkCache.size() == 0) { return; } // no information to report
+		synchronized( chunkCache ) { // lock the chunkCache
+			if (chunkCache == null || chunkCache.size() == 0) { 
+				return; // no information to report
+			}
 			
 			System.out.println("\nHEARBEAT INFORMATION:");
 			long now = System.currentTimeMillis();
@@ -111,13 +115,13 @@ public class HeartbeatMonitor extends TimerTask {
 							String[] shardSplit = split[0].split("_shard");
 							int sequence = Integer.valueOf(chunkSplit[1].split("_shard")[0]);
 							int shardnumber = Integer.valueOf(shardSplit[1]);
-							Shard newShard = new Shard(chunkSplit[0],sequence,shardnumber,connection.getIdentifier(),false);
+							Shard newShard = new Shard( chunkSplit[0], sequence, shardnumber, connection.getIdentifier(), false );
 							newShards.add(newShard);
 						} else { // chunk
 							if (!checkChunkFilename(split[0])) { continue; }
 							String[] chunkSplit = split[0].split("_chunk");
 							int sequence = Integer.valueOf(chunkSplit[1]);
-							Chunk newChunk = new Chunk(chunkSplit[0],sequence,version,connection.getIdentifier(),false);
+							Chunk newChunk = new Chunk( chunkSplit[0], sequence, version, connection.getIdentifier(), false );
 							newChunks.add(newChunk);
 						}
 					}

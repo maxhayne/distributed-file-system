@@ -87,7 +87,7 @@ public class DistributedFileCache {
 			Vector<Chunk> chunks = file.chunks.get(sequence);
 			for (Chunk chunk : chunks) {
 				if (chunk.corrupt == false) { // only return healthy chunks
-					info += chunk.serveridentifier + ",";
+					info += chunk.serverIdentifier + ",";
 					added = true;
 				}
 			}
@@ -100,8 +100,8 @@ public class DistributedFileCache {
 			for (int i = 0; i < 9; i++) {
 				boolean found = false;
 				for (Shard shard : shards) {
-					if (shard.shardnumber == i) {
-						info += shard.serveridentifier + ",";
+					if (shard.shardNumber == i) {
+						info += shard.serverIdentifier + ",";
 						found = true;
 						break;
 					}
@@ -129,7 +129,7 @@ public class DistributedFileCache {
 				for (Vector<Chunk> chunkVector : chunkVectors) {
 					for (Chunk chunk : chunkVector) {
 						// Iterating through chunks
-						if (chunk.serveridentifier == identifier) {
+						if (chunk.serverIdentifier == identifier) {
 							removeChunks.add(chunk);
 							totalRemoved.add(chunk);
 						}
@@ -144,7 +144,7 @@ public class DistributedFileCache {
 				Collection<Vector<Shard>> shardVectors = file.shards.values();
 				for (Vector<Shard> shardVector : shardVectors) {
 					for (Shard shard : shardVector) {
-						if (shard.serveridentifier == identifier) {
+						if (shard.serverIdentifier == identifier) {
 							removeShards.add(shard);
 							totalRemoved.add(shard);
 						}
@@ -250,50 +250,51 @@ public class DistributedFileCache {
 		return true;
 	}
 
-	public synchronized void markChunkCorrupt(String filename, int sequence, int serveridentifier) {
+	public synchronized void markChunkCorrupt(String filename, int sequence, int serverIdentifier) {
 		if (fileCache.containsKey(filename)
 			&& fileCache.get(filename).chunks.containsKey(sequence)
 			&& fileCache.get(filename).chunks.get(sequence) != null) {
 			Vector<Chunk> vector = fileCache.get(filename).chunks.get(sequence);
 			for (Chunk chunk : vector) {
-				if (chunk.serveridentifier == serveridentifier)
+				if (chunk.serverIdentifier == serverIdentifier)
 					chunk.corrupt = true;
 			}
 		}
 	}
 
-	public synchronized void markShardCorrupt(String filename, int sequence, int shardnumber, int serveridentifier) {
+	public synchronized void markShardCorrupt(String filename, int sequence, int shardNumber, int serverIdentifier) {
 		if (fileCache.containsKey(filename)
 			&& fileCache.get(filename).shards.containsKey(sequence)
 			&& fileCache.get(filename).shards.get(sequence) != null) {
 			Vector<Shard> vector = fileCache.get(filename).shards.get(sequence);
 			for (Shard shard : vector) {
-				if (shard.serveridentifier == serveridentifier && shard.shardnumber == shardnumber)
+				if (shard.serverIdentifier == serverIdentifier && shard.shardNumber == shardNumber)
 					shard.corrupt = true;
 			}
 		}
 	}
 
-	public synchronized void markChunkHealthy(String filename, int sequence, int serveridentifier) {
+	public synchronized void markChunkHealthy(String filename, int sequence, int serverIdentifier) {
 		if (fileCache.containsKey(filename)
 			&& fileCache.get(filename).chunks.containsKey(sequence)
 			&& fileCache.get(filename).chunks.get(sequence) != null) {
 			Vector<Chunk> vector = fileCache.get(filename).chunks.get(sequence);
 			for (Chunk chunk : vector) {
-				if (chunk.serveridentifier == serveridentifier)
+				if (chunk.serverIdentifier == serverIdentifier)
 					chunk.corrupt = false;
 			}
 		}
 	}
 
-	public synchronized void markShardHealthy(String filename, int sequence, int shardnumber, int serveridentifier) {
+	public synchronized void markShardHealthy(String filename, int sequence, int shardNumber, int serverIdentifier) {
 		if (fileCache.containsKey(filename)
-			&& fileCache.get(filename).shards.containsKey(sequence)
-			&& fileCache.get(filename).shards.get(sequence) != null) {
+				&& fileCache.get(filename).shards.containsKey(sequence)
+				&& fileCache.get(filename).shards.get(sequence) != null) {
 			Vector<Shard> vector = fileCache.get(filename).shards.get(sequence);
 			for (Shard shard : vector) {
-				if (shard.serveridentifier == serveridentifier && shard.shardnumber == shardnumber)
+				if (shard.serverIdentifier == serverIdentifier && shard.shardNumber == shardNumber) {
 					shard.corrupt = false;
+				}
 			}
 		}
 	}
@@ -317,7 +318,7 @@ public class DistributedFileCache {
 				for (Chunk chunk : entry2.getValue()) {
 					if (!passedcache.containsChunk(chunk)) {
 						differences.add("chunk" + "," + filename + "," + sequence  + "," 
-							+ chunk.version + "," + chunk.serveridentifier + "," + chunk.created);
+							+ chunk.version + "," + chunk.serverIdentifier + "," + chunk.timestamp);
 					}
 				}
 			}
@@ -326,7 +327,7 @@ public class DistributedFileCache {
 				for (Shard shard : entry2.getValue()) {
 					if (!passedcache.containsShard(shard)) {
 						differences.add("shard" + "," + filename + "," + sequence  + ","
-							+ shard.shardnumber + "," + shard.serveridentifier + "," + shard.created);
+							+ shard.shardNumber + "," + shard.serverIdentifier + "," + shard.timestamp);
 					}
 				}
 			}
