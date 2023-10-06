@@ -1,48 +1,57 @@
 package cs555.overlay.util;
 
-import java.nio.ByteBuffer;
-import java.util.Vector;
-import java.util.Arrays;
-
+/**
+ * Class used to store information from the latest heartbeat sent
+ * by the ChunkServer in whose ChunkServerConnection this object
+ * is stored.
+ * 
+ * @author hayne
+ */
 public class HeartbeatInfo {
 
 	private long lastMajorHeartbeat;
 	private long lastMinorHeartbeat;
-	private byte[] files;
+
+	private long freeSpace;
+	private int totalChunks;
+	private String[] files;
 
 	public HeartbeatInfo() {
 		this.lastMajorHeartbeat = -1;
 		this.lastMinorHeartbeat = -1;
+		this.freeSpace = -1;
+		this.totalChunks = -1;
 	}
 
-	public synchronized void update( long time, int type, byte[] files ) {
-		if (type == 1) {
-			lastMajorHeartbeat = time;
+	public synchronized void update( int type, long freeSpace, int totalChunks,
+			String[] files ) {
+		if ( type == 1 ) {
+			lastMajorHeartbeat = System.currentTimeMillis();
 		} else {
-			lastMinorHeartbeat = time;
+			lastMinorHeartbeat = System.currentTimeMillis();
 		}
+		this.freeSpace = freeSpace;
+		this.totalChunks = totalChunks;
 		this.files = files;
 	}
 
-	// So we can return everything at once
-	public synchronized byte[] retrieve() {
-		int length = 16;
-		if (files == null) {
-			length += 4;
-			byte[] returnable = new byte[length];
-			ByteBuffer wrapper = ByteBuffer.wrap(returnable);
-			wrapper.putLong(lastMajorHeartbeat);
-			wrapper.putLong(lastMinorHeartbeat);
-			wrapper.putInt(0);
-			return returnable;
-		}
-		length += files.length;
-		byte[] returnable = new byte[length];
-		ByteBuffer wrapper = ByteBuffer.wrap(returnable);
-		wrapper.putLong(lastMajorHeartbeat);
-		wrapper.putLong(lastMinorHeartbeat);
-		wrapper.put(files);
-		files = null;
-		return returnable;
+	public synchronized long getLastMajorHeartbeat() {
+		return lastMajorHeartbeat;
+	}
+
+	public synchronized long getLastMinorHeartbeat() {
+		return lastMinorHeartbeat;
+	}
+
+	public synchronized long getFreeSpace() {
+		return freeSpace;
+	}
+
+	public synchronized int getTotalChunks() {
+		return totalChunks;
+	}
+
+	public synchronized String[] getFiles() {
+		return files.clone();
 	}
 }

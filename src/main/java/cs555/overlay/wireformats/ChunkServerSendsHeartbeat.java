@@ -11,14 +11,16 @@ import java.io.*;
 public class ChunkServerSendsHeartbeat implements Event {
 
 	public byte type;
+	public int identifier;
 	public int beatType; // 1 is major, 0 is minor
 	public int totalChunks;
 	public long freeSpace;
 	public String[] files;
 
-	public ChunkServerSendsHeartbeat( int beatType, int totalChunks, 
-			long freeSpace, String[] files ) {
+	public ChunkServerSendsHeartbeat( int identifier, int beatType, 
+			int totalChunks, long freeSpace, String[] files ) {
 		this.type = Protocol.CHUNK_SERVER_SENDS_HEARTBEAT;
+		this.identifier = identifier;
 		this.beatType = type;
 		this.totalChunks = totalChunks;
 		this.freeSpace = freeSpace;
@@ -30,6 +32,8 @@ public class ChunkServerSendsHeartbeat implements Event {
         DataInputStream din = new DataInputStream( bin );
 
 		type = din.readByte();
+
+		identifier = din.readInt();
 
 		beatType = din.readInt();
 
@@ -61,6 +65,8 @@ public class ChunkServerSendsHeartbeat implements Event {
 		DataOutputStream dout = new DataOutputStream( ( bout ) );
 		
 		dout.writeByte( type );
+
+		dout.writeInt( identifier );
 
 		dout.writeInt( beatType );
 

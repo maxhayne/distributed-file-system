@@ -86,7 +86,7 @@ public class EventFactory {
 				return new ChunkServerSendsHeartbeat( marshalledBytes );
 
 			case Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT:
-				return new ChunkServerRespondsToHeartbeat();
+				return new ChunkServerRespondsToHeartbeat( marshalledBytes );
 
 			case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION:
 				return new ChunkServerReportsFileCorruption( marshalledBytes );

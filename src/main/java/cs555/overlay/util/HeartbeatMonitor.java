@@ -7,6 +7,7 @@ import cs555.overlay.transport.ChunkServerConnection;
 import cs555.overlay.transport.TCPSender;
 import cs555.overlay.node.ChunkServer;
 
+import java.lang.StringBuilder;
 import java.net.UnknownHostException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -60,39 +61,41 @@ public class HeartbeatMonitor extends TimerTask {
 		Vector<Integer> toRemove = new Vector<Integer>();
 		
 		synchronized( chunkCache ) { // lock the chunkCache
-			if (chunkCache == null || chunkCache.size() == 0) { 
+			if ( chunkCache == null || chunkCache.size() == 0 ) { 
 				return; // no information to report
 			}
 			
-			System.out.println("\nHEARBEAT INFORMATION:");
+			System.out.println("\nHeartbeat Monitor:");
 			long now = System.currentTimeMillis();
-			for (Map.Entry<Integer,ChunkServerConnection> entry : this.chunkCache.entrySet()) {
-				ChunkServerConnection connection = entry.getValue();
-				System.out.print(connection.print());
-				byte[] temp = connection.retrieveHeartbeatInfo();
-				ByteBuffer data = ByteBuffer.wrap(temp);
-				long lastMajorHeartbeat = data.getLong();
-				long lastMinorHeartbeat = data.getLong();
-				Vector<String> newFiles = new Vector<String>();
-				int newchunks = data.getInt();
-				if (newchunks != 0) {
-					String newnames = "";
-					for (int i = 0; i < newchunks; i++) {
-						int namelength = data.getInt();
-						byte[] array = new byte[namelength];
-						data.get(array);
-						String name = new String(array);
-						newFiles.add(name);
-						name = name.split(",")[0];
-						newnames += name + ", ";
-					}
-					newnames = newnames.substring(0,newnames.length()-2);
-					System.out.print("[ " + newnames + " ]\n");
+			for ( ChunkServerConnection connection : chunkCache.values() ) {
+				System.out.print( connection.print() );
+				HeartbeatInfo heartbeatInfo = connection.getHeartbeatInfo();
+
+
+				// Copy over HeartbeatInfo
+				String[] newFiles;
+				long lastMajorHeartbeat;
+				long lastMinorHeartbeat;
+				synchronized( heartbeatInfo ) {
+					newFiles = heartbeatInfo.getFiles();
+					lastMajorHeartbeat = heartbeatInfo.getLastMajorHeartbeat();
+					lastMinorHeartbeat = heartbeatInfo.getLastMinorHeartbeat();
 				}
 
-				long lastHeartbeat;
+				// Print list of new files
+				if ( newFiles.length != 0 ) {
+					StringBuilder sb = new StringBuilder();
+					for ( String newFile : newFiles ) {
+						sb.append( newFile.split(",")[0] ).append(", ");
+					}
+					sb.delete( sb.length()-2, sb.length() );
+					System.out.println( "[ " + sb.toString() + " ]" );
+				}
+
+				// Determine which type of heartbeat was most recent
 				int beatType;
-				if (now-lastMajorHeartbeat < now-lastMinorHeartbeat) {
+				long lastHeartbeat;
+				if ( now-lastMajorHeartbeat < now-lastMinorHeartbeat ) {
 					lastHeartbeat = now-lastMajorHeartbeat;
 					beatType = 1;
 				} else {
@@ -101,15 +104,16 @@ public class HeartbeatMonitor extends TimerTask {
 				}
 
 				// Do some logic on the reportedState DistributedFileCache, assuming this is a healthy heartbeat
-				if (lastHeartbeat < Constants.HEARTRATE) {
+				if ( lastHeartbeat < Constants.HEARTRATE ) {
 					Vector<Chunk> newChunks = new Vector<Chunk>();
 					Vector<Shard> newShards = new Vector<Shard>();
-					for (String name : newFiles) {
-						//System.out.println(name);
+					for ( String name : newFiles ) {
 						String[] split = name.split(",");
 						int version = Integer.valueOf(split[1]);
 						if (version == -1) { // shard
-							if (!checkShardFilename(split[0])) { continue; }
+							if (!checkShardFilename(split[0])) {
+								continue;
+							}
 							String[] chunkSplit = split[0].split("_chunk");
 							// chunkSplit[0] is the filename
 							String[] shardSplit = split[0].split("_shard");
@@ -125,7 +129,7 @@ public class HeartbeatMonitor extends TimerTask {
 							newChunks.add(newChunk);
 						}
 					}
-					if (beatType == 0) {
+					if ( beatType == 0 ) { // Minor heartbeat
 						// Add all the new files...
 						for (Chunk chunk : newChunks)
 							reportedState.addChunk(chunk);
@@ -133,7 +137,7 @@ public class HeartbeatMonitor extends TimerTask {
 							reportedState.addShard(shard);
 						newChunks.clear();
 						newShards.clear();
-					} else {
+					} else { // Major heartbeat
 						// Remove all of this node's old files from the filecache
 						reportedState.removeAllFilesAtServer(connection.getIdentifier());
 						// and add all the new files...

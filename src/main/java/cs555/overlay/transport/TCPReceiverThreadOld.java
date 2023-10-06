@@ -442,6 +442,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CONTROLLER
 					case Protocol.CHUNK_SERVER_SENDS_HEARTBEAT: {
 						if (!controller || chunkConnection == null) break;
 						ChunkServerSendsHeartbeat msg = new ChunkServerSendsHeartbeat(data);
@@ -454,7 +455,8 @@ public class TCPReceiverThread extends Thread {
 						files = null;
 						break;
 					}
-
+					
+					// NEW: This message response has changed, it now takes the identifier as an argument
 					case Protocol.CONTROLLER_SENDS_HEARTBEAT: {
 						if (controller || controllerConnection == null) break;
 						ChunkServerRespondsToHeartbeat response = new ChunkServerRespondsToHeartbeat();
@@ -462,12 +464,14 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CONTROLLER
 					case Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT: {
 						if (!controller || chunkConnection == null) break;
 						chunkConnection.incrementPokeReplies();
 						break;
 					}
 					
+					// IMPLEMENTED IN CONTROLLER
 					case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION: {
 						if (!controller || connectionCache == null) break;
 						ChunkServerReportsFileCorruption msg = new ChunkServerReportsFileCorruption(data);
@@ -518,6 +522,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CONTROLLER
 					case Protocol.CHUNK_SERVER_NO_STORE_FILE:  {
 						if (!controller || connectionCache == null) break;
 						ChunkServerNoStoreFile msg = new ChunkServerNoStoreFile(data);
@@ -590,6 +595,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CONTROLLER
 					case Protocol.CHUNK_SERVER_REPORTS_FILE_FIX: {
 						if (!controller || connectionCache == null) break;
 						ChunkServerReportsFileFix msg = new ChunkServerReportsFileFix(data);
@@ -611,7 +617,10 @@ public class TCPReceiverThread extends Thread {
 						// No need to respond
 						break;
 					}
-
+					
+					// This case and the next case should be combined into one, because we know that
+					// the client is trying to retrieve the file. This means rethinking how the message is structured
+					// for efficiency in the response.
 					case Protocol.CLIENT_REQUESTS_FILE_SIZE: {
 						if (!controller || connectionCache == null) break;
 						ClientRequestsFileSize msg = new ClientRequestsFileSize(data);

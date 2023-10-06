@@ -62,12 +62,25 @@ public class ChunkServerConnectionCache {
 			Constants.HEARTRATE );
 	}
 
+	/**
+	 * Returns the ChunkServerConnection object of a registered ChunkServer
+	 * with the identifier specified as a parameter.
+	 * 
+	 * @param identifier of ChunkServer
+	 * @return ChunkServerConnection with that identifier, null if doesn't exist
+	 */
+	public ChunkServerConnection getConnection( int identifier ) {
+		synchronized( chunkCache ) {
+			return chunkCache.get( identifier );
+		}
+	}
+
 	public DistributedFileCache getIdealState() {
-		return this.idealState;
+		return idealState;
 	}
 
 	public DistributedFileCache getReportedState() {
-		return this.reportedState;
+		return reportedState;
 	}
 
 	public String[] getFileList() {
@@ -79,27 +92,11 @@ public class ChunkServerConnectionCache {
 	}
 
 	public void removeFileFromIdealState( String filename ) {
-		idealState.removeFile(filename );
+		idealState.removeFile( filename );
 	}
 
 	public void removeChunkFromIdealState( Chunk chunk ) {
 		idealState.removeChunk( chunk );
-	}
-
-	public void markChunkCorrupt(String filename, int sequence, int serverIdentifier) {
-		this.reportedState.markChunkCorrupt(filename,sequence,serverIdentifier);
-	}
-
-	public void markChunkHealthy(String filename, int sequence, int serverIdentifier) {
-		this.reportedState.markChunkHealthy(filename,sequence,serverIdentifier);
-	}
-
-	public void markShardCorrupt(String filename, int sequence, int shardNumber, int serverIdentifier) {
-		this.reportedState.markShardCorrupt(filename,sequence,shardNumber,serverIdentifier);
-	}
-
-	public void markShardHealthy(String filename, int sequence, int shardNumber, int serverIdentifier) {
-		this.reportedState.markShardHealthy(filename,sequence,shardNumber,serverIdentifier);
 	}
 
 	public String getAllServerAddresses() {
@@ -116,16 +113,16 @@ public class ChunkServerConnectionCache {
 		return addresses;
 	}
 
-	public int getChunkServerIdentifier(String serveraddress, int serverport) {
+	public int getChunkServerIdentifier( String serveraddress, int serverport ) {
 		synchronized( chunkCache ) {
 			for ( ChunkServerConnection connection : chunkCache.values() ) {
-				if ( connection.getServerAddress().equals(serveraddress) 
+				if ( connection.getServerAddress().equals( serveraddress ) 
 						&& connection.getServerPort() == serverport ) {
 					return connection.getIdentifier();
 				}
 			}
-			return -1;
 		}
+		return -1;
 	}
 
 	public String getChunkServerServerAddress( int identifier ) {
@@ -135,11 +132,11 @@ public class ChunkServerConnectionCache {
 				return connection.getServerAddress() + ":" 
 					+ connection.getServerPort();
 			}
-			return "";
 		}
+		return "";
 	}
 
-	public String getChunkStorageInfo(String filename, int sequence) {
+	public String getChunkStorageInfo( String filename, int sequence ) {
 		String info = reportedState.getChunkStorageInfo( filename, sequence );
 		if ( info.equals("|") ) {
 			return "|";
@@ -183,58 +180,41 @@ public class ChunkServerConnectionCache {
 		Vector<Long[]> servers = new Vector<Long[]>();
 		synchronized( chunkCache ) {
 			for ( ChunkServerConnection connection : chunkCache.values() ) {
-				if (connection.getUnhealthy() <= 3 && connection.getFreeSpace() != -1 
-						&& connection.getFreeSpace() >= 65720) {
-					servers.add( new Long[]{(long)connection.getFreeSpace(),
-						(long)connection.getIdentifier()} );
+				if (connection.getUnhealthy() <= 3 && connection.getHeartbeatInfo().getFreeSpace() != -1 
+						&& connection.getHeartbeatInfo().getFreeSpace() >= 65720) {
+					servers.add( new Long[]{ connection.getHeartbeatInfo().getFreeSpace(),
+						(long)connection.getIdentifier() } );
 				}
 			}
 		}
 
-		Collections.sort(servers, new Comparator<Long[]>(){
-			@Override  
-			public int compare(Long[] l1, Long[] l2) {
-				int compareSpace = l1[0].compareTo(l2[0]);
-				if ( compareSpace == 0 ) {
-					return l1[1].compareTo(l2[1]);
-				}
-				return compareSpace;
-		}});
-
+		Collections.sort( servers, Comparators.SERVER_SORT );
 		Collections.reverse( servers );
+
 		Vector<String> freestServers = new Vector<String>();
-		//String returnable = "";
 		for (int i = 0; i < servers.size(); i++) {
-			//returnable += String.valueOf(servers.elementAt(i)[1]) + ",";
 			freestServers.add( String.valueOf( servers.elementAt(i)[1] ) );
 		}
-		//if (!returnable.equals("")) returnable = returnable.substring(0,returnable.length()-1);
 		return freestServers;
 	}
 
 	// Return the best ChunkServers in terms of storage
-	public String availableChunkServers(String filename, int sequence) {
+	public String availableChunkServers( String filename, int sequence ) {
 		// Need three freest servers
 		Vector<Long[]> servers = new Vector<Long[]>();
 		synchronized( chunkCache ) {
 			for ( ChunkServerConnection connection : chunkCache.values() ) {
-				if ( connection.getUnhealthy() <= 3 && connection.getFreeSpace() != -1 
-						&& connection.getFreeSpace() >= 65720 ) {
-					servers.add( new Long[]{(long)connection.getFreeSpace(),
-						(long)connection.getIdentifier()} );
+				if ( connection.getUnhealthy() <= 3 && connection.getHeartbeatInfo().getFreeSpace() != -1 
+						&& connection.getHeartbeatInfo().getFreeSpace() >= 65720 ) {
+					servers.add( new Long[]{ connection.getHeartbeatInfo().getFreeSpace(),
+						(long)connection.getIdentifier() } );
 				}
 			}
 		}
-		Collections.sort(servers, new Comparator<Long[]>(){
-			@Override  
-			public int compare(Long[] l1, Long[] l2) {
-				int comparespace = l1[0].compareTo(l2[0]);
-				if (comparespace == 0) {
-					return l1[1].compareTo(l2[1]);
-				}
-				return comparespace;
-		}});
-		Collections.reverse(servers);
+
+		Collections.sort( servers, Comparators.SERVER_SORT );
+		Collections.reverse( servers );
+
 		synchronized( idealState ) { // If already allocated, return the same three servers
 			if ( !idealState.getChunkStorageInfo(filename, sequence)
 					.split("\\|", -1)[0].equals("") ) {
@@ -270,23 +250,17 @@ public class ChunkServerConnectionCache {
 		Vector<Long[]> servers = new Vector<Long[]>();
 		synchronized( chunkCache ) {
 			for ( ChunkServerConnection connection : chunkCache.values() ) {
-				if ( connection.getUnhealthy() <= 3 && connection.getFreeSpace() != -1 
-						&& connection.getFreeSpace() >= 65720 ) {
-					servers.add( new Long[]{(long)connection.getFreeSpace(),
-						(long)connection.getIdentifier()} );
+				if ( connection.getUnhealthy() <= 3 && connection.getHeartbeatInfo().getFreeSpace() != -1 
+						&& connection.getHeartbeatInfo().getFreeSpace() >= 65720 ) {
+					servers.add( new Long[]{ connection.getHeartbeatInfo().getFreeSpace(),
+						(long)connection.getIdentifier() } );
 				}
 			}
 		}
-		Collections.sort(servers, new Comparator<Long[]>(){
-			@Override  
-			public int compare(Long[] l1, Long[] l2) {
-				int comparespace = l1[0].compareTo(l2[0]);
-				if (comparespace == 0) {
-					return l1[1].compareTo(l2[1]);
-				}
-				return comparespace;
-		}});
-		Collections.reverse(servers);
+
+		Collections.sort( servers, Comparators.SERVER_SORT );
+		Collections.reverse( servers );
+		
 		synchronized( idealState ) { // If already allocated, return the same three servers
 			if ( !idealState.getChunkStorageInfo(filename, sequence).split("\\|",-1)[1].equals("") ) {
 				String[] temp = idealState.getChunkStorageInfo(filename, sequence)
@@ -324,9 +298,9 @@ public class ChunkServerConnectionCache {
 	 */
 	public boolean isRegistered( String host, int port ) {
 		synchronized( chunkCache ) {
-			for ( Map.Entry<Integer,ChunkServerConnection> entry : chunkCache.entrySet() ) {
-				if ( host.equals( entry.getValue().getServerAddress() )
-					&& port == entry.getValue().getServerPort()) {
+			for ( ChunkServerConnection connection : chunkCache.values() ) {
+				if ( host.equals( connection.getServerAddress() )
+						&& port == connection.getServerPort()) {
 					return true;
 				}
 			}
@@ -484,10 +458,10 @@ public class ChunkServerConnectionCache {
 	 * @param marshalledBytes
 	 * @return true if message was successfully added to the queue to send, false otherwise
 	 */
-	public boolean sendToChunkServer(int identifier, byte[] marshalledBytes ) {
+	public boolean sendToChunkServer( int identifier, byte[] marshalledBytes ) {
 		synchronized( chunkCache ) {
 			ChunkServerConnection connection = chunkCache.get( identifier );
-			if (connection != null) {
+			if ( connection != null ) {
 				connection.addToSendQueue( marshalledBytes );
 				return true;
 			}
@@ -506,5 +480,27 @@ public class ChunkServerConnectionCache {
 				connection.addToSendQueue( marshalledBytes );
 			}
 		}
-	} 
+	}
+
+	/**
+	 * Class to house Comparators which will be used in the methods of
+	 * the ChunkServerConnectionCache.
+	 */
+	public static class Comparators {
+
+		// Will be provided a Long[] filled with Long[] tuples. Each tuple
+		// is formatted [ FREE_SPACE, SERVER_ID ]. We want to sort based on
+		// FREE_SPACE first, then by ID.
+		public static Comparator<Long[]> SERVER_SORT = new Comparator<Long[]>() {
+			@Override  
+			public int compare(Long[] l1, Long[] l2) {
+				int compareSpace = l1[0].compareTo( l2[0] );
+				if (compareSpace == 0) {
+					return l1[1].compareTo( l2[1] );
+				}
+				return compareSpace;
+			}
+		};
+
+    }
 }

@@ -73,4 +73,16 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 
 - BlockingQueue for identifiers or ConcurrentMap for ChunkServerConnectionCache? It seems like it could improve the readability of the code, with less manual locking.
 
-- Add timestamp and version information to the Chunks and Shards. Both should be easy. Timestamp information and Version count will each be updated any time a write happens to a Chunk or a Shard. If the shard is replaced at the ChunkServer, its timestamp will be updated to the time of its writing, and its version will be incremented from wherever the Shard's data came from. Whereever the shard came from, its version will be +1 of what it was before. But, do chunks that are identical except the version number should probably be treated identically, same with the shards. 
+- Add timestamp and version information to the Chunks and Shards. Both should be easy. Timestamp information and Version count will each be updated any time a write happens to a Chunk or a Shard. If the shard is replaced at the ChunkServer, its timestamp will be updated to the time of its writing, and its version will be incremented from wherever the Shard's data came from. Whereever the shard came from, its version will be +1 of what it was before. But, do chunks that are identical except the version number should probably be treated identically, same with the shards.
+
+- Why is listFreestServers() returning a Vector<String> and not a Vector<Integer>? Shouldn't it be returning a list of server identifiers, which are integers?
+
+- Instead of returning null values, some functions choose to return -1 or "" (for int and string), but why? Is there a reason that null can't convey the same thing? There seem to be different standards used throughout the code.
+
+- What about the scenario where the Client requests to store a chunk, the Controller finds three ChunkServers that should hold that particular chunk, but one of those ChunkServers goes offline or deregisters before the Client has had a chance to store the chunk at that particular ChunkServer? How will the Client know if a storage operation is successful? Should the Client send the chunk out to the ChunkServers without wondering whether the operation was successful? Should it wait for confirmation from the ChunkServers? If it does wait for confirmation, but doesn't receive it, what should happen then? It seems like the Client should give the user some indication that the storage operation only successfully happened at N number of nodes. But if it is done that way, how long should the Client wait for confirmation before returning control of the Client to the user? Best-effort and conscientious communication with the user are at odds with one another.
+
+- When deregistering, we shouldn't do any unnecessary deletions of the data structures that are being removed from the ChunkServerConnectionCache. That way, we won't disrupt any threads that are doing inside of the ChunkServerConnection while it is being deregistered.
+
+- Need to create a ChunkInformation class just for storing metadata about a particular chunk/shard. Name, sequence, version, timestamp, etc. Then, that data structure can be used to replace the delimited strings that are being passed around in the ChunkServerHeartbeatService and the HeartbeatMonitor.
+
+- More to add to deal with CHUNK_SERVER_NO_STORE_FILE case at the Controller. Need to find a new home for the missing Chunk, or is that dealt with elsewhere?

@@ -1,73 +1,76 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ChunkServerReportsFileCorruption implements Event {
 
+	public byte type;
 	public int identifier;
 	public String filename;
 	public int[] slices;
 
-	public ChunkServerReportsFileCorruption(int identifier, String filename, int[] slices) {
+	public ChunkServerReportsFileCorruption( int identifier, String filename, int[] slices ) {
+		this.type = Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION;
 		this.identifier = identifier;
 		this.filename = filename;
 		this.slices = slices;
 	}
 
-	public ChunkServerReportsFileCorruption(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		this.identifier = buffer.getInt();
-		int length = buffer.getInt();
-		byte[] array = new byte[length];
-		buffer.get(array);
-		this.filename = new String(array);
-		int slicelength = (int)buffer.get();
-		if (slicelength > 0) {
-			slices = new int[slicelength];
-			for (int i = 0; i < slicelength; i++) {
-				slices[i] = (int)buffer.get();
+	public ChunkServerReportsFileCorruption( byte[] marshalledBytes ) {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		identifier = din.readInt();
+
+		int len = din.readInt();
+		byte[] array = new byte[len];
+		din.readFully( array );
+		filename = new String( array );
+
+		int numSlices = din.readInt();
+		if ( numSlices > 0 ) {
+			slices = new int[numSlices];
+			for ( int i = 0; i < numSlices; ++i ) {
+				slices[i] = din.readInt();
 			}
 		} else {
 			slices = null;
 		}
-		buffer = null;
-		array = null;
+
+		din.close();
+		bin.close();
 	}
 
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
 
-		dout.writeByte(Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION);
-		dout.writeInt(this.identifier);
-		byte[] array = this.filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
-		if (slices == null) {
-			dout.writeByte((byte)0);
+		dout.write( type );
+
+		dout.writeInt( identifier );
+
+		byte[] array = filename.getBytes();
+		dout.writeInt( array.length );
+		dout.write( array );
+
+		if ( slices == null ) {
+			dout.writeInt( 0 );
 		} else {
-			dout.writeByte((byte)slices.length);
-			for (int i = 0; i < slices.length; i++)
-				dout.writeByte((byte)slices[i]);
+			dout.writeInt( slices.length );
+			for ( int i = 0; i < slices.length; ++i ) {
+				dout.writeInt( slices[i] );
+			}
 		}
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		array = null;
-		return marshalledBytes;
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
 	}
 
 	public byte getType() throws IOException {
-		return Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION;
+		return type;
 	}
 }

@@ -1,30 +1,44 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+
+import java.io.*;
 
 public class ChunkServerRespondsToHeartbeat implements Event {
 	
-	public ChunkServerRespondsToHeartbeat() {
-		// Empty constructor
+	public byte type;
+	public int identifier;
+
+	public ChunkServerRespondsToHeartbeat( int identifier ) {
+		this.type = Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT;
+		this.identifier = identifier;
+	}
+
+	public ChunkServerRespondsToHeartbeat( byte[] marshalledBytes ) throws IOException {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		identifier = din.readInt();
+
+		din.close();
+		bin.close();
 	}
 
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
-		dout.writeByte(Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT);
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		return marshalledBytes;
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
+
+		dout.write( type );
+
+		dout.writeInt( identifier );
+
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
 	}
 
 	public byte getType() throws IOException {
-		return Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT;
+		return type;
 	}
 }

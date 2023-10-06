@@ -14,21 +14,21 @@ import java.util.Map;
 
 public class ChunkServerHeartbeatService extends TimerTask {
 
-	private String directorystring;
+	private String directoryString;
 	private ControllerConnection connection;
 	private Map<String,FileMetadata> majorFiles;
 	private Map<String,FileMetadata> minorFiles;
-	private int heartbeatnumber;
-	private FileDistributionService fileservice; 
+	private int heartbeatNumber;
+	private FileDistributionService fileService; 
 
 	public ChunkServerHeartbeatService(String directory, ControllerConnection connection, 
-			FileDistributionService fileservice) {
-		this.directorystring = directory;
+			FileDistributionService fileService) {
+		this.directoryString = directory;
 		this.connection = connection;
-		this.heartbeatnumber = 1;
+		this.heartbeatNumber = 1;
 		this.majorFiles = new TreeMap<String,FileMetadata>();
 		this.minorFiles = new TreeMap<String,FileMetadata>();
-		this.fileservice = fileservice;
+		this.fileService = fileService;
 	}
 
 	private boolean checkChunkFilename(String filename) {
@@ -52,7 +52,7 @@ public class ChunkServerHeartbeatService extends TimerTask {
 
 	private byte[] majorHeartbeat() throws NoSuchAlgorithmException {
 		majorFiles.clear();
-		String[] files = fileservice.listFiles();
+		String[] files = fileService.listFiles();
 		for (String filename : files) {
 			boolean shard = checkShardFilename(filename);
 			if (!shard) { // then it's a chunk
@@ -60,9 +60,9 @@ public class ChunkServerHeartbeatService extends TimerTask {
 				Vector<Integer> errors;
 				int numberOfErrors;
 				int[] errorsarray = null;
-				data = fileservice.readBytesFromFile(directorystring+filename);
-				errors = fileservice.checkChunkForCorruption(data);
-				if (data.length > 65720) { fileservice.truncateFile(directorystring+filename,65720); }
+				data = fileService.readBytesFromFile(directoryString+filename);
+				errors = fileService.checkChunkForCorruption(data);
+				if (data.length > 65720) { fileService.truncateFile(directoryString+filename,65720); }
 				if (errors.size() > 0) {
 					errorsarray = new int[errors.size()];
 					for (int i = 0; i < errors.size(); i++)
@@ -76,15 +76,15 @@ public class ChunkServerHeartbeatService extends TimerTask {
 					majorFiles.put(filename, new FileMetadata(filename,buffer.getInt(28))); // skip first hash, read version
 				} else {
 					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(connection.getIdentifier(),filename,errorsarray);
-					fileservice.addToQueue(event); // Send message to Controller about corruption
+					fileService.addToQueue(event); // Send message to Controller about corruption
 				}
 			} else { // This is a shard
-				byte[] data = fileservice.readBytesFromFile(directorystring+filename);
-				boolean corrupt = fileservice.checkShardForCorruption(data);
-				if (data.length > 10994) { fileservice.truncateFile(directorystring+filename,10994); }
+				byte[] data = fileService.readBytesFromFile(directoryString+filename);
+				boolean corrupt = fileService.checkShardForCorruption(data);
+				if (data.length > 10994) { fileService.truncateFile(directoryString+filename,10994); }
 				if (corrupt) {
 					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(connection.getIdentifier(),filename,null);
-					fileservice.addToQueue(event); // Send message to Controller about corruption
+					fileService.addToQueue(event); // Send message to Controller about corruption
 				} else {
 					majorFiles.put(filename, new FileMetadata(filename));
 				}
@@ -104,8 +104,9 @@ public class ChunkServerHeartbeatService extends TimerTask {
 			}
 		}
 		int totalchunks = majorFiles.size();
-		long freespace = fileservice.getUsableSpace();
-		ChunkServerSendsHeartbeat heartbeat = new ChunkServerSendsHeartbeat(1,totalchunks,freespace,concattednames);
+		long freespace = fileService.getUsableSpace();
+		ChunkServerSendsHeartbeat heartbeat = new ChunkServerSendsHeartbeat( connection.getIdentifier(), 
+			1, totalchunks, freespace, concattednames );
 		byte[] bytes = null;;
 		try {
 			bytes = heartbeat.getBytes();
@@ -122,7 +123,7 @@ public class ChunkServerHeartbeatService extends TimerTask {
 	// minorMap at the end of the looping is sent to the controller, and then added to the majorMap.
 	private byte[] minorHeartbeat() throws NoSuchAlgorithmException {
 		minorFiles.clear();
-		String[] filenames = fileservice.listFiles();
+		String[] filenames = fileService.listFiles();
 		for (String filename : filenames) {
 			if (majorFiles.containsKey(filename))
 				continue;
@@ -133,10 +134,10 @@ public class ChunkServerHeartbeatService extends TimerTask {
 				Vector<Integer> errors;
 				int numberOfErrors;
 				int[] errorsarray = null;
-				data = fileservice.readBytesFromFile(directorystring+filename);
-				errors = fileservice.checkChunkForCorruption(data);
+				data = fileService.readBytesFromFile(directoryString+filename);
+				errors = fileService.checkChunkForCorruption(data);
 				if (data.length > 65720) {
-					fileservice.truncateFile(directorystring+filename,65720);
+					fileService.truncateFile(directoryString+filename,65720);
 				}
 				//System.out.println(data.length + " " + errors.size());
 				if (errors.size() > 0) {
@@ -153,17 +154,17 @@ public class ChunkServerHeartbeatService extends TimerTask {
 					ByteBuffer buffer = ByteBuffer.wrap(data);
 					minorFiles.put(filename, new FileMetadata(filename,buffer.getInt(28)));
 				} else {
-					//System.out.println("Trying to add an event to the fileservice.");
+					//System.out.println("Trying to add an event to the fileService.");
 					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(connection.getIdentifier(),filename,errorsarray);
-					fileservice.addToQueue(event);
+					fileService.addToQueue(event);
 				}
 			} else if (shard) { // This is a shard
-				byte[] data = fileservice.readBytesFromFile(directorystring+filename);
-				boolean corrupt = fileservice.checkShardForCorruption(data);
-				if (data.length > 10994) { fileservice.truncateFile(directorystring+filename,10994); }
+				byte[] data = fileService.readBytesFromFile(directoryString+filename);
+				boolean corrupt = fileService.checkShardForCorruption(data);
+				if (data.length > 10994) { fileService.truncateFile(directoryString+filename,10994); }
 				if (corrupt) {
 					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(connection.getIdentifier(),filename,null);
-					fileservice.addToQueue(event); // Send message to Controller about corruption
+					fileService.addToQueue(event); // Send message to Controller about corruption
 				} else {
 					minorFiles.put(filename, new FileMetadata(filename));
 				}
@@ -185,8 +186,9 @@ public class ChunkServerHeartbeatService extends TimerTask {
 		// Need to calculate total chunks and free space
 		majorFiles.putAll(minorFiles);
 		int totalchunks = majorFiles.size();
-		long freespace = fileservice.getUsableSpace();
-		ChunkServerSendsHeartbeat heartbeat = new ChunkServerSendsHeartbeat(0,totalchunks,freespace,concattednames);
+		long freespace = fileService.getUsableSpace();
+		ChunkServerSendsHeartbeat heartbeat = new ChunkServerSendsHeartbeat( connection.getIdentifier(), 
+			0, totalchunks, freespace, concattednames );
 		byte[] bytes = null;
 		try {
 			bytes = heartbeat.getBytes();
@@ -199,10 +201,10 @@ public class ChunkServerHeartbeatService extends TimerTask {
 
 	public void run() {
 		try {
-			byte[] heartbeat = heartbeatnumber%10 == 0 ? majorHeartbeat() : minorHeartbeat();
-			System.out.println("Heartbeat is running. heartbeatnumber: " + heartbeatnumber + ". Current time: " + System.currentTimeMillis() + ".");
+			byte[] heartbeat = heartbeatNumber%10 == 0 ? majorHeartbeat() : minorHeartbeat();
+			System.out.println("Heartbeat is running. heartbeatNumber: " + heartbeatNumber + ". Current time: " + System.currentTimeMillis() + ".");
 			connection.addToSendQueue(heartbeat);
-			heartbeatnumber += 1;
+			heartbeatNumber += 1;
 		} catch (NoSuchAlgorithmException nsae) {
 			System.out.println("ChunkServerHeartbeatService run: NoSuchAlgorithmException.");
 		}

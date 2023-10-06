@@ -1,54 +1,60 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ChunkServerNoStoreFile {
 
-	public String address; // Controller will have to do lookup to find the identifier of the server that failed to store the file.
+	public byte type;
+	public String address; // Controller performs lookup to find the identifier of server that failed to store the file
 	public String filename;
 
-	public ChunkServerNoStoreFile(String address, String filename) {
+	public ChunkServerNoStoreFile( String address, String filename ) {
+		this.type = Protocol.CHUNK_SERVER_NO_STORE_FILE;
 		this.address = address;
 		this.filename = filename;
 	}
 
-	public ChunkServerNoStoreFile(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int addressLength = buffer.getInt();
-		byte[] addressarray = new byte[addressLength];
-		buffer.get(addressarray);;
-		this.address = new String(addressarray);
-		int fileLength = buffer.getInt();
-		byte[] filearray = new byte[fileLength];
-		buffer.get(filearray);
-		this.filename = new String(filearray);
+	public ChunkServerNoStoreFile( byte[] marshalledBytes ) {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		int len = din.readInt();
+		byte[] array = new byte[len];
+		din.readFully( array );
+		address = new String( array );
+
+		len = din.readInt();
+		array = new byte[len];
+		din.readFully( array );
+		filename = new String( array );
+
+		din.close();
+		bin.close();
 	}
 
 	public byte[] getBytes() throws IOException {
- 		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
-		dout.writeByte(Protocol.CHUNK_SERVER_NO_STORE_FILE);
-		byte[] addressarray = address.getBytes();
-		dout.writeInt(addressarray.length);
-		dout.write(addressarray);
-		byte[] filearray = filename.getBytes();
-		dout.writeInt(filearray.length);
-		dout.write(filearray);
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		return marshalledBytes;
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
+
+		dout.write( type );
+
+		byte[] array = address.getBytes();
+		dout.writeInt( array.length );
+		dout.write( array );
+
+		array = filename.getBytes();
+		dout.writeInt( array.length );
+		dout.write( array );
+
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
  	}
 
  	public byte getType() throws IOException {
- 		return Protocol.CHUNK_SERVER_NO_STORE_FILE;
+ 		return type;
  	}
  }

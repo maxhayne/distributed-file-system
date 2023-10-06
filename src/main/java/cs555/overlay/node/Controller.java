@@ -1,11 +1,14 @@
 package cs555.overlay.node;
 
 import cs555.overlay.wireformats.*;
+import cs555.overlay.transport.ChunkServerConnection;
 import cs555.overlay.transport.ChunkServerConnectionCache;
 import cs555.overlay.transport.TCPServerThread;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.util.ApplicationProperties;
 import cs555.overlay.util.DistributedFileCache;
+import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.Chunk;
 
 import java.net.ServerSocket;
 import java.io.IOException;
@@ -91,6 +94,22 @@ public class Controller implements Node {
 				heartbeatHelper( event );
 				break;
 
+			case Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT:
+				pokeHelper( event );
+				break;
+			
+			case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION:
+				corruptionHelper( event, connection );
+				break;
+
+			case Protocol.CHUNK_SERVER_NO_STORE_FILE:
+				missingFileHelper( event );
+				break;
+
+			case Protocol.CHUNK_SERVER_REPORTS_FILE_FIX:
+				markFileFixed( event );
+				break;
+
 			default:
 				System.err.println( "Event couldn't be processed. "
 					+ event.getType() );
@@ -99,16 +118,165 @@ public class Controller implements Node {
 	}
 
 	/**
+	 * Mark the chunk/shard healthy (not corrupt) in the reportedState 
+	 * DistributedFileCache. This action will allow the Controller to tell
+	 * future Clients or ChunkServers that this particular file at this
+	 * particular server is available to be requested.
+	 * @param event
+	 */
+	private void markFileFixed( Event event ) {
+		ChunkServerReportsFileFix report = ( ChunkServerReportsFileFix ) event;
+
+		// Mark the specified chunk/shard as healthy, so we can use this
+		// ChunkServer as a source for future file requests.
+		String filenameBase;
+		int sequence;
+		if ( FileDistributionService.checkChunkFilename( report.filename ) ) { // Chunk
+			String[] split = report.filename.split("_chunk");
+			filenameBase = split[0];
+			sequence = Integer.parseInt( split[1] );
+			connectionCache.getReportedState().markChunkHealthy( filenameBase, sequence, 
+				report.identifier ); // Mark healthy
+		} else if ( FileDistributionService.checkShardFilename( report.filename ) ) { // Shard
+			String[] split = report.filename.split("_chunk");
+			filenameBase  = split[0];
+			split = split[1].split("_shard");
+			sequence = Integer.parseInt( split[0] );
+			int fragment = Integer.parseInt( split[1] );
+			connectionCache.getReportedState().markShardHealthy( filenameBase, sequence, 
+				fragment, report.identifier ); // Mark healthy
+		} else {
+			System.err.println( "markFileFixed: '" + report.filename + "' is not"
+				+ " a valid name for either a chunk or a shard." );
+			return;
+		}
+	}
+
+	/**
+	 * Update the idealState DistributedFileCache to indicate that the
+	 * filename provided in the message is not stored there. Then, find
+	 * a suitable ChunkServer to store the missing replication or shard.
+	 * @param event
+	 */
+	private void missingFileHelper( Event event ) {
+		ChunkServerNoStoreFile message = ( ChunkServerNoStoreFile ) event;
+		// We need to remove the Chunk with those properties from the idealState,
+		// and find a new server that can store the file.
+
+		// Get address of ChunkServer that's missing the file
+		String[] split = message.address.split(":");
+		String host = split[0];
+		int port = Integer.valueOf( split[1] );
+
+		// Remove missing Chunk from idealState
+		int identifier = connectionCache.getChunkServerIdentifier( host, port );
+		int sequence = Integer.valueOf( message.filename.split("_chunk")[1] );
+		if ( identifier != -1 ) {
+			connectionCache.getIdealState().removeChunk( 
+				new Chunk( message.filename, sequence, 0, identifier, false ) );
+		}
+		// Just remove the file for now. Can try to repair the file system during 
+		// heartbeats for chunks that aren't replicated 3 times.
+	}
+
+	/**
+	 * Changes the reportedState DistributedFileCache to reflect the fact
+	 * that a file at the sender (a ChunkServer) is corrupt. Then, if possible,
+	 * sends a response with a list of ChunkServers where replicas (or shards)
+	 * for the same chunk are stored.
+	 * @param event
+	 */
+	private void corruptionHelper( Event event, TCPConnection connection ) {
+		ChunkServerReportsFileCorruption report = 
+			( ChunkServerReportsFileCorruption ) event;
+		
+		// Mark the specified chunk/shard as corrupt, so that we don't tell
+		// a Client to look there for a copy.
+		String filenameBase;
+		int sequence;
+		if ( FileDistributionService.checkChunkFilename( report.filename ) ) {
+			String[] split = report.filename.split("_chunk");
+			filenameBase = split[0];
+			sequence = Integer.parseInt( split[1] );
+			connectionCache.getReportedState().markChunkCorrupt( filenameBase, sequence, 
+				report.identifier ); // Mark the chunk corrupt
+		} else if ( FileDistributionService.checkShardFilename( report.filename ) ) {
+			String[] split = report.filename.split("_chunk");
+			filenameBase = split[0];
+			split = split[1].split("_shard");
+			sequence = Integer.parseInt( split[0] );
+			int fragment = Integer.parseInt( split[1] );
+			connectionCache.getReportedState().markShardCorrupt( filenameBase, sequence, 
+				fragment, report.identifier ); // Mark the shard corrupt
+		} else {
+			System.err.println( "corruptionHelper: '" + report.filename + "' is not"
+				+ " a valid name for either a chunk or a shard." );
+			return;
+		}
+
+		// Get list of ChunkServer host:port combos where chunk replacement
+		// or shards are available.
+		String info = connectionCache.getChunkStorageInfo( filenameBase, sequence );
+		if ( info == null ) {
+			System.err.println( "corruptionHelper: No servers could be found which" 
+				+ " could help recreate '" + report.filename + "' on ChunkServer"
+				+ report.identifier + "." );
+			return;
+		}
+
+		// Send the storage information back to the ChunkServer with the
+		// corrupt file.
+		String[] split = info.split("\\|",-1);
+		String[] replications = split[0].split(",");
+		String[] shards = split[1].split(",");
+		ControllerSendsStorageList response = 
+			new ControllerSendsStorageList( report.filename, replications, shards );
+		try {
+			connection.getSender().sendData( response.getBytes() );
+		} catch ( IOException ioe ) {
+			System.err.println( "Unable to provide ChunkServer with information about"
+				+ " how to replace its corrupt file. " );
+		}
+	}
+
+	/**
+	 * Update ChunkServerConnection to reflect the fact that it responded
+	 * to a poke from the Controller.
+	 * @param event 
+	 */
+	private void pokeHelper( Event event ) {
+		ChunkServerRespondsToHeartbeat response = 
+			( ChunkServerRespondsToHeartbeat ) event;
+		ChunkServerConnection connection = 
+			connectionCache.getConnection( response.identifier );
+		if ( connection == null ) {
+			System.err.println( "pokeHelper: there is no registered ChunkServer"
+				+ " with an identifier of " + response.identifier + "." );
+			return;
+		}
+		connection.incrementPokeReplies();
+	}
+
+	/**
 	 * Update ChunkServer's heartbeat information based on information
 	 * sent in heartbeat message.
 	 * @param event
 	 */
 	private void heartbeatHelper( Event event ) {
-		ChunkServerSendsHeartbeat beat = ( ChunkServerSendsHeartbeat ) event;
+		ChunkServerSendsHeartbeat heartbeat = ( ChunkServerSendsHeartbeat ) event;
 		// How should the updating of the heartbeat information actually
 		// happen? In the same way as before, or does a new function need
 		// to be written to update the heartbeat information all in one go?
 		// It should be done with one function call.
+		ChunkServerConnection connection = 
+			connectionCache.getConnection( heartbeat.identifier );
+		if ( connection == null ) {
+			System.err.println( "heartbeatHelper: there is no registered ChunkServer"
+				+ "with an identifier of " + heartbeat.identifier + "." );
+			return;
+		}
+		connection.getHeartbeatInfo().update( heartbeat.type, heartbeat.freeSpace, 
+			heartbeat.totalChunks, heartbeat.files );
 	}
 
 	/**

@@ -33,12 +33,10 @@ public class ChunkServerConnection extends Thread {
 	private DataOutputStream dout;	
 	
 	// Status information
-	private long freeSpace;
-	private int totalChunks;
-	private boolean activeStatus;
-	private int unhealthy;
 	private long startTime;
-	private HeartbeatInfo heartbeatInfo; // information about heartbeats
+	private int unhealthy;
+	private boolean activeStatus;
+	private HeartbeatInfo heartbeatInfo; // latest heartbeat info
 	private int pokes;
 	private int pokeReplies;
 
@@ -55,8 +53,7 @@ public class ChunkServerConnection extends Thread {
 		this.sendQueue = new LinkedBlockingQueue<byte[]>();
 		this.dout = new DataOutputStream(
 			new BufferedOutputStream(receiver.getDataOutputStream(), 8192));
-		this.freeSpace = -1;
-		this.totalChunks = -1;
+		
 		this.startTime = -1;
 		this.unhealthy = 0;
 		this.activeStatus = false;
@@ -73,8 +70,6 @@ public class ChunkServerConnection extends Thread {
 		this.connection = connection;
 		this.sendQueue = new LinkedBlockingQueue<byte[]>(); // useful for TCPSender?
 
-		this.freeSpace = -1;
-		this.totalChunks = -1;
 		this.startTime = System.currentTimeMillis();
 		this.unhealthy = 0;
 		this.activeStatus = false;
@@ -95,46 +90,12 @@ public class ChunkServerConnection extends Thread {
 		return (this.pokes-this.pokeReplies);
 	}
 
-	public synchronized String print() {
-		String remoteAddress = "Unknown";
-		int remotePort = -1;
-		try {
-			remoteAddress = this.getRemoteAddress();
-			remotePort = this.getRemotePort();
-		} catch(Exception e) {} 
-
-		String returnable = "";
-		String activeString = activeStatus ? "active" : "inactive";
-		returnable += "[ " + identifier + ", " + remoteAddress + ":" + remotePort 
-			+ ", " + freeSpace + ", " + activeString + ", health:" + unhealthy + " ]\n";
-		return returnable;
+	public HeartbeatInfo getHeartbeatInfo() {
+		return heartbeatInfo;
 	}
-
-	public void updateHeartbeatInfo(long time, int type, byte[] files) {
-		synchronized(heartbeatInfo) {
-			heartbeatInfo.update(time,type,files);
-		}
-	}
-
-	public synchronized void updateFreeSpaceAndChunks(long freeSpace, int totalChunks) {
-		this.freeSpace = freeSpace;
-		this.totalChunks = totalChunks;
-	}
-
-	/*
-	public synchronized void setStartTime(long time) {
-		this.startTime = time;
-	}
-	*/
 
 	public synchronized long getStartTime() {
 		return this.startTime;
-	}
-
-	public byte[] retrieveHeartbeatInfo() {
-		synchronized(heartbeatInfo) {
-			return heartbeatInfo.retrieve();
-		}
 	}
 
 	public int getIdentifier() {
@@ -182,14 +143,6 @@ public class ChunkServerConnection extends Thread {
 			unhealthy -= 1;
 	}
 
-	public synchronized void setFreeSpace(long space) {
-		freeSpace = space;
-	}
-
-	public synchronized long getFreeSpace() {
-		return freeSpace;
-	}
-
 	public synchronized boolean getActiveStatus() {
 		return activeStatus;
 	}
@@ -200,6 +153,24 @@ public class ChunkServerConnection extends Thread {
 
 	public void close() {
 		receiver.close();
+	}
+
+	public synchronized String print() {
+		String remoteAddress = "Unknown";
+		int remotePort = -1;
+		try {
+			remoteAddress = this.getRemoteAddress();
+			remotePort = this.getRemotePort();
+		} catch( Exception e ) {
+			// If we can't get the remote address and port,
+			// we'll just print "Unknown" and "-1".
+		} 
+
+		String activeString = activeStatus ? "active" : "inactive";
+		String returnable = "[ " + identifier + ", " + remoteAddress + ":" + remotePort 
+			+ ", " + heartbeatInfo.getFreeSpace() + ", " + activeString + ", health:"
+			+ unhealthy + " ]\n";
+		return returnable;
 	}
 
 	// use to send to this chunk server

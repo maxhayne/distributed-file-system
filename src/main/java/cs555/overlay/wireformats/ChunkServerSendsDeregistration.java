@@ -1,40 +1,44 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ChunkServerSendsDeregistration implements Event {
 
+	public byte type;
 	public int identifier;
 
 	public ChunkServerSendsDeregistration( int identifier ) {
+		this.type = Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION;
 		this.identifier = identifier;
 	}
 
-	public ChunkServerSendsDeregistration( byte[] msg ) {
-		ByteBuffer buffer = ByteBuffer.wrap( msg );
-		buffer.position(1);
-		this.identifier = (int) buffer.get();
+	public ChunkServerSendsDeregistration( byte[] marshalledBytes ) throws IOException {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		identifier = din.readInt();
+
+		din.close();
+		bin.close();
 	}
 
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream( new BufferedOutputStream( baOutputStream ) );
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
 
-		dout.writeByte(Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION);
-		dout.write( (byte) identifier );
-		dout.flush();
+		dout.write( type );
 
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
-		dout.close();
-		return marshalledBytes;
+		dout.writeInt( identifier );
+
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
 	}
 
 	public byte getType() throws IOException {
-		return Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION;
+		return type;
 	}
 }

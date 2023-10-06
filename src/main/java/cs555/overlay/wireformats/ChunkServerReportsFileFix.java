@@ -1,55 +1,55 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ChunkServerReportsFileFix implements Event {
 
+	public byte type;
 	public int identifier;
 	public String filename;
 
-	public ChunkServerReportsFileFix(int identifier, String filename) {
+	public ChunkServerReportsFileFix( int identifier, String filename ) {
+		this.type = Protocol.CHUNK_SERVER_REPORTS_FILE_FIX;
 		this.identifier = identifier;
 		this.filename = filename;
 	}
 
-	public ChunkServerReportsFileFix(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		this.identifier = buffer.getInt();
-		int length = buffer.getInt();
-		byte[] array = new byte[length];
-		buffer.get(array);
-		this.filename = new String(array);
-		buffer = null;
-		array = null;
+	public ChunkServerReportsFileFix( byte[] marshalledBytes ) {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		identifier = din.readInt();
+
+		int len = din.readInt();
+		byte[] array = new byte[len];
+		din.readFully( array );
+		filename = new String( array );
+
+		din.close();
+		bin.close();
 	}
 
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
 
-		dout.writeByte(Protocol.CHUNK_SERVER_REPORTS_FILE_FIX);
-		dout.writeInt(this.identifier);
-		byte[] array = this.filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
-		
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
+		dout.write( type );
 
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		array = null;
-		return marshalledBytes;
+		dout.writeInt( identifier );
+
+		byte[] array = filename.getBytes();
+		dout.writeInt( array.length );
+		dout.write( array );
+
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
 	}
 
 	public byte getType() throws IOException {
-		return Protocol.CHUNK_SERVER_REPORTS_FILE_FIX;
+		return type;
 	}
 }
