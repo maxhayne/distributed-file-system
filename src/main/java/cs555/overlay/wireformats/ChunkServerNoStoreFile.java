@@ -2,7 +2,7 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
-public class ChunkServerNoStoreFile {
+public class ChunkServerNoStoreFile implements Event {
 
 	public byte type;
 	public String address; // Controller performs lookup to find the identifier of server that failed to store the file
@@ -34,6 +34,7 @@ public class ChunkServerNoStoreFile {
 		bin.close();
 	}
 
+	@Override
 	public byte[] getBytes() throws IOException {
 		ByteArrayOutputStream bout = new ByteArrayOutputStream();
 		DataOutputStream dout = new DataOutputStream( bout );
@@ -54,6 +55,7 @@ public class ChunkServerNoStoreFile {
         return returnable;
  	}
 
+	@Override
  	public byte getType() throws IOException {
  		return type;
  	}

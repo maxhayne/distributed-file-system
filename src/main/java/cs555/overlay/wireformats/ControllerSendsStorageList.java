@@ -1,110 +1,114 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ControllerSendsStorageList implements Event {
 
+	public byte type;
 	public String filename;
-	public String[] replicationservers = null;
-	public String[] shardservers = null;
+	public String[] replicationServers;
+	public String[] shardServers;
 
-	public ControllerSendsStorageList(String filename, String[] replicationservers, String[] shardservers) {
+	public ControllerSendsStorageList(String filename, String[] replicationServers, 
+			String[] shardServers) {
+		this.type = Protocol.CONTROLLER_SENDS_STORAGE_LIST;
 		this.filename = filename;
-		if (replicationservers.length == 1 && replicationservers[0].equals(""))
-			replicationservers = null;
-		else 
-			this.replicationservers = replicationservers;
-		if (shardservers.length == 1 && shardservers[0].equals(""))
-			this.shardservers = null;
-		else
-			this.shardservers = shardservers;
+		if (replicationServers.length == 1 && replicationServers[0].equals("")) {
+			replicationServers = null;
+		} else {
+			this.replicationServers = replicationServers;
+		}
+		if (shardServers.length == 1 && shardServers[0].equals("")) {
+			this.shardServers = null;
+		} else {
+			this.shardServers = shardServers;
+		}
 	}
 
-	public ControllerSendsStorageList(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int length = buffer.getInt();
-		byte[] string = new byte[length];
-		buffer.get(string);
-		this.filename = new String(string);
-		int replicationcount = buffer.getInt();
-		if (replicationcount != 0) {
-			this.replicationservers = new String[replicationcount];
-			for (int i = 0; i < replicationcount; i++) {
-				length = buffer.getInt();
-				string = new byte[length];
-				buffer.get(string);
-				replicationservers[i] = new String(string);
+	public ControllerSendsStorageList( byte[] marshalledBytes ) {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		int len = din.readInt();
+		byte[] array = new byte[len];
+		din.readFully( array );
+		filename = new String( array );
+
+		int replicationCount = din.readInt();
+		if ( replicationCount != 0 ) {
+			replicationServers = new String[replicationCount];
+			for ( int i = 0; i < replicationCount; ++i ) {
+				len = din.readInt();
+				array = new byte[len];
+				din.readFully( array );
+				replicationServers[i] = new String( array );
 			}
 		}
-		int shardcount = buffer.getInt();
-		if (shardcount != 0) {
-			this.shardservers = new String[shardcount];
-			for (int i = 0; i < shardcount; i++) {
-				length = buffer.getInt();
-				string = new byte[length];
-				buffer.get(string);
-				shardservers[i] = new String(string);
+
+		int shardCount = din.readInt();
+		if ( shardCount != 0 ) {
+			shardServers = new String[shardCount];
+			for ( int i = 0; i < shardCount; ++i ) {
+				len = din.readInt();
+				array = new byte[len];
+				din.readFully( array );
+				shardServers[i] = new String( array );
 			}
 		}
-		string = null;
-		buffer = null;
+
+		din.close();
+		bin.close();
 	}
 
+	@Override
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
 
-		// Write type and filename
-		dout.writeByte(Protocol.CONTROLLER_SENDS_STORAGE_LIST);
-		byte[] array = this.filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
+		dout.write( type );
+
+		byte[] array = filename.getBytes();
+		dout.writeInt( array.length );
+		dout.write( array );
 
 		// Write list of replication server address:port
-		int replicationserverlength = 0;
-		if (replicationservers == null)
-			dout.writeInt(0);
+		int replicationServerLength = 0;
+		if ( replicationServers == null )
+			dout.writeInt( 0 );
 		else {
-			replicationserverlength = replicationservers.length;
-			dout.writeInt(replicationservers.length);
+			replicationServerLength = replicationServers.length;
+			dout.writeInt(replicationServers.length);
 		}
-
-		for (int i = 0; i < replicationserverlength; i++) {
-			array = replicationservers[i].getBytes();
-			dout.writeInt(array.length);
-			dout.write(array);
+		for ( int i = 0; i < replicationServerLength; ++i ) {
+			array = replicationServers[i].getBytes();
+			dout.writeInt( array.length );
+			dout.write( array );
 		}
 
 		// Write list of shard server address:port
-		int shardserverlength = 0;
-		if (shardservers == null)
+		int shardServerLength = 0;
+		if ( shardServers == null )
 			dout.writeInt(0);
 		else {
-			shardserverlength = shardservers.length;
-			dout.writeInt(shardservers.length);
+			shardServerLength = shardServers.length;
+			dout.writeInt( shardServers.length );
+		}
+		for ( int i = 0; i < shardServerLength; ++i ) {
+			array = shardServers[i].getBytes();
+			dout.writeInt( array.length );
+			dout.write( array );
 		}
 
-		for (int i = 0; i < shardserverlength; i++) {
-			array = shardservers[i].getBytes();
-			dout.writeInt(array.length);
-			dout.write(array);
-		}
-
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		return marshalledBytes;
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
 	}
 
+	@Override
 	public byte getType() throws IOException {
-		return Protocol.CONTROLLER_SENDS_STORAGE_LIST;
+		return type;
 	}
 }

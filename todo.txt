@@ -86,3 +86,9 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - Need to create a ChunkInformation class just for storing metadata about a particular chunk/shard. Name, sequence, version, timestamp, etc. Then, that data structure can be used to replace the delimited strings that are being passed around in the ChunkServerHeartbeatService and the HeartbeatMonitor.
 
 - More to add to deal with CHUNK_SERVER_NO_STORE_FILE case at the Controller. Need to find a new home for the missing Chunk, or is that dealt with elsewhere?
+
+- Should there even be a Shard class? Since the shard is basically just a particular replication of a chunk under the erasure coding storageType?
+
+- Need to go through wireformats and delete message types that are now just using the GeneralMessage for the same purpose. This will create errors, which will lead to locations where the GeneralMessage can be instantiated instead of the other, deleted message types.
+
+- Have thought about this before, but should the Controller just send the Client the list of ChunkServers from the idealState or the reportedState. The problem with the reportedState is that it isn't available right away, there is a delay until the reportedState starts being populated by heartbeats. But, it does represent the actual state of the DFS assuming heartbeats are accurate. What is the best option here?

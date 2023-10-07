@@ -38,6 +38,9 @@ public class EventFactory {
 			case Protocol.CONTROLLER_SENDS_HEARTBEAT:
 			case Protocol.CLIENT_REQUESTS_FILE_LIST:
 			case Protocol.CONTROLLER_APPROVES_FILE_DELETE:
+			case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
+			case Protocol.CLIENT_REQUESTS_FILE_SIZE:
+			case Protocol.CLIENT_REQUESTS_FILE_DELETE:
 				return new GeneralMessage( marshalledBytes );
 			
 			case Protocol.CHUNK_SERVER_SENDS_REGISTRATION:
@@ -60,9 +63,6 @@ public class EventFactory {
 
 			case Protocol.CONTROLLER_SENDS_CLIENT_VALID_SHARD_SERVERS:
 				return new ControllerSendsClientValidShardServers( marshalledBytes );
-
-			case Protocol.CLIENT_REQUESTS_FILE_DELETE:
-				return new ClientRequestsFileDelete( marshalledBytes );
 
 			case Protocol.CONTROLLER_REQUESTS_FILE_DELETE:
 				return new ControllerRequestsFileDelete( marshalledBytes );

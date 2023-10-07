@@ -84,7 +84,7 @@ public class DistributedFileCache {
 	public synchronized String getChunkStorageInfo(String filename, int sequence) {
 		DistributedFile file = fileCache.get( filename );
 		if ( file == null ) {
-			return null;
+			return "|";
 		}
 		String info = "";
 		if (file.chunks.get(sequence) != null && file.chunks.get(sequence).size() != 0) {

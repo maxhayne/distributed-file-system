@@ -1,53 +1,57 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ControllerReportsFileSize implements Event {
 
+	public byte type;
 	public String filename;
-	public int totalchunks;
+	public int totalChunks;
 
-	public ControllerReportsFileSize(String filename, int totalchunks) {
+	public ControllerReportsFileSize( String filename, int totalChunks ) {
+		this.type = Protocol.CONTROLLER_REPORTS_FILE_SIZE;
 		this.filename = filename;
-		this.totalchunks = totalchunks;
+		this.totalChunks = totalChunks;
 	}
 
-	public ControllerReportsFileSize(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int fileLength = buffer.getInt();
-		byte[] filearray = new byte[fileLength];
-		buffer.get(filearray);
-		this.filename = new String(filearray);
-		this.totalchunks = buffer.getInt();
+	public ControllerReportsFileSize( byte[] marshalledBytes ) {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		int len = din.readInt();
+		byte[] array = new byte[len];
+		din.readFully( array );
+		filename = new String( array );
+
+		totalChunks = din.readInt();
+
+		din.close();
+		bin.close();
 	}
 
+	@Override
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
 
-		dout.writeByte(Protocol.CONTROLLER_REPORTS_FILE_SIZE);
+		dout.write( type );
+
 		byte[] array = filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
-		dout.writeInt(totalchunks);
+		dout.writeInt( array.length );
+		dout.write( array );
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
+		dout.writeInt( totalChunks );
 
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		array = null;
-		return marshalledBytes;
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
 	}
 
+	@Override
 	public byte getType() throws IOException {
-		return Protocol.CONTROLLER_REPORTS_FILE_SIZE;
+		return type;
 	}
 }

@@ -24,6 +24,7 @@ public class ChunkServerRespondsToHeartbeat implements Event {
 		bin.close();
 	}
 
+	@Override
 	public byte[] getBytes() throws IOException {
 		ByteArrayOutputStream bout = new ByteArrayOutputStream();
 		DataOutputStream dout = new DataOutputStream( bout );
@@ -38,6 +39,7 @@ public class ChunkServerRespondsToHeartbeat implements Event {
         return returnable;
 	}
 
+	@Override
 	public byte getType() throws IOException {
 		return type;
 	}

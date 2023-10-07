@@ -367,9 +367,9 @@ public class Client implements Node {
 			boolean finished = false;
 			int lastChunk = 0;
 			//System.out.println("total chunks: " + reportedSize.totalchunks);
-			int tenth = reportedSize.totalchunks/10, prints = 0; // For updating a download progress bar
+			int tenth = reportedSize.totalChunks/10, prints = 0; // For updating a download progress bar
 			// Loop here for every chunk that needs retrieving
-			for (int i = 0; i < reportedSize.totalchunks; i++) {
+			for (int i = 0; i < reportedSize.totalChunks; i++) {
 				// For printing a progress bar for the download
 				if ( prints == 0 ) {
 					System.out.print( "Downloading: 0%.." );
@@ -392,9 +392,9 @@ public class Client implements Node {
 				// Check which schema we are using...
 				byte[] download = null;
 				if (storageType == 0) {
-					download = getChunkFromReplicationServers(chunkName,storageList.replicationservers,connections);
+					download = getChunkFromReplicationServers(chunkName,storageList.replicationServers,connections);
 				} else {
-					byte[][] shards = getShardsFromServers(chunkName,storageList.shardservers,connections);
+					byte[][] shards = getShardsFromServers(chunkName,storageList.shardServers,connections);
 					if (shards != null) {
 						download = FileDistributionService.getChunkFromShards(shards);
 						download = FileDistributionService.removeHashesFromChunk(download);
@@ -408,7 +408,7 @@ public class Client implements Node {
 					// We have the data, now need to write the data to a file.
 					FileDistributionService.appendFile(location+basename,download);
 					lastChunk++;
-					if (i == reportedSize.totalchunks-1) {
+					if (i == reportedSize.totalChunks-1) {
 						finished = true;
 						System.out.print("100%\n");
 					}

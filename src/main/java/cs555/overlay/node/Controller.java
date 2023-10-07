@@ -109,11 +109,119 @@ public class Controller implements Node {
 			case Protocol.CHUNK_SERVER_REPORTS_FILE_FIX:
 				markFileFixed( event );
 				break;
+			
+			case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
+				clientRead( event, connection );
+				break;
+			
+			case Protocol.CLIENT_REQUESTS_FILE_SIZE:
+				fileSizeRequest( event, connection );
+				break;
+			
+			case Protocol.CLIENT_REQUESTS_FILE_LIST:
+				fileListRequest( event, connection );
+				break;
 
 			default:
 				System.err.println( "Event couldn't be processed. "
 					+ event.getType() );
 				break;
+		}
+	}
+
+	/**
+	 * Respond to a request for the list of files stored on the DFS.
+	 * @param event
+	 * @param connection
+	 */
+	private void fileListRequest( Event event, TCPConnection connection ) {
+		String filename = ( ( GeneralMessage ) event ).getMessage();
+
+		ControllerSendsFileList response = 
+			new ControllerSendsFileList( 
+				connectionCache.getIdealState().getFileList() );
+		
+		try {
+			connection.getSender().sendData( response.getBytes() );
+		} catch ( IOException ioe ) {
+			System.err.println( "fileListRequest: Unable to send resposne"
+				+ " to Client containing list of files." );
+		}
+	} 
+
+	/**
+	 * Respond to a request for the file size of a particular file
+	 * stored on the DFS (how many chunks it contains).
+	 * @param event
+	 * @param connection
+	 */
+	private void fileSizeRequest( Event event, TCPConnection connection ) {
+		String filename = ( ( GeneralMessage ) event ).getMessage();
+		ControllerReportsFileSize response = 
+			new ControllerReportsFileSize( filename, 
+				connectionCache.getIdealState().getFileSize( filename ) );
+		
+		try {
+			connection.getSender().sendData( response.getBytes() );
+		} catch ( IOException ioe ) {
+			System.err.println( "fileSizeRequest: Unable to send response"
+				+ " to Client with size of '" + filename + "'." );
+		}
+	}
+
+	/**
+	 * Gather information about where a particular file is stored on the DFS,
+	 * whether that is a chunk, or an entire file, and send those storage
+	 * details back to the Client.
+	 * @param event
+	 * @param connection
+	 */
+	private void clientRead( Event event, TCPConnection connection ) {
+		GeneralMessage request = ( GeneralMessage ) event;
+		
+		String baseFilename;
+		int sequence;
+		// Check if the filename refers to a chunk, shard, or neither
+		if ( FileDistributionService.checkChunkFilename( 
+				request.getMessage() ) ) { // chunk
+			String[] split = request.getMessage().split("_chunk");
+			baseFilename = split[0];
+			sequence = Integer.parseInt( split[1] );
+		} else if ( FileDistributionService.checkShardFilename(
+				request.getMessage() ) ) { // shard
+			String[] split = request.getMessage().split("_chunk");
+			baseFilename = split[0];
+			split = split[1].split("_shard");
+			sequence = Integer.parseInt( split[0] );
+		} else {
+			// Add in functionality for returning the storage information
+			// about an entire file here...
+			// For now, print an error message
+			System.err.println( "clientRead: '" + request.getMessage()
+				+ "' does not refer to a chunk or a shard." );
+			return;
+		}
+
+		// Get storage information
+		String storageInfo = connectionCache.getChunkStorageInfo( baseFilename, sequence );
+		if ( storageInfo.equals("|") ) {
+			System.err.println( "clientRead: '" + request.getMessage()
+				+ "' is stored on no ChunkServer." );
+			return; // There are no ChunkServers storing either chunks or shards
+		}
+
+		// Create response message
+		String[] split = storageInfo.split("\\|", -1);
+		String[] replications = split[0].split(",");
+		String[] shards = split[1].split(",");
+		ControllerSendsStorageList response = new ControllerSendsStorageList( baseFilename, 
+			replications, shards );
+
+		try {
+			connection.getSender().sendData( response.getBytes() );
+		} catch ( IOException ioe ) {
+			System.err.println( "clientRead: Unable to send response to Client"
+				+ " containing storage information about " + request.getMessage() + "." );
 		}
 	}
 
@@ -129,21 +237,21 @@ public class Controller implements Node {
 
 		// Mark the specified chunk/shard as healthy, so we can use this
 		// ChunkServer as a source for future file requests.
-		String filenameBase;
+		String baseFilename;
 		int sequence;
-		if ( FileDistributionService.checkChunkFilename( report.filename ) ) { // Chunk
+		if ( FileDistributionService.checkChunkFilename( report.filename ) ) { // chunk
 			String[] split = report.filename.split("_chunk");
-			filenameBase = split[0];
+			baseFilename = split[0];
 			sequence = Integer.parseInt( split[1] );
-			connectionCache.getReportedState().markChunkHealthy( filenameBase, sequence, 
+			connectionCache.getReportedState().markChunkHealthy( baseFilename, sequence, 
 				report.identifier ); // Mark healthy
-		} else if ( FileDistributionService.checkShardFilename( report.filename ) ) { // Shard
+		} else if ( FileDistributionService.checkShardFilename( report.filename ) ) { // shard
 			String[] split = report.filename.split("_chunk");
-			filenameBase  = split[0];
+			baseFilename  = split[0];
 			split = split[1].split("_shard");
 			sequence = Integer.parseInt( split[0] );
 			int fragment = Integer.parseInt( split[1] );
-			connectionCache.getReportedState().markShardHealthy( filenameBase, sequence, 
+			connectionCache.getReportedState().markShardHealthy( baseFilename, sequence, 
 				fragment, report.identifier ); // Mark healthy
 		} else {
 			System.err.println( "markFileFixed: '" + report.filename + "' is not"
@@ -192,21 +300,21 @@ public class Controller implements Node {
 		
 		// Mark the specified chunk/shard as corrupt, so that we don't tell
 		// a Client to look there for a copy.
-		String filenameBase;
+		String baseFilename;
 		int sequence;
 		if ( FileDistributionService.checkChunkFilename( report.filename ) ) {
 			String[] split = report.filename.split("_chunk");
-			filenameBase = split[0];
+			baseFilename = split[0];
 			sequence = Integer.parseInt( split[1] );
-			connectionCache.getReportedState().markChunkCorrupt( filenameBase, sequence, 
+			connectionCache.getReportedState().markChunkCorrupt( baseFilename, sequence, 
 				report.identifier ); // Mark the chunk corrupt
 		} else if ( FileDistributionService.checkShardFilename( report.filename ) ) {
 			String[] split = report.filename.split("_chunk");
-			filenameBase = split[0];
+			baseFilename = split[0];
 			split = split[1].split("_shard");
 			sequence = Integer.parseInt( split[0] );
 			int fragment = Integer.parseInt( split[1] );
-			connectionCache.getReportedState().markShardCorrupt( filenameBase, sequence, 
+			connectionCache.getReportedState().markShardCorrupt( baseFilename, sequence, 
 				fragment, report.identifier ); // Mark the shard corrupt
 		} else {
 			System.err.println( "corruptionHelper: '" + report.filename + "' is not"
@@ -216,7 +324,7 @@ public class Controller implements Node {
 
 		// Get list of ChunkServer host:port combos where chunk replacement
 		// or shards are available.
-		String info = connectionCache.getChunkStorageInfo( filenameBase, sequence );
+		String info = connectionCache.getChunkStorageInfo( baseFilename, sequence );
 		if ( info == null ) {
 			System.err.println( "corruptionHelper: No servers could be found which" 
 				+ " could help recreate '" + report.filename + "' on ChunkServer"
@@ -234,8 +342,8 @@ public class Controller implements Node {
 		try {
 			connection.getSender().sendData( response.getBytes() );
 		} catch ( IOException ioe ) {
-			System.err.println( "Unable to provide ChunkServer with information about"
-				+ " how to replace its corrupt file. " );
+			System.err.println( "corruptionHelper: Unable to provide ChunkServer with"
+				+ "information about how to replace its corrupt file." );
 		}
 	}
 
@@ -288,7 +396,7 @@ public class Controller implements Node {
 		GeneralMessage request = ( GeneralMessage ) event;
 
 		// Remove file from DistributedFileCache
-		connectionCache.removeFileFromIdealState( request.getMessage() );
+		connectionCache.getIdealState().removeFile( request.getMessage() );
 
 		// Send delete request to all registered ChunkServers
 		GeneralMessage deleteRequest = 

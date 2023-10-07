@@ -1,49 +1,49 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ClientRequestsFileStorageInfo implements Event {
 
+	public byte type;
 	public String filename;
 
-	public ClientRequestsFileStorageInfo(String filename) {
+	public ClientRequestsFileStorageInfo( String filename ) {
+		this.type = Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO;
 		this.filename = filename;
 	}
 
-	public ClientRequestsFileStorageInfo(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int fileLength = buffer.getInt();
-		byte[] filearray = new byte[fileLength];
-		buffer.get(filearray);
-		this.filename = new String(filearray);
+	public ClientRequestsFileStorageInfo( byte[] marshalledBytes ) {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		int len = din.readInt();
+		byte[] array = new byte[len];
+		din.readFully( array );
+		filename = new String( array );
+
+		din.close();
+		bin.close();
 	}
 
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
 
-		dout.writeByte(Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO);
+		dout.write( type );
+
 		byte[] array = filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
+		dout.writeInt( array.length );
+		dout.write( array );
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		array = null;
-		return marshalledBytes;
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
 	}
 
 	public byte getType() throws IOException {
-		return Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO;
+		return type;
 	}
 }

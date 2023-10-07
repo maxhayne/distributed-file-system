@@ -91,14 +91,6 @@ public class ChunkServerConnectionCache {
 		return idealState.getFileSize( filename );
 	}
 
-	public void removeFileFromIdealState( String filename ) {
-		idealState.removeFile( filename );
-	}
-
-	public void removeChunkFromIdealState( Chunk chunk ) {
-		idealState.removeChunk( chunk );
-	}
-
 	public String getAllServerAddresses() {
 		String addresses = "";
 		synchronized( chunkCache ) {
@@ -155,7 +147,7 @@ public class ChunkServerConnectionCache {
 				}
 			}
 			if (added) {
-				returnable = returnable.substring( 0, returnable.length()-1) ;
+				returnable = returnable.substring( 0, returnable.length()-1 ) ;
 			}
 		}
 		returnable += "|";

@@ -31,6 +31,7 @@ public class ChunkServerReportsFileFix implements Event {
 		bin.close();
 	}
 
+	@Override
 	public byte[] getBytes() throws IOException {
 		ByteArrayOutputStream bout = new ByteArrayOutputStream();
 		DataOutputStream dout = new DataOutputStream( bout );
@@ -49,6 +50,7 @@ public class ChunkServerReportsFileFix implements Event {
         return returnable;
 	}
 
+	@Override
 	public byte getType() throws IOException {
 		return type;
 	}

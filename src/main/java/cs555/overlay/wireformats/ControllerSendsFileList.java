@@ -1,61 +1,64 @@
 package cs555.overlay.wireformats;
 
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.io.*;
 
 public class ControllerSendsFileList implements Event {
 
+	public byte type;
 	public String[] list;
 
-	public ControllerSendsFileList(String[] list) {
+	public ControllerSendsFileList( String[] list ) {
+		this.type = Protocol.CONTROLLER_SENDS_FILE_LIST;
 		this.list = list;
 	}
 
-	public ControllerSendsFileList(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int listLength = buffer.getInt();
-		if (listLength == 0) {
-			this.list = null;
-		} else {
-			this.list = new String[listLength];
-			for (int i = 0; i < listLength; i++) {
-				int arrayLength = buffer.getInt();
-				byte[] fileArray = new byte[arrayLength];
-				buffer.get(fileArray);
-				this.list[i] = new String(fileArray);
+	public ControllerSendsFileList( byte[] marshalledBytes ) {
+		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
+
+		type = din.readByte();
+
+		int listLength = din.readInt();
+		if ( listLength != 0 ) {
+			list = new String[listLength];
+			for ( int i = 0; i < listLength; ++i ) {
+				int len = din.readInt();
+				byte[] array = new byte[len];
+				din.readFully( array );
+				list[i] = new String( array );
 			}
 		}
+
+		din.close();
+		bin.close();
 	}
 
+	@Override
 	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
-		dout.writeByte(Protocol.CONTROLLER_SENDS_FILE_LIST);
-		if (list == null) {
-			dout.writeInt(0);
+		ByteArrayOutputStream bout = new ByteArrayOutputStream();
+		DataOutputStream dout = new DataOutputStream( bout );
+
+		dout.write( type );
+
+		if ( list == null ) {
+			dout.writeInt( 0 );
 		} else {
-			dout.writeInt(list.length);
-			for (int i = 0; i < list.length; i++) {
-				byte[] fileArray = list[i].getBytes();
-				dout.writeInt(fileArray.length);
-				dout.write(fileArray);
+			dout.writeInt( list.length );
+			for ( int i = 0; i < list.length; ++i ) {
+				byte[] array = list[i].getBytes();
+				dout.writeInt( array.length );
+				dout.write( array );
 			}
 		}
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		return marshalledBytes;
+
+		byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
 	}
 
+	@Override
 	public byte getType() throws IOException {
-		return Protocol.CONTROLLER_SENDS_FILE_LIST;
+		return type;
 	}
 }

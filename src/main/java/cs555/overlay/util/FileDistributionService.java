@@ -550,7 +550,7 @@ public class FileDistributionService extends Thread {
 					ControllerSendsStorageList list = new ControllerSendsStorageList(reply);
 					// Decide if we're a shard or a chunk
 					if (checkShardFilename(msg.filename)) { // We are a Shard
-						String[] servers = list.shardservers;
+						String[] servers = list.shardServers;
 						if (servers == null) continue;
 						// Get all shards you can, and try to reconstruct the shard you need from it.
 						byte[][] shards = new byte[Constants.TOTAL_SHARDS][];
@@ -577,8 +577,8 @@ public class FileDistributionService extends Thread {
 						Vector<Integer> slicesToRepair = new Vector<Integer>();
 						for (int i = 0; i < msg.slices.length; i++)
 							slicesToRepair.add(msg.slices[i]);
-						if (list.replicationservers == null) continue;
-						for (String replicationserver : list.replicationservers) {
+						if (list.replicationServers == null) continue;
+						for ( String replicationserver : list.replicationServers ) {
 							if (replicationserver.equals("-1") || replicationserver.split(":").length != 2) continue;
 							if (replicationserver.equals(getServerAddress())) continue; // Don't send request to self.
 							TCPSender slicesender = Client.getTCPSender(tcpConnections,replicationserver);

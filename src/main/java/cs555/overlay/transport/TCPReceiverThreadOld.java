@@ -621,6 +621,7 @@ public class TCPReceiverThread extends Thread {
 					// This case and the next case should be combined into one, because we know that
 					// the client is trying to retrieve the file. This means rethinking how the message is structured
 					// for efficiency in the response.
+					// IMPLEMENTED IN CONTROLLER
 					case Protocol.CLIENT_REQUESTS_FILE_SIZE: {
 						if (!controller || connectionCache == null) break;
 						ClientRequestsFileSize msg = new ClientRequestsFileSize(data);
@@ -629,6 +630,13 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// Okay, I plan to remove Protocol.CLIENT_REQUESTS_FILE_SIZE from the case list, and instead
+					// only use this case. The file size message was only necessary when the Client wanted to
+					// retrieve a file chunk by chunk, but a more efficient way to do this is to give the Client
+					// all storage information about a file, and remove the back and forth with the Controller.
+					// If the Client has a problem with retrieving one of the chunks, it can contact the Controller
+					// for an update about where it should look for that particular chunk.
+					// IMPLEMENTED IN CONTROLLER
 					case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO: {
 						if (!controller || connectionCache == null) break;
 						ClientRequestsFileStorageInfo msg = new ClientRequestsFileStorageInfo(data);
@@ -661,6 +669,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CONTROLLER
 					case Protocol.CLIENT_REQUESTS_FILE_LIST: {
 						if (!controller || connectionCache == null) break;
 						String[] list = connectionCache.getFileList();
