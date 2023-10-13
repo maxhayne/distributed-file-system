@@ -17,5 +17,5 @@ public class Constants {
 	public static final byte SHARD_TYPE = 1;
 
 	// Number of milliseconds between each Heartbeat
-	public static final int HEARTRATE = 15000;
+	public static final int HEARTRATE = 15 * 1000;
 }

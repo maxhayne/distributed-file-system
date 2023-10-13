@@ -24,7 +24,7 @@ public class ControllerApprovesFileDelete implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CONTROLLER_APPROVES_FILE_DELETE;
 	}
 }

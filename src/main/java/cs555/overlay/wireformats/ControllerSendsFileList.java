@@ -12,7 +12,7 @@ public class ControllerSendsFileList implements Event {
 		this.list = list;
 	}
 
-	public ControllerSendsFileList( byte[] marshalledBytes ) {
+	public ControllerSendsFileList( byte[] marshalledBytes ) throws IOException {
 		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
         DataInputStream din = new DataInputStream( bin );
 
@@ -58,7 +58,7 @@ public class ControllerSendsFileList implements Event {
 	}
 
 	@Override
-	public byte getType() throws IOException {
+	public byte getType() {
 		return type;
 	}
 }

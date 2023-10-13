@@ -15,7 +15,7 @@ public class ChunkServerServesFile implements Event {
 		this.filedata = filedata;
 	}
 
-	public ChunkServerServesFile(byte[] msg) {
+	public ChunkServerServesFile(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int filelength = buffer.getInt();
@@ -49,7 +49,7 @@ public class ChunkServerServesFile implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CHUNK_SERVER_SERVES_FILE;
 	}
 }

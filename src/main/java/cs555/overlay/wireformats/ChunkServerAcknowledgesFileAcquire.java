@@ -13,7 +13,7 @@ public class ChunkServerAcknowledgesFileAcquire implements Event {
 		this.filename = filename;
 	}
 
-	public ChunkServerAcknowledgesFileAcquire(byte[] msg) {
+	public ChunkServerAcknowledgesFileAcquire(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int fileLength = buffer.getInt();
@@ -39,7 +39,7 @@ public class ChunkServerAcknowledgesFileAcquire implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE;
 	}
 }

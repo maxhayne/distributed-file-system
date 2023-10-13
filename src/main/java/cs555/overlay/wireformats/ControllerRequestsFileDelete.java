@@ -14,7 +14,7 @@ public class ControllerRequestsFileDelete implements Event {
 		this.filename = filename;
 	}
 
-	public ControllerRequestsFileDelete(byte[] msg) {
+	public ControllerRequestsFileDelete(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int length = buffer.getInt();
@@ -40,7 +40,7 @@ public class ControllerRequestsFileDelete implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CONTROLLER_REQUESTS_FILE_DELETE;
 	}
 }

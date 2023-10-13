@@ -13,7 +13,7 @@ public class RequestsShard implements Event {
 		this.filename = filename;
 	}
 
-	public RequestsShard(byte[] msg) {
+	public RequestsShard(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int length = buffer.getInt();
@@ -39,7 +39,7 @@ public class RequestsShard implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.REQUESTS_SHARD;
 	}
 }

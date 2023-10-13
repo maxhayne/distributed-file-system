@@ -15,7 +15,7 @@ public class ClientRequestsFileDelete implements Event {
 		this.filename = filename;
 	}
 
-	public ClientRequestsFileDelete( byte[] msg ) {
+	public ClientRequestsFileDelete( byte[] msg ) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 
@@ -45,7 +45,7 @@ public class ClientRequestsFileDelete implements Event {
 	}
 
 	@Override
-	public byte getType() throws IOException {
+	public byte getType() {
 		return type;
 	}
 }

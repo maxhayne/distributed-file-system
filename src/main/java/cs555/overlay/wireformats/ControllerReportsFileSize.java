@@ -14,7 +14,7 @@ public class ControllerReportsFileSize implements Event {
 		this.totalChunks = totalChunks;
 	}
 
-	public ControllerReportsFileSize( byte[] marshalledBytes ) {
+	public ControllerReportsFileSize( byte[] marshalledBytes ) throws IOException {
 		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
         DataInputStream din = new DataInputStream( bin );
 
@@ -51,7 +51,7 @@ public class ControllerReportsFileSize implements Event {
 	}
 
 	@Override
-	public byte getType() throws IOException {
+	public byte getType() {
 		return type;
 	}
 }

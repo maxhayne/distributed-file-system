@@ -40,7 +40,7 @@ public class ChunkServerSendsDeregistration implements Event {
 	}
 
 	@Override
-	public byte getType() throws IOException {
+	public byte getType() {
 		return type;
 	}
 }

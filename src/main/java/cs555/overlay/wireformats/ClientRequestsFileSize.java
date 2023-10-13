@@ -13,7 +13,7 @@ public class ClientRequestsFileSize implements Event {
 		this.filename = filename;
 	}
 
-	public ClientRequestsFileSize(byte[] msg) {
+	public ClientRequestsFileSize(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int fileLength = buffer.getInt();
@@ -43,7 +43,7 @@ public class ClientRequestsFileSize implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CLIENT_REQUESTS_FILE_SIZE;
 	}
 }

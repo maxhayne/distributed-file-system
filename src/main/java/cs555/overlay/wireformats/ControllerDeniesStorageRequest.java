@@ -24,7 +24,7 @@ public class ControllerDeniesStorageRequest implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CONTROLLER_DENIES_STORAGE_REQUEST;
 	}
 }

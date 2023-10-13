@@ -29,7 +29,7 @@ public class ClientRequestsFileList implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CLIENT_REQUESTS_FILE_LIST;
 	}
 }

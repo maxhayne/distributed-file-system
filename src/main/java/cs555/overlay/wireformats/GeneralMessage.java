@@ -74,7 +74,7 @@ public class GeneralMessage implements Event {
 
         dout.write( type );
 
-        if ( message.length() != 0 ) {
+        if ( !message.isEmpty() ) {
             byte[] messageBytes = message.getBytes();
             dout.writeShort( messageBytes.length );
             dout.write( messageBytes );

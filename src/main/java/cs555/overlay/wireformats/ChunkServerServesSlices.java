@@ -17,7 +17,7 @@ public class ChunkServerServesSlices implements Event {
 		this.slicedata = slicedata;
 	}
 
-	public ChunkServerServesSlices(byte[] msg) {
+	public ChunkServerServesSlices(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int fileLength = buffer.getInt();
@@ -59,7 +59,7 @@ public class ChunkServerServesSlices implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CHUNK_SERVER_SERVES_SLICES;
 	}
 }

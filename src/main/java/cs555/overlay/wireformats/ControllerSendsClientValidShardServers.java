@@ -11,13 +11,13 @@ public class ControllerSendsClientValidShardServers implements Event {
 	public int sequence;
 	public String[] servers; // Will be in format 'IP:PORT'
 
-	public ControllerSendsClientValidShardServers(String filename, int sequence, String[] servers) {
+	public ControllerSendsClientValidShardServers( String filename, int sequence, String[] servers ) {
 		this.filename = filename;
 		this.sequence = sequence;
 		this.servers = servers;
 	}
 
-	public ControllerSendsClientValidShardServers(byte[] msg) {
+	public ControllerSendsClientValidShardServers(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int length = buffer.getInt();
@@ -61,7 +61,7 @@ public class ControllerSendsClientValidShardServers implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CONTROLLER_SENDS_CLIENT_VALID_SHARD_SERVERS;
 	} 
 }

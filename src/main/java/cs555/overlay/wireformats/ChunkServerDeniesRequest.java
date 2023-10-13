@@ -13,7 +13,7 @@ public class ChunkServerDeniesRequest implements Event {
 		this.filename = filename;
 	}
 
-	public ChunkServerDeniesRequest(byte[] msg) {
+	public ChunkServerDeniesRequest(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int length = buffer.getInt();
@@ -39,7 +39,7 @@ public class ChunkServerDeniesRequest implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CHUNK_SERVER_DENIES_REQUEST;
 	}
 }

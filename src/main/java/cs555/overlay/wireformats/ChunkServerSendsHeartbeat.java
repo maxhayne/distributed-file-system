@@ -27,7 +27,7 @@ public class ChunkServerSendsHeartbeat implements Event {
 		this.files = files;
 	}
 
-	public ChunkServerSendsHeartbeat( byte[] marshalledBytes ) {
+	public ChunkServerSendsHeartbeat( byte[] marshalledBytes ) throws IOException {
 		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
         DataInputStream din = new DataInputStream( bin );
 
@@ -57,9 +57,6 @@ public class ChunkServerSendsHeartbeat implements Event {
 	}
 
 	@Override
-	public byte getType() { return type; }
-
-	@Override
 	public byte[] getBytes() throws IOException {
 		ByteArrayOutputStream bout = new ByteArrayOutputStream();
 		DataOutputStream dout = new DataOutputStream( ( bout ) );
@@ -86,5 +83,10 @@ public class ChunkServerSendsHeartbeat implements Event {
 		dout.close();
 		bout.close();
 		return marshalledBytes;
+	}
+
+	@Override
+	public byte getType() {
+		return type;
 	}
 }

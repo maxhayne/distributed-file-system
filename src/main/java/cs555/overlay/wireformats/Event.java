@@ -16,10 +16,9 @@ public interface Event {
 	/**
 	 * Returns the byte-sized type of the message.
 	 * 
-	 * @return message type 
-	 * @throws IOException
+	 * @return message type
 	 */
-	byte getType() throws IOException;
+	byte getType();
 
 	/**
 	 * Marshalls the data stored in class variables

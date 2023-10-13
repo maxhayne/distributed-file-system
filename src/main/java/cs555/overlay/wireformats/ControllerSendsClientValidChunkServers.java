@@ -17,7 +17,7 @@ public class ControllerSendsClientValidChunkServers implements Event {
 		this.servers = servers;
 	}
 
-	public ControllerSendsClientValidChunkServers(byte[] msg) {
+	public ControllerSendsClientValidChunkServers(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int length = buffer.getInt();
@@ -61,7 +61,7 @@ public class ControllerSendsClientValidChunkServers implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CONTROLLER_SENDS_CLIENT_VALID_CHUNK_SERVERS;
 	} 
 }

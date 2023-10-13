@@ -13,19 +13,19 @@ public class ControllerSendsStorageList implements Event {
 			String[] shardServers) {
 		this.type = Protocol.CONTROLLER_SENDS_STORAGE_LIST;
 		this.filename = filename;
-		if (replicationServers.length == 1 && replicationServers[0].equals("")) {
+		if (replicationServers.length == 1 && replicationServers[0].isEmpty() ) {
 			replicationServers = null;
 		} else {
 			this.replicationServers = replicationServers;
 		}
-		if (shardServers.length == 1 && shardServers[0].equals("")) {
+		if (shardServers.length == 1 && shardServers[0].isEmpty() ) {
 			this.shardServers = null;
 		} else {
 			this.shardServers = shardServers;
 		}
 	}
 
-	public ControllerSendsStorageList( byte[] marshalledBytes ) {
+	public ControllerSendsStorageList( byte[] marshalledBytes ) throws IOException {
 		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
         DataInputStream din = new DataInputStream( bin );
 
@@ -108,7 +108,7 @@ public class ControllerSendsStorageList implements Event {
 	}
 
 	@Override
-	public byte getType() throws IOException {
+	public byte getType() {
 		return type;
 	}
 }

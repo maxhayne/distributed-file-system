@@ -168,6 +168,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN THE CHUNKSERVER
 					case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS: {
 						if (controller || controllerConnection == null) break;
 						ControllerReportsChunkServerRegistrationStatus msg = new ControllerReportsChunkServerRegistrationStatus(data);
@@ -262,6 +263,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CHUNKSERVER
 					case Protocol.CONTROLLER_REQUESTS_FILE_DELETE: {
 						if (controller || fileService == null) break;
 						ControllerRequestsFileDelete msg = new ControllerRequestsFileDelete(data);
@@ -271,6 +273,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CHUNKSERVER
 					case Protocol.SENDS_FILE_FOR_STORAGE: {
 						if (controller || fileService == null) break;
 						SendsFileForStorage msg = new SendsFileForStorage(data);
@@ -295,7 +298,7 @@ public class TCPReceiverThread extends Thread {
 							int sequence = Integer.valueOf(parts[1].split("_shard")[0]);
 							int shardnumber = Integer.valueOf(parts[1].split("_shard")[1]);
 							int version = 0;
-							prepared = fileService.readyShardForStorage(sequence,shardnumber,version,msg.filedata);
+							prepared = FileDistributionService.readyShardForStorage(sequence,shardnumber,version,msg.data);
 						} else {
 							break;
 						}
@@ -358,6 +361,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CHUNKSERVER
 					case Protocol.REQUESTS_CHUNK: {
 						if (controller) break;
 						RequestsChunk msg = new RequestsChunk(data);
@@ -401,6 +405,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CHUNKSERVER
 					case Protocol.REQUESTS_SHARD: {
 						if (controller) break;
 						RequestsShard msg = new RequestsShard(data);
@@ -455,7 +460,8 @@ public class TCPReceiverThread extends Thread {
 						files = null;
 						break;
 					}
-					
+
+					// IMPLEMENTED IN CHUNKSERVER
 					// NEW: This message response has changed, it now takes the identifier as an argument
 					case Protocol.CONTROLLER_SENDS_HEARTBEAT: {
 						if (controller || controllerConnection == null) break;
@@ -512,6 +518,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CHUNKSERVER
 					case Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE: {
 						if (controller || fileService == null) break;
 						Event event = EventFactory.getEvent(data[0],data);
@@ -537,6 +544,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CHUNKSERVER
 					case Protocol.REQUESTS_SLICES: {
 						if (controller) break;
 						RequestsSlices msg = new RequestsSlices(data);
@@ -678,6 +686,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CHUNKSERVER
 					// Data is sent out including the hashes and metadata.
 					case Protocol.CHUNK_SERVER_REQUESTS_FILE: {
 						if (controller || fileService == null) break;
@@ -736,6 +745,7 @@ public class TCPReceiverThread extends Thread {
 						break;
 					}
 
+					// IMPLEMENTED IN CONTROLLER, JUST PRINTS SOMETHING
 					case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE: {
 						break;
 					}

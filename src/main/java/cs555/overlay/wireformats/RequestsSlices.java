@@ -1,61 +1,62 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class RequestsSlices implements Event {
 
-	public String filename;
-	public int[] slices;
+    public byte type;
+    public String filename;
+    public int[] slices;
 
-	public RequestsSlices(String filename, int[] slices) {
-		this.filename = filename;
-		this.slices = slices;
-	}
+    public RequestsSlices( String filename, int[] slices ) {
+        this.type = Protocol.REQUESTS_SLICES;
+        this.filename = filename;
+        this.slices = slices;
+    }
 
-	public RequestsSlices(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int fileLength = buffer.getInt();
-		byte[] filearray = new byte[fileLength];
-		buffer.get(filearray);
-		this.filename = new String(filearray);
-		int numSlices = buffer.getInt();
-		this.slices = new int[numSlices];
-		for (int i = 0; i < numSlices; i++) {
-			this.slices[i] = buffer.getInt();
-		}
-	}
+    public RequestsSlices( byte[] marshalledBytes ) throws IOException {
+        ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
 
-	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+        type = din.readByte();
 
-		dout.writeByte(Protocol.REQUESTS_SLICES);
-		byte[] array = filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
-		int numSlices = slices.length;
-		dout.writeInt(numSlices);
-		for (int i = 0; i < numSlices; i++) {
-			dout.writeInt(slices[i]);
-		}
+        int len = din.readInt();
+        byte[] array = new byte[len];
+        din.readFully( array );
+        filename = new String( array );
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
+        int slicesLength = din.readInt();
+        slices = new int[slicesLength];
+        for ( int i = 0; i < slicesLength; ++i ) {
+            slices[i] = din.readInt();
+        }
 
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		array = null;
-		return marshalledBytes;
-	}
+        din.close();
+        bin.close();
+    }
 
-	public byte getType() throws IOException {
-		return Protocol.REQUESTS_SLICES;
-	}
+    public byte[] getBytes() throws IOException {
+        ByteArrayOutputStream bout = new ByteArrayOutputStream();
+        DataOutputStream dout = new DataOutputStream( bout );
+
+        dout.write( type );
+
+        byte[] array = filename.getBytes();
+        dout.writeInt( array.length );
+        dout.write( array );
+
+        dout.writeInt( slices.length );
+        for ( int i = 0; i < slices.length; ++i ) {
+            dout.writeInt( slices[i] );
+        }
+
+        byte[] marshalledBytes = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return marshalledBytes;
+    }
+
+    public byte getType() {
+        return type;
+    }
 }

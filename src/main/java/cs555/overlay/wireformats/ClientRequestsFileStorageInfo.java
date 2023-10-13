@@ -12,7 +12,7 @@ public class ClientRequestsFileStorageInfo implements Event {
 		this.filename = filename;
 	}
 
-	public ClientRequestsFileStorageInfo( byte[] marshalledBytes ) {
+	public ClientRequestsFileStorageInfo( byte[] marshalledBytes ) throws IOException {
 		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
         DataInputStream din = new DataInputStream( bin );
 
@@ -43,7 +43,7 @@ public class ClientRequestsFileStorageInfo implements Event {
         return returnable;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return type;
 	}
 }

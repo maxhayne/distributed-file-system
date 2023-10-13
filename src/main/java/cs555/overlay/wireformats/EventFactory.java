@@ -23,17 +23,22 @@ public class EventFactory {
      *
      * @return eventFactory singleton
      */
-    public static EventFactory getInstance() { return eventFactory; }
+    public static EventFactory getInstance() {
+		return eventFactory;
+	}
 
 	/**
 	 * Create new event by inspecting the message type in
 	 * the first location of the byte message.
-	 * @param marshalledBytes
+	 * @param marshalledBytes of received message
 	 * @return event created by unmarshalling bytes
 	 * 
 	 */
 	public Event createEvent( byte[] marshalledBytes ) throws IOException {
 		switch( marshalledBytes[0] ) {
+			case Protocol.CHUNK_SERVER_SENDS_REGISTRATION:
+			case Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION:
+			case Protocol.CHUNK_SERVER_REQUESTS_FILE:
 			case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
 			case Protocol.CONTROLLER_SENDS_HEARTBEAT:
 			case Protocol.CLIENT_REQUESTS_FILE_LIST:
@@ -41,16 +46,16 @@ public class EventFactory {
 			case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
 			case Protocol.CLIENT_REQUESTS_FILE_SIZE:
 			case Protocol.CLIENT_REQUESTS_FILE_DELETE:
+			case Protocol.REQUESTS_CHUNK:
+			case Protocol.REQUESTS_SHARD:
+			case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE:
 				return new GeneralMessage( marshalledBytes );
-			
-			case Protocol.CHUNK_SERVER_SENDS_REGISTRATION:
-				return new ChunkServerSendsRegistration( marshalledBytes );
+
+			case Protocol.REQUESTS_SLICES:
+				return new RequestsSlices( marshalledBytes );
 
 			case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS:
 				return new ControllerReportsChunkServerRegistrationStatus( marshalledBytes );
-
-			case Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION:
-				return new ChunkServerSendsDeregistration( marshalledBytes );
 
 			case Protocol.CLIENT_REQUESTS_STORE_CHUNK:
 				return new ClientRequestsStoreChunk( marshalledBytes );
@@ -69,12 +74,6 @@ public class EventFactory {
 
 			case Protocol.SENDS_FILE_FOR_STORAGE:
 				return new SendsFileForStorage( marshalledBytes );
-
-			case Protocol.REQUESTS_CHUNK:
-				return new RequestsChunk( marshalledBytes );
-
-			case Protocol.REQUESTS_SHARD:
-				return new RequestsShard( marshalledBytes );
 
 			case Protocol.CHUNK_SERVER_DENIES_REQUEST:
 				return new ChunkServerDeniesRequest( marshalledBytes );

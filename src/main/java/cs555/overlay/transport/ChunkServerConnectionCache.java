@@ -33,7 +33,6 @@ import java.net.Socket;
 
 public class ChunkServerConnectionCache {
 
-	//private BlockingQueue<Integer> availableIdentifiers;
 	private Vector<Integer> availableIdentifiers;
 	private Map<Integer,ChunkServerConnection> chunkCache;
 
@@ -48,17 +47,18 @@ public class ChunkServerConnectionCache {
 		this.idealState = idealState;
 		this.reportedState = reportedState;
 
-		this.chunkCache = new TreeMap<Integer,ChunkServerConnection>();
+		this.chunkCache = new HashMap<Integer,ChunkServerConnection>();
 		this.availableIdentifiers = new Vector<Integer>();
-		for ( int i = 0; i < 32; ++i ) {
+		for ( int i = 1; i <= 32; ++i ) {
 			this.availableIdentifiers.add( i );
 		}
 		//Collections.shuffle(this.availableIdentifiers);
 
 		this.heartbeatMonitor = new HeartbeatMonitor (this, chunkCache, idealState, 
 			reportedState );
-		heartbeatTimer = new Timer();
-		heartbeatTimer.scheduleAtFixedRate( heartbeatMonitor, 0, 
+
+		this.heartbeatTimer = new Timer();
+		this.heartbeatTimer.scheduleAtFixedRate( heartbeatMonitor, 0,
 			Constants.HEARTRATE );
 	}
 
@@ -81,14 +81,6 @@ public class ChunkServerConnectionCache {
 
 	public DistributedFileCache getReportedState() {
 		return reportedState;
-	}
-
-	public String[] getFileList() {
-		return idealState.getFileList();
-	}
-
-	public int getFileSize( String filename ) {
-		return idealState.getFileSize( filename );
 	}
 
 	public String getAllServerAddresses() {
@@ -342,15 +334,13 @@ public class ChunkServerConnectionCache {
 		int registrationStatus = -1; // -1 is a failure
 		synchronized( chunkCache ) {
 			synchronized( availableIdentifiers ) {
-				if ( availableIdentifiers.size() > 0 && !isRegistered( host, port ) ) {
+				if ( !availableIdentifiers.isEmpty() && !isRegistered( host, port ) ) {
 					int identifier = availableIdentifiers.remove( availableIdentifiers.size()-1 );
 					ChunkServerConnection newConnection = new ChunkServerConnection( 
 						identifier, host, port, connection );
 					newConnection.start(); // start the run loop
 					chunkCache.put( identifier, newConnection );
 					registrationStatus = identifier; // registration successful
-				} else {
-					return registrationStatus; // registration unsuccessful
 				}
 			}
 		}

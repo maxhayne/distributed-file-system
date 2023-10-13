@@ -15,7 +15,7 @@ public class ChunkServerSendsRegistration implements Event {
 		this.serverPort = serverPort;
 	}
 
-	public ChunkServerSendsRegistration(byte[] msg) {
+	public ChunkServerSendsRegistration(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int length = buffer.getInt();
@@ -44,7 +44,7 @@ public class ChunkServerSendsRegistration implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CHUNK_SERVER_SENDS_REGISTRATION;
 	}
 }

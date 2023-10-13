@@ -13,14 +13,12 @@ import java.net.ConnectException;
 import java.net.SocketException;
 import java.util.Collection;
 import java.io.IOException;
-import java.util.Arrays;
 import java.nio.file.Paths;
 import java.nio.file.Path;
 import java.util.Scanner;
 import java.net.Socket;
 import java.io.File;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.TreeMap;
 import java.lang.Math;
 
@@ -32,7 +30,7 @@ public class Client implements Node {
 	private Map<String,TCPSender> connections;
 
 	/**
-	 * Default constuctor.
+	 * Default constructor.
 	 * 
 	 * @param storageType
 	 */
@@ -105,7 +103,7 @@ public class Client implements Node {
 			if (filedata == null) continue;
 			shards[index] = filedata;
 		}
-		return FileDistributionService.getShardsFromShards(shards);
+		return FileDistributionService.decodeMissingShards(shards);
 	}
 
 	public static TCPSender getTCPSender(Map<String,TCPSender> tcpConnections, String address) {
@@ -587,8 +585,9 @@ public class Client implements Node {
 	 */
 	private void closeSockets() {
 		Collection<TCPSender> values = connections.values();
-		for (TCPSender sender : values)
-			sender.close();
+		for (TCPSender sender : values) {
+			sender.dout.close();
+		}
 	}
 
 }

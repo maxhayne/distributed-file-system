@@ -1,68 +1,72 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ControllerRequestsFileAcquire implements Event {
 
-	public String filename;
-	public String[] servers;
+    public byte type;
+    public String filename;
+    public String[] servers;
 
-	public ControllerRequestsFileAcquire(String filename, String[] servers) {
-		this.filename = filename;
-		this.servers = servers;
-	}
+    public ControllerRequestsFileAcquire( String filename, String[] servers ) {
+        this.type = Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE;
+        this.filename = filename;
+        this.servers = servers;
+    }
 
-	public ControllerRequestsFileAcquire(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int filelength = buffer.getInt();
-		byte[] array = new byte[filelength];
-		buffer.get(array);
-		this.filename = new String(array);
-		int numServers = buffer.getInt();
-		servers = new String[numServers];
-		for (int i = 0; i < numServers; i++) {
-			int serverlength = buffer.getInt();
-			byte[] serverarray = new byte[serverlength];
-			buffer.get(serverarray);
-			servers[i] = new String(serverarray);
-		}
-	}
+    public ControllerRequestsFileAcquire( byte[] marshalledBytes )
+        throws IOException {
+        ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
 
-	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
-		
-		dout.writeByte(Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE);
-		byte[] array = filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
-		if (servers != null) {
-			int numServers = servers.length;
-			dout.writeInt(numServers);
-			for (int i = 0; i < numServers; i++) {
-				byte[] serverarray = servers[i].getBytes();
-				dout.writeInt(serverarray.length);
-				dout.write(serverarray);
-			}
-		} else {
-			dout.writeInt(0);
-		}
+        type = din.readByte();
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		return marshalledBytes;
-	}
+        int len = din.readInt();
+        byte[] array = new byte[len];
+        din.readFully( array );
+        filename = new String( array );
 
-	public byte getType() throws IOException {
-		return Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE;
-	}
+        int serverLength = din.readInt();
+        servers = new String[serverLength];
+        for ( int i = 0; i < serverLength; ++i ) {
+            len = din.readInt();
+            array = new byte[len];
+            din.readFully( array );
+            servers[i] = new String( array );
+        }
+
+        din.close();
+        bin.close();
+    }
+
+    public byte[] getBytes() throws IOException {
+        ByteArrayOutputStream bout = new ByteArrayOutputStream();
+        DataOutputStream dout = new DataOutputStream( bout );
+
+        dout.write( type );
+
+        byte[] array = filename.getBytes();
+        dout.writeInt( array.length );
+        dout.write( array );
+
+        if ( servers != null ) {
+            dout.writeInt( servers.length );
+            for ( int i = 0; i < servers.length; ++i ) {
+                array = servers[i].getBytes();
+                dout.writeInt( array.length );
+                dout.write( array );
+            }
+        } else {
+            dout.writeInt( 0 );
+        }
+
+        byte[] marshalledBytes = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return marshalledBytes;
+    }
+
+    public byte getType() {
+        return type;
+    }
 }

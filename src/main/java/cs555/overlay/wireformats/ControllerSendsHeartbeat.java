@@ -24,7 +24,7 @@ public class ControllerSendsHeartbeat implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.CONTROLLER_SENDS_HEARTBEAT;
 	}
 }

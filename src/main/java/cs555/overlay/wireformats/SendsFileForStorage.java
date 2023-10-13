@@ -1,78 +1,92 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class SendsFileForStorage implements Event {
 
-	public String filename;
-	public byte[] filedata;
-	public String[] servers;
+    public byte type;
+    public String filename;
+    public byte[] data;
+    public String[] servers;
+    public int nextServer;
 
-	public SendsFileForStorage(String filename, byte[] filedata, String[] servers) {
-		this.filename = filename;
-		this.filedata = filedata;
-		this.servers = servers;
-	}
+    public SendsFileForStorage( String filename, byte[] data,
+            String[] servers ) {
+        this.type = Protocol.SENDS_FILE_FOR_STORAGE;
+        this.filename = filename;
+        this.data = data;
+        this.servers = servers;
+        this.nextServer = 0;
+    }
 
-	public SendsFileForStorage(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int length = buffer.getInt();
-		byte[] array = new byte[length];
-		buffer.get(array);
-		this.filename = new String(array);
-		int datalength = buffer.getInt();
-		byte[] data = new byte[datalength];
-		buffer.get(data);
-		this.filedata = data;
-		int numServers = buffer.getInt();
-		if (numServers != 0) {
-			this.servers = new String[numServers];
-			for (int i = 0; i < numServers; i++) {
-				int serverlength = buffer.getInt();
-				byte[] serverarray = new byte[serverlength];
-				buffer.get(serverarray);
-				this.servers[i] = new String(serverarray);
-			}
-		} else {
-			this.servers = null;
-		}
-	}
+    public SendsFileForStorage( byte[] marshalledBytes ) throws IOException {
+        ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
 
-	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
-		dout.writeByte(Protocol.SENDS_FILE_FOR_STORAGE);
-		byte[] array = filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
-		dout.writeInt(filedata.length);
-		dout.write(filedata);
-		if (servers != null) {
-			int numServers = servers.length;
-			dout.writeInt(numServers);
-			for (int i = 0; i < numServers; i++) {
-				byte[] serverarray = servers[i].getBytes();
-				dout.writeInt(serverarray.length);
-				dout.write(serverarray);
-			}
-		} else {
-			dout.writeInt(0);
-		}
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		return marshalledBytes;
-	}
+        type = din.readByte();
 
-	public byte getType() throws IOException {
-		return Protocol.SENDS_FILE_FOR_STORAGE;
-	}
+        int len = din.readInt();
+        byte[] array = new byte[len];
+        din.readFully( array );
+        filename = new String( array );
+
+        len = din.readInt();
+        array = new byte[len];
+        din.readFully( array );
+        data = array;
+
+        int numServers = din.readInt();
+        if ( numServers != 0 ) {
+            servers = new String[numServers];
+            for ( int i = 0; i < numServers; ++i ) {
+                len = din.readInt();
+                array = new byte[len];
+                din.readFully( array );
+                servers[i] = new String( array );
+            }
+        }
+
+        nextServer = din.readInt();
+
+        din.close();
+        bin.close();
+    }
+
+    @Override
+    public byte[] getBytes() throws IOException {
+        ByteArrayOutputStream bout = new ByteArrayOutputStream();
+        DataOutputStream dout = new DataOutputStream( bout );
+
+        dout.write( type );
+
+        byte[] array = filename.getBytes();
+        dout.writeInt( array.length );
+        dout.write( array );
+
+        dout.writeInt( data.length );
+        dout.write( data );
+
+        if ( servers != null ) {
+            dout.writeInt( servers.length );
+            for ( int i = 0; i < servers.length; ++i ) {
+                array = servers[i].getBytes();
+                dout.writeInt( array.length );
+                dout.write( array );
+            }
+        } else {
+            dout.writeInt( 0 );
+        }
+
+        dout.writeInt( nextServer );
+
+        byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
+    }
+
+    @Override
+    public byte getType() {
+        return type;
+    }
 }

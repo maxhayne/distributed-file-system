@@ -14,7 +14,7 @@ public class ChunkServerNoStoreFile implements Event {
 		this.filename = filename;
 	}
 
-	public ChunkServerNoStoreFile( byte[] marshalledBytes ) {
+	public ChunkServerNoStoreFile( byte[] marshalledBytes ) throws IOException {
 		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
         DataInputStream din = new DataInputStream( bin );
 
@@ -56,7 +56,7 @@ public class ChunkServerNoStoreFile implements Event {
  	}
 
 	@Override
- 	public byte getType() throws IOException {
+ 	public byte getType() {
  		return type;
  	}
  }

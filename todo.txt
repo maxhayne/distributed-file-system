@@ -92,3 +92,27 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - Need to go through wireformats and delete message types that are now just using the GeneralMessage for the same purpose. This will create errors, which will lead to locations where the GeneralMessage can be instantiated instead of the other, deleted message types.
 
 - Have thought about this before, but should the Controller just send the Client the list of ChunkServers from the idealState or the reportedState. The problem with the reportedState is that it isn't available right away, there is a delay until the reportedState starts being populated by heartbeats. But, it does represent the actual state of the DFS assuming heartbeats are accurate. What is the best option here?
+
+- There must be an elegant way to start the TCPServerThread and ChunkServerHeartbeatService and the FileDistributionService only once the Controller has sent confirmation to the ChunkServer of a successful registration?
+
+- May need to come up with a better way of generating the folder that the ChunkServer will use to store files. Would it be better to create unique filenames (with host and port and id attached) than to create a folder with a unique timestamp? How could this be made cleaner, instead of being done in the registrationInterpreter?
+
+- Maybe can start the FileDistributionService before the registration happens in the ChunkServer? It would be inactive if the ChunkServer isn't registered anyway.
+
+- Should open connections between nodes be periodically cleared? I imagine it would become inefficient if every ChunkServer maintained an open connection to every other ChunkServer, as would happen after the DFS has been up for a while, what with file repairs and forwarding.
+
+- Get rid of sendQueue in ChunkServerConnection, better for the Controller to be made aware of any error being thrown as it tries to send a message to a ChunkServer.
+
+- sendGeneralMessage, sendRegistration, and sendDeregistration should all behave similarly, in that they should all either throw an exception, or shouldn't, which is best for the ChunkServer? And, should they all be added to a different class which houses functions for sending messages out of specified connections? Actually, it will be best to get rid of the sendRegistration and sendDeregistration functions, and just use the sendGeneralMessage with the correct types and messages for registration and deregistration. sendGeneralMessage should throw an exception if it fails.
+
+- getDirectory() in FileDistributionService has changed, and now returns a Path, not a string. Therefore, any place this function has called must now be inspected to ensure that the output of getDirectory() is not concatted with a String, as was the behavior before. Instead of concatenation, new usage will be to use getDirectory().resolve(filename) to create a path object that points to the file we're trying to operate on.
+
+- The "Files" package does support appending files, if you use additional options in the call to Files.write(), but it does not support editing a section of a file in place. That shouldn't be an issue in this scenario, as chunks are 64K and shards are around 8K -- the file can be read fully, and the byte string can be edited, and then the byte string can be rewritten -- but this will have to be implemented in the replaceSlices(), truncateFile()?, appendFile(), and getNextChunkFromFile()?
+
+- Decide whether to work with Paths consistently or Strings. Perhaps all publicly available methods in FileDistributionService should be passed Strings of filenames, and in each method which takes a String, a getDirectory().resolve(filename) is done silently, so that the ChunkSever doesn't have to know anything about how the FileDistributionService has created a directory for itself to store files into?
+
+- May be a duplicate entry, but need to think about when sending acknoledgements/responses is actually necessary. The requestsChunk/Shard/Slices all send out denials for the request if it can't be fulfilled. For the requestsChunk/Shard, the requester could be the Client. In that case, maybe a denial is necessary? But the requestSlices message will only come from another ChunkServer, and do we really want communication between ChunkServers to be back-and-forth like that. If we do, we shouldn't block, but should send the first message, and then upon a receiving a response, take another action. But what if there is no response? Based on that, ChunkServers should probably block for responses from other ChunkServers for a certain amount of time, and then close the connection, and move onto the next server that could help to repair a file. Perhaps.
+
+- Should I be checking if the files on the disk are the right length? I think that reads succeed of files have been appended to, but nothing else, because the file is read only up to the specific length that the hashes and data take up, and nothing more.
+
+- idealState and reportedState do not need to be in the ChunkServerConnectionCache. They should be in their own class with methods specific to them.

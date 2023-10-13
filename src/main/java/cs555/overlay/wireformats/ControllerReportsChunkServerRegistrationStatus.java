@@ -1,41 +1,46 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ControllerReportsChunkServerRegistrationStatus implements Event {
 
-	public int status;
+    public byte type;
+    public int status;
 
-	public ControllerReportsChunkServerRegistrationStatus( int status ) {
-		this.status = (byte) status;
-	}
+    public ControllerReportsChunkServerRegistrationStatus( int status ) {
+        this.type =
+                Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS;
+        this.status = status;
+    }
 
-	public ControllerReportsChunkServerRegistrationStatus( byte[] msg ) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		this.status = (int) buffer.get();
-	}
+    public ControllerReportsChunkServerRegistrationStatus(
+            byte[] marshalledBytes ) throws IOException {
+        ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+        DataInputStream din = new DataInputStream( bin );
 
-	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream( new BufferedOutputStream( baOutputStream ) );
+        type = din.readByte();
 
-		dout.writeByte( Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS );
-		dout.write( (byte) status );
+        status = din.readInt();
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
+        din.close();
+        bin.close();
+    }
 
-		baOutputStream.close();
-		dout.close();
-		return marshalledBytes;
-	}
+    public byte[] getBytes() throws IOException {
+        ByteArrayOutputStream bout = new ByteArrayOutputStream();
+        DataOutputStream dout = new DataOutputStream( bout );
 
-	public byte getType() throws IOException {
-		return Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS;
-	}
+        dout.write( type );
+
+        dout.writeInt( status );
+
+        byte[] returnable = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return returnable;
+    }
+
+    public byte getType() {
+        return type;
+    }
 }

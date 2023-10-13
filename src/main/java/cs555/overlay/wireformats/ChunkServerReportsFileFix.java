@@ -14,7 +14,7 @@ public class ChunkServerReportsFileFix implements Event {
 		this.filename = filename;
 	}
 
-	public ChunkServerReportsFileFix( byte[] marshalledBytes ) {
+	public ChunkServerReportsFileFix( byte[] marshalledBytes ) throws IOException {
 		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
         DataInputStream din = new DataInputStream( bin );
 
@@ -51,7 +51,7 @@ public class ChunkServerReportsFileFix implements Event {
 	}
 
 	@Override
-	public byte getType() throws IOException {
+	public byte getType() {
 		return type;
 	}
 }

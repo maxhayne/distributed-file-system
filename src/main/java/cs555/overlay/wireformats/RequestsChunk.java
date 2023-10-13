@@ -13,7 +13,7 @@ public class RequestsChunk implements Event {
 		this.filename = filename;
 	}
 
-	public RequestsChunk(byte[] msg) {
+	public RequestsChunk(byte[] msg) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(msg);
 		buffer.position(1);
 		int length = buffer.getInt();
@@ -39,7 +39,7 @@ public class RequestsChunk implements Event {
 		return marshalledBytes;
 	}
 
-	public byte getType() throws IOException {
+	public byte getType() {
 		return Protocol.REQUESTS_CHUNK;
 	}
 }
