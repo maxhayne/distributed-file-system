@@ -1,192 +1,189 @@
 package cs555.overlay.util;
+
 import cs555.overlay.node.ChunkServer;
 import cs555.overlay.wireformats.ChunkServerReportsFileCorruption;
 import cs555.overlay.wireformats.ChunkServerSendsHeartbeat;
-import cs555.overlay.transport.ControllerConnection;
-import cs555.overlay.util.FileDistributionService;
-import cs555.overlay.util.FileMetadata;
 
-import java.io.File;
-import java.security.NoSuchAlgorithmException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 public class ChunkServerHeartbeatService extends TimerTask {
 
-	private final ChunkServer chunkServer;
-	private final Map<String,FileMetadata> majorFiles;
-	private final Map<String,FileMetadata> minorFiles;
-	private int heartbeatNumber;
+    private final ChunkServer chunkServer;
+    private final Map<String, FileMetadata> majorFiles;
+    private final Map<String, FileMetadata> minorFiles;
+    private int heartbeatNumber;
 
-	public ChunkServerHeartbeatService( ChunkServer chunkServer ) {
-		this.chunkServer = chunkServer;
-		this.majorFiles = new HashMap<String,FileMetadata>();
-		this.minorFiles = new HashMap<String,FileMetadata>();
-		this.heartbeatNumber = 1;
-	}
+    public ChunkServerHeartbeatService( ChunkServer chunkServer ) {
+        this.chunkServer = chunkServer;
+        this.majorFiles = new HashMap<String, FileMetadata>();
+        this.minorFiles = new HashMap<String, FileMetadata>();
+        this.heartbeatNumber = 1;
+    }
 
-	private byte[] majorHeartbeat() throws NoSuchAlgorithmException, IOException {
-		majorFiles.clear();
-		String[] files = chunkServer.getFileService().listFiles();
-		for ( String filename : files ) {
-			boolean shard = FileDistributionService.checkShardFilename( filename );
-			if ( !shard ) { // then it's a chunk
-				byte[] data = null;;
-				Vector<Integer> errors;
-				int numberOfErrors;
-				int[] errorsarray = null;
-				data = chunkServer.getFileService().readBytesFromFile( directory + filename );
-				errors = FileDistributionService.checkChunkForCorruption( data );
-				if ( data.length > 65720 ) {
-					chunkServer.getFileService().truncateFile( directory + filename,65720 );
-				}
-				if ( !errors.isEmpty() ) {
-					errorsarray = new int[errors.size()];
-					for (int i = 0; i < errors.size(); i++)
-						errorsarray[i] = errors.elementAt(i);
-					numberOfErrors = errorsarray.length;
-				} else {
-					numberOfErrors = 0;
-				}
-				if ( numberOfErrors == 0 ) {
-					ByteBuffer buffer = ByteBuffer.wrap( data );
-					majorFiles.put( filename, new FileMetadata( filename, buffer.getInt(28) ) ); // skip first hash, read version
-				} else {
-					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption( chunkServer.getIdentifier(), filename, errorsarray );
-					chunkServer.getFileService().addToQueue(event); // Send message to Controller about corruption
-				}
-			} else { // This is a shard
-				byte[] data = chunkServer.getFileService().readBytesFromFile(directory+filename);
-				boolean corrupt = FileDistributionService.checkShardForCorruption(data);
-				if (data.length > 10994) { chunkServer.getFileService().truncateFile(directory+filename,10994); }
-				if (corrupt) {
-					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(chunkServer.getIdentifier(),filename,null);
-					chunkServer.getFileService().addToQueue(event); // Send message to Controller about corruption
-				} else {
-					majorFiles.put(filename, new FileMetadata(filename));
-				}
-			}
-		}
+    /**
+     * Takes byte string that has been read from file with name 'filename', and
+     * a length, and resizes the file and byte string if the byte string is
+     * longer than the length parameter.
+     *
+     * @param filename name of file fileBytes has been read from
+     * @param fileBytes byte content of file filename
+     * @param length to truncate file and fileBytes to
+     * @return truncated fileBytes
+     */
+    private byte[] truncateIfNecessary( String filename, byte[] fileBytes,
+        int length ) {
+        if ( fileBytes.length > length ) {
+            chunkServer.getFileService().truncateFile( filename, length );
+            byte[] truncatedBytes = new byte[length];
+            System.arraycopy( fileBytes, 0, truncatedBytes, 0, length );
+            fileBytes = truncatedBytes;
+        }
+        return fileBytes;
+    }
 
-		// Once done with the loop, 'files' should be full of the list of files stored
-		// in the node. Create message out of contents of 'files' and send to controller.
-		int newfiles = majorFiles.size();
-		String[] concattednames = null;
-		if (newfiles > 0) {
-			concattednames = new String[newfiles];
-			int i = 0;
-			for (Map.Entry<String,FileMetadata> mapping : majorFiles.entrySet()) {
-				concattednames[i] = mapping.getValue().filename + "," + mapping.getValue().version;
-				i += 1;
-			}
-		}
-		int totalchunks = majorFiles.size();
-		long freespace = chunkServer.getFileService().getUsableSpace();
-		ChunkServerSendsHeartbeat heartbeat = new ChunkServerSendsHeartbeat( chunkServer.getIdentifier(),
-			1, totalchunks, freespace, concattednames );
-		byte[] bytes = null;;
-		try {
-			bytes = heartbeat.getBytes();
-		} catch (IOException ioe) {
-			System.out.println("ChunkServerHeartbeatService error: " + ioe);
-			bytes = null;
-		}
-		return bytes;
-	}
+    /**
+     * Performs a heartbeat for the ChunkServer, either major or minor. Loops
+     * through the list of files in the ChunkServer's directory, checks that
+     * they aren't corrupt, extracts metadata from them, and constructs a
+     * heartbeat message from that metadata. Returns a byte string message that
+     * is ready to be sent to the Controller as a heartbeat.
+     *
+     * @param beatType 1 for major, 0 for minor
+     * @return byte string of heartbeat message, or null if couldn't be created
+     * @throws IOException if a file could not be read
+     * @throws NoSuchAlgorithmException if SHA1 isn't available
+     */
+    private byte[] heartbeat( int beatType )
+        throws IOException, NoSuchAlgorithmException {
+        // fileMap will be the map that we are modifying during this
+        // heartbeat. If minorHeartbeat, fileMap = minorFiles, if
+        // majorHeartbeat, fileMap = majorFiles
+        Map<String, FileMetadata> fileMap =
+            beatType == 0 ? minorFiles : majorFiles;
+        fileMap.clear();
+        String[] files = chunkServer.getFileService().listFiles();
+        // loop through list of filenames stored at ChunkServer
+        for ( String filename : files ) {
+            // if this is a minor heartbeat, skip files that have already
+            // been added to majorFiles
+            if ( beatType == 0 && majorFiles.containsKey( filename ) ) {
+                continue;
+            }
+            // read the file
+            byte[] fileBytes =
+                chunkServer.getFileService().readBytesFromFile( filename );
+            if ( !FileDistributionService.checkShardFilename( filename ) ) {
+                // it is a chunk
+                // if file is too large for a chunk, truncate it to proper
+                // length, and truncate byte string already read
+                fileBytes = truncateIfNecessary( filename, fileBytes, 65720 );
 
-	// Actually need a majorMap that is cleared and populated on a majorHeartbeat, and a minorMap that 
-	// is cleared and populated on a minorHeartbeat. During a minorHeartbeat, the minorMap is cleared,
-	// and populated with any files that are not already present in the majorMap. Whatever is in the
-	// minorMap at the end of the looping is sent to the controller, and then added to the majorMap.
-	private byte[] minorHeartbeat() throws NoSuchAlgorithmException, IOException {
-		minorFiles.clear();
-		String[] filenames = chunkServer.getFileService().listFiles();
-		for (String filename : filenames) {
-			if (majorFiles.containsKey(filename))
-				continue;
-			boolean chunk = FileDistributionService.checkChunkFilename(filename);
-			boolean shard = FileDistributionService.checkShardFilename(filename);
-			if (chunk) {
-				byte[] data = null;;
-				Vector<Integer> errors;
-				int numberOfErrors;
-				int[] errorsarray = null;
-				data = chunkServer.getFileService().readBytesFromFile(directory+filename);
-				errors = FileDistributionService.checkChunkForCorruption(data);
-				if (data.length > 65720) {
-					chunkServer.getFileService().truncateFile(directory+filename,65720);
-				}
-				//System.out.println(data.length + " " + errors.size());
-				if ( !errors.isEmpty() ) {
-					errorsarray = new int[errors.size()];
-					for (int i = 0; i < errors.size(); i++) {
-						errorsarray[i] = errors.elementAt(i);
-						//System.out.println(errorsarray[i]);
-					}
-					numberOfErrors = errorsarray.length;
-				} else {
-					numberOfErrors = 0;
-				}
-				if (numberOfErrors == 0) {
-					ByteBuffer buffer = ByteBuffer.wrap(data);
-					minorFiles.put(filename, new FileMetadata(filename,buffer.getInt(28)));
-				} else {
-					//System.out.println("Trying to add an event to the fileService.");
-					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(chunkServer.getIdentifier(),filename,errorsarray);
-					chunkServer.getFileService().addToQueue(event);
-				}
-			} else if (shard) { // This is a shard
-				byte[] data = chunkServer.getFileService().readBytesFromFile(directory+filename);
-				boolean corrupt = FileDistributionService.checkShardForCorruption(data);
-				if (data.length > 10994) { chunkServer.getFileService().truncateFile(directory+filename,10994); }
-				if (corrupt) {
-					ChunkServerReportsFileCorruption event = new ChunkServerReportsFileCorruption(chunkServer.getIdentifier(),filename,null);
-					chunkServer.getFileService().addToQueue(event); // Send message to Controller about corruption
-				} else {
-					minorFiles.put(filename, new FileMetadata(filename));
-				}
-			}
-		}
+                // check if chunk is corrupt
+                Vector<Integer> corruptSlices =
+                    FileDistributionService.checkChunkForCorruption(
+                        fileBytes );
+                int[] corruptArray = null;
+                if ( !corruptSlices.isEmpty() ) {
+                    corruptArray = ChunkServer.vecToArr( corruptSlices );
+                }
 
-		// Once done with the loop, 'files' should be full of the list of files stored
-		// in the node. Create message out of contents of 'files' and send to controller.
-		int newfiles = minorFiles.size();
-		String[] concattednames = null;
-		if (newfiles > 0) {
-			concattednames = new String[newfiles];
-			int i = 0;
-			for (Map.Entry<String,FileMetadata> mapping : minorFiles.entrySet()) {
-				concattednames[i] = mapping.getValue().filename + "," + mapping.getValue().version;
-				i += 1;
-			}
-		}
-		// Need to calculate total chunks and free space
-		majorFiles.putAll(minorFiles);
-		int totalchunks = majorFiles.size();
-		long freespace = chunkServer.getFileService().getUsableSpace();
-		ChunkServerSendsHeartbeat heartbeat = new ChunkServerSendsHeartbeat( chunkServer.getIdentifier(),
-			0, totalchunks, freespace, concattednames );
-		byte[] bytes = null;
-		try {
-			bytes = heartbeat.getBytes();
-		} catch (IOException ioe) {
-			System.out.println("ChunkServerHeartbeatService error: " + ioe);
-			bytes = null;
-		}
-		return bytes;
-	}
+                // if chunk isn't corrupt, add to fileMap
+                if ( corruptArray == null ) {
+                    ByteBuffer buffer = ByteBuffer.wrap( fileBytes );
+                    fileMap.put( filename,
+                        new FileMetadata( filename, buffer.getInt( 28 ),
+                            buffer.getLong( 36 ) ) );
+                    // version starts at 28, timestamp starts at 36
+                } else { // chunk is corrupt
+                    // add corruption event to fileService queue
+                    ChunkServerReportsFileCorruption event =
+                        new ChunkServerReportsFileCorruption(
+                            chunkServer.getIdentifier(), filename,
+                            corruptArray );
+                    chunkServer.getFileService().addToQueue( event );
+                }
+            } else { // it is a shard
+                // if shard is too long, truncate both the file and the bytes
+                // that have already been read
+                fileBytes = truncateIfNecessary( filename, fileBytes, 10994 );
 
-	public void run() {
-		try {
-			byte[] heartbeat = heartbeatNumber%10 == 0 ? majorHeartbeat() : minorHeartbeat();
-			chunkServer.getControllerConnection().getSender().sendData( heartbeat );
-			System.out.println( "Heartbeat " + heartbeatNumber + " has been sent to the Controller at " + new Date() );
-			heartbeatNumber += 1;
-		} catch ( NoSuchAlgorithmException nsae ) {
-			System.err.println( "ChunkServerHeartbeatService run: NoSuchAlgorithmException. " + nsae.getMessage() );
-		} catch( IOException ioe ) {
-			System.err.println( "ChunkServerHeartbeatService run: Unable to send heartbeat to Controller. " + ioe.getMessage() );
-		}
-	}
+                // check if shard is corrupt
+                boolean corrupt =
+                    FileDistributionService.checkShardForCorruption(
+                        fileBytes );
+
+                // if corrupt, add corruption event to fileService queue
+                if ( corrupt ) {
+                    ChunkServerReportsFileCorruption event =
+                        new ChunkServerReportsFileCorruption(
+                            chunkServer.getIdentifier(), filename, null );
+                    chunkServer.getFileService().addToQueue( event );
+                } else { // if not corrupt, add to fileMap
+                    ByteBuffer buffer = ByteBuffer.wrap( fileBytes );
+                    fileMap.put( filename,
+                        new FileMetadata( filename, buffer.getInt( 28 ),
+                            buffer.getLong( 32 ) ) );
+                }
+            }
+        }
+
+        // if minor heartbeat, put all files that were new, and added to
+        // minorFiles (fileMap) into majorFiles
+        if ( beatType == 0 ) {
+            majorFiles.putAll( fileMap );
+        }
+
+        // create heartbeat message, and return bytes of that message
+        int totalChunks = majorFiles.size();
+        long freeSpace = chunkServer.getFileService().getUsableSpace();
+        ChunkServerSendsHeartbeat heartbeat =
+            new ChunkServerSendsHeartbeat( chunkServer.getIdentifier(), 0,
+                totalChunks, freeSpace, new ArrayList<>( fileMap.values() ) );
+        try {
+            return heartbeat.getBytes();
+        } catch ( IOException ioe ) {
+            System.out.println(
+                "heartbeat: Unable to create heartbeat message. "
+                + ioe.getMessage() );
+            // return null if cannot get message bytes
+            return null;
+        }
+
+    }
+
+    /**
+     * The method that will be run every time the ChunkServer is scheduled to
+     * perform a heartbeat.
+     */
+    public void run() {
+        try {
+            byte[] heartbeatMessage =
+                heartbeatNumber % 10 == 0 ? heartbeat( 1 ) : heartbeat( 0 );
+
+            if ( heartbeatMessage != null ) {
+                chunkServer.getControllerConnection()
+                    .getSender()
+                    .sendData( heartbeatMessage );
+                System.out.println( "Heartbeat " + heartbeatNumber
+                                    + " has been sent to the Controller at "
+                                    + new Date() );
+            } else {
+                System.out.println( "ChunkServerHeartbeatService::run: "
+                                    + " null heartbeatMessage was not sent "
+                                    + "to the Controller." );
+            }
+            heartbeatNumber += 1;
+        } catch ( NoSuchAlgorithmException nsae ) {
+            System.err.println( "ChunkServerHeartbeatService::run: "
+                                + "NoSuchAlgorithmException. "
+                                + nsae.getMessage() );
+        } catch ( IOException ioe ) {
+            System.err.println( "ChunkServerHeartbeatService::run: Unable to "
+                                + "send heartbeat to Controller. "
+                                + ioe.getMessage() );
+        }
+    }
 }

@@ -2,9 +2,6 @@ package cs555.overlay.transport;
 
 import cs555.overlay.util.HeartbeatInfo;
 
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
 import java.net.UnknownHostException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -17,47 +14,21 @@ import java.util.concurrent.TimeUnit;
  */
 public class ChunkServerConnection implements Runnable {
 
-    private String host;
-    private int port;
-    private TCPConnection connection;
+    private final String host;
+    private final int port;
+    private final TCPConnection connection;
 
     // Identifying/Connection information
-    private int identifier;
-    private String serverAddress;
-    private int serverPort;
-    private TCPReceiverThread receiver;
-    private BlockingQueue<byte[]> sendQueue;
-    private DataOutputStream dout;
+    private final int identifier;
+    private final BlockingQueue<byte[]> sendQueue;
 
     // Status information
-    private long startTime;
+    private final long startTime;
     private int unhealthy;
     private boolean activeStatus;
-    private HeartbeatInfo heartbeatInfo; // latest heartbeat info
+    private final HeartbeatInfo heartbeatInfo; // latest heartbeat info
     private int pokes;
     private int pokeReplies;
-
-    public ChunkServerConnection() {
-        this.heartbeatInfo = new HeartbeatInfo();
-    }
-
-    public ChunkServerConnection( TCPReceiverThread receiver, int identifier,
-        String serverAddress, int serverPort ) throws IOException {
-        this.identifier = identifier;
-        this.serverAddress = serverAddress;
-        this.serverPort = serverPort;
-        this.receiver = receiver;
-        this.sendQueue = new LinkedBlockingQueue<byte[]>();
-        this.dout = new DataOutputStream(
-            new BufferedOutputStream( receiver.getDataOutputStream(), 8192 ) );
-
-        this.startTime = -1;
-        this.unhealthy = 0;
-        this.activeStatus = false;
-        this.heartbeatInfo = new HeartbeatInfo();
-        this.pokes = 0;
-        this.pokeReplies = 0;
-    }
 
     public ChunkServerConnection( int identifier, String host, int port,
         TCPConnection connection ) {
@@ -100,36 +71,28 @@ public class ChunkServerConnection implements Runnable {
         return identifier;
     }
 
-    public String getLocalAddress() throws UnknownHostException {
-        return receiver.getLocalAddress();
+    public String getLocalAddress() {
+        return connection.getSocket().getLocalAddress().getHostAddress();
     }
 
     public String getRemoteAddress() {
-        return receiver.getRemoteAddress();
-    }
-
-    public int getLocalPort() {
-        return receiver.getLocalPort();
+        return connection.getSocket().getInetAddress().getHostAddress();
     }
 
     public int getRemotePort() {
-        return receiver.getRemotePort();
+        return connection.getSocket().getPort();
     }
 
     public String getServerAddress() {
-        return serverAddress;
+        return host;
     }
 
     public int getServerPort() {
-        return serverPort;
+        return port;
     }
 
     public synchronized int getUnhealthy() {
         return unhealthy;
-    }
-
-    public synchronized void setUnhealthy( int unhealthy ) {
-        this.unhealthy = unhealthy;
     }
 
     public synchronized void incrementUnhealthy() {
@@ -150,16 +113,16 @@ public class ChunkServerConnection implements Runnable {
         activeStatus = status;
     }
 
-    public void close() {
-        receiver.close();
+    public TCPConnection getConnection() {
+        return connection;
     }
 
     public synchronized String print() {
         String remoteAddress = "Unknown";
         int remotePort = -1;
         try {
-            remoteAddress = this.getRemoteAddress();
-            remotePort = this.getRemotePort();
+            remoteAddress = getRemoteAddress();
+            remotePort = getRemotePort();
         } catch ( Exception e ) {
             // If we can't get the remote address and port,
             // we'll just print "Unknown" and "-1".
@@ -183,13 +146,6 @@ public class ChunkServerConnection implements Runnable {
         return true;
     }
 
-    public synchronized void sendData( byte[] data ) throws IOException {
-        int length = data.length;
-        dout.writeInt( length );
-        dout.write( data, 0, length );
-        dout.flush();
-    }
-
     @Override
     public void run() {
         this.setActiveStatus( true );
@@ -199,16 +155,15 @@ public class ChunkServerConnection implements Runnable {
                 msg = this.sendQueue.poll( 1, TimeUnit.SECONDS );
             } catch ( InterruptedException ie ) {
                 System.err.println(
-                    "ChunkServerConnection run InterruptedException: "
+                    "ChunkServerConnection::run InterruptedException: "
                     + ie.getMessage() );
             }
-            if ( msg == null ) {
-                continue;
-            } else {
+            if ( msg != null ) {
                 try {
-                    this.sendData( msg ); // send the message along
+                    connection.getSender()
+                        .sendData( msg ); // send the message along
                 } catch ( Exception e ) {
-                    System.err.println( "ChunkServerConnection run Exception: "
+                    System.err.println( "ChunkServerConnection::run Exception: "
                                         + e.getMessage() );
                 }
             }

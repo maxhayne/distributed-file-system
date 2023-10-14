@@ -12,15 +12,15 @@ public class Chunk extends ServerFile implements Comparable<Chunk> {
 	public int serverIdentifier;
 	public boolean corrupt;
 
-	public Chunk( String filename, int sequence, int version, 
+	public Chunk( String filename, int sequence, int version, long timestamp,
 			int serverIdentifier, boolean corrupt ) {
 		this.type = Constants.CHUNK_TYPE;
 		this.filename = filename;
 		this.sequence = sequence;
 		this.version = version;
+		this.timestamp = timestamp;
 		this.serverIdentifier = serverIdentifier;
 		this.corrupt = corrupt;
-		this.timestamp = System.currentTimeMillis();
 	}
 
 	@Override
@@ -71,12 +71,13 @@ public class Chunk extends ServerFile implements Comparable<Chunk> {
 		returnable += "Filename: " + filename + '\n';
 		returnable += "Sequence: " + sequence + '\n';
 		returnable += "Version: " + version + '\n';
+		returnable += "Timestamp: " + timestamp + '\n';
 		returnable += "ServerIdentifier: " + serverIdentifier + '\n';
-		returnable += "Corrupt Status: " + corrupt + '\n'; 
+		returnable += "Corrupt: " + corrupt + '\n';
 		return returnable;
 	}
 
-	public String getType() {
-		return "CHUNK";
+	public byte getType() {
+		return type;
 	}
 }

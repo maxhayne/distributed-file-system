@@ -1,92 +1,102 @@
 package cs555.overlay.wireformats;
 
+import cs555.overlay.util.FileMetadata;
+
 import java.io.*;
+import java.util.ArrayList;
 
 /**
- * For the ChunkServer to send heartbeat information to
- * the Controller.
- * 
+ * For the ChunkServer to send heartbeat information to the Controller.
+ *
  * @author hayne
  */
 public class ChunkServerSendsHeartbeat implements Event {
 
-	public byte type;
-	public int identifier;
-	public int beatType; // 1 is major, 0 is minor
-	public int totalChunks;
-	public long freeSpace;
-	public String[] files;
+    public byte type;
+    public int identifier;
+    public int beatType; // 1 is major, 0 is minor
+    public int totalChunks;
+    public long freeSpace;
+    public ArrayList<FileMetadata> files;
 
-	public ChunkServerSendsHeartbeat( int identifier, int beatType, 
-			int totalChunks, long freeSpace, String[] files ) {
-		this.type = Protocol.CHUNK_SERVER_SENDS_HEARTBEAT;
-		this.identifier = identifier;
-		this.beatType = type;
-		this.totalChunks = totalChunks;
-		this.freeSpace = freeSpace;
-		this.files = files;
-	}
+    public ChunkServerSendsHeartbeat( int identifier, int beatType,
+        int totalChunks, long freeSpace, ArrayList<FileMetadata> files ) {
+        this.type = Protocol.CHUNK_SERVER_SENDS_HEARTBEAT;
+        this.identifier = identifier;
+        this.beatType = type;
+        this.totalChunks = totalChunks;
+        this.freeSpace = freeSpace;
+        this.files = files;
+    }
 
-	public ChunkServerSendsHeartbeat( byte[] marshalledBytes ) throws IOException {
-		ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+    public ChunkServerSendsHeartbeat( byte[] marshalledBytes )
+        throws IOException {
+        ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
         DataInputStream din = new DataInputStream( bin );
 
-		type = din.readByte();
+        type = din.readByte();
 
-		identifier = din.readInt();
+        identifier = din.readInt();
 
-		beatType = din.readInt();
+        beatType = din.readInt();
 
-		totalChunks = din.readInt();
+        totalChunks = din.readInt();
 
-		freeSpace = din.readLong();
+        freeSpace = din.readLong();
 
-		int totalFiles = din.readInt();
-		if ( totalFiles != 0 ) {
-			files = new String[totalFiles];
-			for ( int i = 0; i < totalFiles; i++ ) {
-				int len = din.readInt();
-				byte[] array = new byte[len];
-				din.readFully( array );
-				files[i] = new String( array );
-			}
-		}
+        int totalFiles = din.readInt();
+        files = new ArrayList<>();
+        for ( int i = 0; i < totalFiles; ++i ) {
+            int len = din.readInt();
+            byte[] array = new byte[len];
+            din.readFully( array );
+            String filename = new String( array );
 
-		bin.close();
-		din.close();
-	}
+            int version = din.readInt();
 
-	@Override
-	public byte[] getBytes() throws IOException {
-		ByteArrayOutputStream bout = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream( ( bout ) );
-		
-		dout.writeByte( type );
+            long timestamp = din.readLong();
 
-		dout.writeInt( identifier );
+            files.add( new FileMetadata( filename, version, timestamp ) );
+        }
 
-		dout.writeInt( beatType );
+        bin.close();
+        din.close();
+    }
 
-		dout.writeInt( totalChunks );
+    @Override
+    public byte[] getBytes() throws IOException {
+        ByteArrayOutputStream bout = new ByteArrayOutputStream();
+        DataOutputStream dout = new DataOutputStream( ( bout ) );
 
-		dout.writeLong( freeSpace );
+        dout.writeByte( type );
 
-		int totalFiles = files == null ? 0 : files.length;
-		dout.writeInt (totalFiles );
-		for ( int i = 0; i < totalFiles; i++ ) {
-			byte[] array = files[i].getBytes();
-			dout.writeInt( array.length );
-			dout.write( array );
-		}
+        dout.writeInt( identifier );
 
-		byte[] marshalledBytes = bout.toByteArray();
-		dout.close();
-		bout.close();
-		return marshalledBytes;
-	}
+        dout.writeInt( beatType );
 
-	@Override
-	public byte getType() {
-		return type;
-	}
+        dout.writeInt( totalChunks );
+
+        dout.writeLong( freeSpace );
+
+        dout.writeInt( files.size() );
+        for ( FileMetadata meta : files ) {
+            byte[] array = meta.filename.getBytes();
+            dout.writeInt( array.length );
+            dout.write( array );
+
+            dout.writeInt( meta.version );
+
+            dout.writeLong( meta.timestamp );
+        }
+
+        byte[] marshalledBytes = bout.toByteArray();
+        dout.close();
+        bout.close();
+        return marshalledBytes;
+    }
+
+    @Override
+    public byte getType() {
+        return type;
+    }
 }

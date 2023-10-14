@@ -116,3 +116,9 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - Should I be checking if the files on the disk are the right length? I think that reads succeed of files have been appended to, but nothing else, because the file is read only up to the specific length that the hashes and data take up, and nothing more.
 
 - idealState and reportedState do not need to be in the ChunkServerConnectionCache. They should be in their own class with methods specific to them.
+
+- Probably need to handle exceptions in the heartbeat() method, so that one exception doesn't stop the entire heartbeat.
+
+- Perhaps all file reads should only read a maximum number of bytes, say, the number of bytes in a properly formatted chunk. If we imagine that some bad actor appended a chunk/shard file with a 10GB video, and called for a read as a client, that would effectively bring down that ChunkServer, as it would be reading for a very long time.
+
+- A fair bit of cleanup to do in the HeartbeatMonitor still. Still need to cleanup and rework the FileDistributionService. And even after cleaning that up, there's still the ChunkServerConnectionCache, and the DistributedFileCache to think about, both of which are just horrendous, I almost think I should tackle a rework of the way the Controller stores files, as the current setup of the DistributedFileCache is too complicated.

@@ -16,9 +16,9 @@ import java.net.Socket;
  */
 public class TCPConnection {
 
-    private Socket socket;
-    private TCPSender sender;
-    private TCPReceiverThread receiver;
+    private final Socket socket;
+    private final TCPSender sender;
+    private final TCPReceiverThread receiver;
 
     /**
      * Default constructor.
@@ -39,21 +39,27 @@ public class TCPConnection {
      * thread to encapsulate it hasn't been. This creates and
      * starts that thread to start receiving messages concurrently.
      */
-    public void start() { ( new Thread( receiver ) ).start(); }
+    public void start() {
+        ( new Thread( receiver ) ).start();
+    }
 
     /**
      * Getter for socket.
      *
      * @return connection socket
      */
-    public Socket getSocket() { return socket; }
+    public Socket getSocket() {
+        return socket;
+    }
 
     /**
      * Getter for TCPSender.
      *
      * @return connection's TCPSender
      */
-    public TCPSender getSender() { return sender; }
+    public TCPSender getSender() {
+        return sender;
+    }
 
     /**
      * Close this connection's socket. If the receiver thread has

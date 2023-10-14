@@ -1,46 +1,33 @@
 package cs555.overlay.transport;
 
 import cs555.overlay.wireformats.ControllerRequestsFileAcquire;
-import cs555.overlay.transport.ChunkServerConnection;
-import cs555.overlay.util.FileDistributionService;
 import cs555.overlay.util.DistributedFileCache;
 import cs555.overlay.util.HeartbeatMonitor;
-import cs555.overlay.transport.TCPSender;
-import cs555.overlay.wireformats.Protocol;
-import cs555.overlay.node.ChunkServer;
 import cs555.overlay.util.ServerFile;
 import cs555.overlay.util.Constants;
 import cs555.overlay.util.Chunk;
 import cs555.overlay.util.Shard;
 
-import java.util.concurrent.BlockingQueue;
 import java.util.Collections;
-import java.util.Collection;
 import java.io.IOException;
-import java.util.TimerTask;
-import java.util.Map.Entry;
-import java.util.TreeMap;
 import java.util.HashMap;
 import java.util.Vector;
 import java.util.Timer;
 import java.util.Map;
-import java.util.Set;
 import java.util.Comparator;
 import java.util.List;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.net.Socket;
 
 public class ChunkServerConnectionCache {
 
-	private Vector<Integer> availableIdentifiers;
-	private Map<Integer,ChunkServerConnection> chunkCache;
+	private final Vector<Integer> availableIdentifiers;
+	private final Map<Integer,ChunkServerConnection> chunkCache;
 
-	private DistributedFileCache idealState;
-	private DistributedFileCache reportedState;
+	private final DistributedFileCache idealState;
+	private final DistributedFileCache reportedState;
 
-	private HeartbeatMonitor heartbeatMonitor;
-	private Timer heartbeatTimer;
+	private final HeartbeatMonitor heartbeatMonitor;
+	private final Timer heartbeatTimer;
 
 	public ChunkServerConnectionCache( DistributedFileCache idealState, 
 			DistributedFileCache reportedState ) {
@@ -52,7 +39,6 @@ public class ChunkServerConnectionCache {
 		for ( int i = 1; i <= 32; ++i ) {
 			this.availableIdentifiers.add( i );
 		}
-		//Collections.shuffle(this.availableIdentifiers);
 
 		this.heartbeatMonitor = new HeartbeatMonitor (this, chunkCache, idealState, 
 			reportedState );
@@ -217,7 +203,7 @@ public class ChunkServerConnectionCache {
 			}
 			String returnable = "";
 			for ( int i = 0; i < 3; i++ ) {
-				Chunk chunk = new Chunk( filename, sequence, 0, 
+				Chunk chunk = new Chunk( filename, sequence, 0, 0,
 					(int)(long)servers.elementAt(i)[1], false);
 				idealState.addChunk( chunk );
 				returnable += String.valueOf( getChunkServerServerAddress((int)(long)servers
@@ -263,7 +249,8 @@ public class ChunkServerConnectionCache {
 			if (servers.size() < 9) return "";
 			String returnable = "";
 			for (int i = 0; i < 9; i++) {
-				Shard shard = new Shard(filename,sequence,i,(int)(long)servers.elementAt(i)[1],false);
+				Shard shard = new Shard(filename,sequence,i,0, 0,
+					(int)(long)servers.elementAt(i)[1],false);
 				idealState.addShard(shard);
 				//System.out.println(shard.print());
 				returnable += getChunkServerServerAddress((int)(long)servers.elementAt(i)[1]) + ",";
@@ -338,7 +325,7 @@ public class ChunkServerConnectionCache {
 					int identifier = availableIdentifiers.remove( availableIdentifiers.size()-1 );
 					ChunkServerConnection newConnection = new ChunkServerConnection( 
 						identifier, host, port, connection );
-					newConnection.start(); // start the run loop
+					( new Thread( newConnection ) ).start(); // start run loop
 					chunkCache.put( identifier, newConnection );
 					registrationStatus = identifier; // registration successful
 				}
@@ -365,7 +352,7 @@ public class ChunkServerConnectionCache {
 					return;
 				}
 				connection.setActiveStatus( false ); // stop sending thread
-				connection.close(); // stop the receiver 
+				connection.getConnection().close(); // stop the receiver
 				chunkCache.remove( identifier );
 				availableIdentifiers.add( identifier ); // add back identifier
 				
@@ -377,14 +364,14 @@ public class ChunkServerConnectionCache {
 
 		// Get best candidates for relocation
 		Vector<String> freestServers = listFreestServers();
-		if ( freestServers.size() == 0 ) { // no servers left for relocation
+		if ( freestServers.isEmpty() ) { // no servers left for relocation
 			return;
 		}
 
 		// Iterate through displaced replicas, relocated to freest ChunkServers
 		for ( ServerFile file : removedIdealStates ) {
 			String[] servers;
-			if ( file.getType().equals("CHUNK") ) {
+			if ( file.getType() == Constants.CHUNK_TYPE ) {
 				servers = idealState.getChunkStorageInfo( ((Chunk)file).filename, 
 					((Chunk)file).sequence ).split("\\|",-1)[0].split(",");
 			} else {
@@ -399,9 +386,9 @@ public class ChunkServerConnectionCache {
 				if ( chunkServers.contains(freeServer) ) {
 					continue; // don't store two replicas on one ChunkServer
 				}
-				int serverIdentifier = Integer.valueOf(freeServer);
+				int serverIdentifier = Integer.parseInt(freeServer);
 				ControllerRequestsFileAcquire acquire;
-				if (file.getType().equals("CHUNK")) { // Chunk
+				if ( file.getType() == Constants.CHUNK_TYPE ) { // Chunk
 					Chunk chunk = (Chunk)file;
 					String fullFilename = chunk.filename + "_chunk" + String.valueOf(chunk.sequence);
 					String[] serverAddresses = getChunkStorageInfo(chunk.filename, chunk.sequence)
@@ -416,7 +403,7 @@ public class ChunkServerConnectionCache {
 					if (chunkServers.size() < Constants.DATA_SHARDS) break; // Don't bother if we can't rebuild
 					Shard shard = (Shard)file;
 					String fullFilename = shard.filename + "_chunk" + String.valueOf(shard.sequence)
-						+ "_shard" + String.valueOf(shard.shardNumber);
+						+ "_shard" + String.valueOf(shard.fragment);
 					String[] serverAddresses = getChunkStorageInfo(shard.filename, shard.sequence)
 						.split("\\|",-1)[1].split(",");
 					if (serverAddresses[0].equals("")) {
@@ -426,8 +413,8 @@ public class ChunkServerConnectionCache {
 					shard.serverIdentifier = serverIdentifier;
 					idealState.addShard(shard);
 				}
-				try { sendToChunkServer( 
-					serverIdentifier,acquire.getBytes() );
+				try {
+					sendToChunkServer( serverIdentifier,acquire.getBytes() );
 				} catch (IOException ioe) {} // Best effort
 				break;
 			}

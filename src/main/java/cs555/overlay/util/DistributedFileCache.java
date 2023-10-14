@@ -10,7 +10,7 @@ import java.util.Map;
 
 public class DistributedFileCache {
 
-	private Map<String,DistributedFile> fileCache;
+	private final Map<String,DistributedFile> fileCache;
 
 	public DistributedFileCache() {
 		this.fileCache = new TreeMap<String,DistributedFile>();
@@ -22,19 +22,19 @@ public class DistributedFileCache {
 		for (Map.Entry<String,DistributedFile> entry : fileCache.entrySet()) {
 			boolean empty = true;
 			DistributedFile file = entry.getValue();
-			if (file.chunks.size() == 0 && file.shards.size() == 0) {
+			if ( file.chunks.isEmpty() && file.shards.isEmpty() ) {
 				empty = true;
 			} else {
 				Collection<Vector<Chunk>> chunkVectorCollection = file.chunks.values();
 				for (Vector<Chunk> chunkVector : chunkVectorCollection) {
-					if (chunkVector.size() != 0) {
+					if ( !chunkVector.isEmpty() ) {
 						empty = false;
 						break;
 					}
 				}
 				Collection<Vector<Shard>> shardVectorCollection = file.shards.values();
 				for (Vector<Shard> shardVector : shardVectorCollection) {
-					if (shardVector.size() != 0) {
+					if ( !shardVector.isEmpty() ) {
 						empty = false;
 						break;
 					}
@@ -77,7 +77,7 @@ public class DistributedFileCache {
 		} else if (file.shards == null && file.chunks == null) {
 			return 0;
 		} else {
-			return file.shards.size() >= file.chunks.size() ? file.shards.size() : file.chunks.size();
+			return Math.max( file.shards.size(), file.chunks.size() );
 		}
 	}
 
@@ -87,11 +87,12 @@ public class DistributedFileCache {
 			return "|";
 		}
 		String info = "";
-		if (file.chunks.get(sequence) != null && file.chunks.get(sequence).size() != 0) {
+		if (file.chunks.get(sequence) != null && !file.chunks.get( sequence )
+                                                      .isEmpty() ) {
 			boolean added = false;
 			Vector<Chunk> chunks = file.chunks.get(sequence);
 			for (Chunk chunk : chunks) {
-				if (chunk.corrupt == false) { // only return healthy chunks
+				if ( !chunk.corrupt ) { // only return healthy chunks
 					info += chunk.serverIdentifier + ",";
 					added = true;
 				}
@@ -101,13 +102,14 @@ public class DistributedFileCache {
 			}
 		}
 		info += "|"; // divides chunks from shards
-		if (file.shards.get(sequence) != null && file.shards.get(sequence).size() != 0) {
+		if (file.shards.get(sequence) != null && !file.shards.get( sequence )
+                                                      .isEmpty() ) {
 			Vector<Shard> shards = file.shards.get(sequence);
 			//System.out.println("DistributedFileCache getChunkStorageInfo: Shards vector length: " + shards.size());
 			for (int i = 0; i < 9; i++) {
 				boolean found = false;
 				for (Shard shard : shards) {
-					if (shard.shardNumber == i) {
+					if (shard.fragment == i) {
 						info += shard.serverIdentifier + ",";
 						found = true;
 						break;
@@ -133,7 +135,7 @@ public class DistributedFileCache {
 		for (DistributedFile file : files) {
 			// Iterate through all chunks and shards of the file and remove any that are stored on
 			// on the server with the identifier
-			if (file.chunks != null && file.chunks.size() != 0) {
+			if (file.chunks != null && !file.chunks.isEmpty() ) {
 				Collection<Vector<Chunk>> chunkVectors = file.chunks.values();
 				for (Vector<Chunk> chunkVector : chunkVectors) {
 					for (Chunk chunk : chunkVector) {
@@ -149,7 +151,7 @@ public class DistributedFileCache {
 					removeChunks.clear();
 				}
 			}
-			if( file.shards != null && file.shards.size() != 0 ) {
+			if( file.shards != null && !file.shards.isEmpty() ) {
 				Collection<Vector<Shard>> shardVectors = file.shards.values();
 				for (Vector<Shard> shardVector : shardVectors) {
 					for (Shard shard : shardVector) {
@@ -164,17 +166,14 @@ public class DistributedFileCache {
 					removeShards.clear();
 				}
 			}
-			if ((file.chunks == null || file.chunks.size() == 0) 
-					&& (file.shards == null || file.shards.size() == 0))
+			if ((file.chunks == null || file.chunks.isEmpty() )
+					&& (file.shards == null || file.shards.isEmpty() ))
 				removeFiles.add(file.filename);
 		}
 		for (String file : removeFiles) {
 			removeFile(file);
 		}
 		removeFiles.clear();
-		removeChunks = null;
-		removeShards = null;
-		removeFiles = null;
 		return totalRemoved;
 	}
 
@@ -280,13 +279,14 @@ public class DistributedFileCache {
 		}
 	}
 
-	public synchronized void markShardCorrupt(String filename, int sequence, int shardNumber, int serverIdentifier) {
+	public synchronized void markShardCorrupt(String filename, int sequence,
+		int fragment, int serverIdentifier) {
 		if (fileCache.containsKey(filename)
 				&& fileCache.get(filename).shards.containsKey(sequence)
 				&& fileCache.get(filename).shards.get(sequence) != null) {
 			Vector<Shard> vector = fileCache.get(filename).shards.get(sequence);
 			for (Shard shard : vector) {
-				if (shard.serverIdentifier == serverIdentifier && shard.shardNumber == shardNumber)
+				if (shard.serverIdentifier == serverIdentifier && shard.fragment == fragment)
 					shard.corrupt = true;
 			}
 		}
@@ -304,13 +304,14 @@ public class DistributedFileCache {
 		}
 	}
 
-	public synchronized void markShardHealthy(String filename, int sequence, int shardNumber, int serverIdentifier) {
+	public synchronized void markShardHealthy(String filename, int sequence,
+		int fragment, int serverIdentifier) {
 		if (fileCache.containsKey(filename)
 				&& fileCache.get(filename).shards.containsKey(sequence)
 				&& fileCache.get(filename).shards.get(sequence) != null) {
 			Vector<Shard> vector = fileCache.get(filename).shards.get(sequence);
 			for (Shard shard : vector) {
-				if (shard.serverIdentifier == serverIdentifier && shard.shardNumber == shardNumber) {
+				if (shard.serverIdentifier == serverIdentifier && shard.fragment == fragment) {
 					shard.corrupt = false;
 				}
 			}
@@ -319,9 +320,9 @@ public class DistributedFileCache {
 
 	// Function to return differences between two DistributedFileCaches.
 	// Will return all chunks or shards that are stored in this.fileCache
-	// that are not stored in the the passed fileCache. Will help to 
+	// that are not stored in the passed fileCache. Will help to
 	// identify chunkservers that are down.
-	public synchronized Vector<String> differences(DistributedFileCache passedcache) {
+	public synchronized Vector<String> differences(DistributedFileCache passedCache) {
 		Vector<String> differences = new Vector<String>();
 		for (Map.Entry<String,DistributedFile> entry1 : fileCache.entrySet()) {
 			String filename = entry1.getKey();
@@ -334,7 +335,7 @@ public class DistributedFileCache {
 				// entry2.getValue() will be the Vector<Chunk> for the chunk#
 				// entry2.getValue().contains(Chunk) will tell you if the Chunk is present
 				for (Chunk chunk : entry2.getValue()) {
-					if (!passedcache.containsChunk(chunk)) {
+					if (!passedCache.containsChunk(chunk)) {
 						differences.add("chunk" + "," + filename + "," + sequence  + "," 
 							+ chunk.version + "," + chunk.serverIdentifier + "," + chunk.timestamp);
 					}
@@ -343,9 +344,10 @@ public class DistributedFileCache {
 			for (Map.Entry<Integer,Vector<Shard>> entry2 : entry1.getValue().shards.entrySet()) {
 				int sequence = entry2.getKey();
 				for (Shard shard : entry2.getValue()) {
-					if (!passedcache.containsShard(shard)) {
+					if (!passedCache.containsShard(shard)) {
 						differences.add("shard" + "," + filename + "," + sequence  + ","
-							+ shard.shardNumber + "," + shard.serverIdentifier + "," + shard.timestamp);
+							+ shard.fragment + "," + shard.serverIdentifier +
+										"," + shard.timestamp);
 					}
 				}
 			}

@@ -1,5 +1,7 @@
 package cs555.overlay.util;
 
+import java.util.ArrayList;
+
 /**
  * Class used to store information from the latest heartbeat sent by the
  * ChunkServer in whose ChunkServerConnection this object is stored.
@@ -13,17 +15,18 @@ public class HeartbeatInfo {
 
     private long freeSpace;
     private int totalChunks;
-    private String[] files;
+    private ArrayList<FileMetadata> files;
 
     public HeartbeatInfo() {
         this.lastMajorHeartbeat = -1;
         this.lastMinorHeartbeat = -1;
         this.freeSpace = -1;
         this.totalChunks = -1;
+        this.files = new ArrayList<>();
     }
 
     public synchronized void update( int type, long freeSpace, int totalChunks,
-        String[] files ) {
+        ArrayList<FileMetadata> files ) {
         if ( type == 1 ) {
             lastMajorHeartbeat = System.currentTimeMillis();
         } else {
@@ -50,7 +53,7 @@ public class HeartbeatInfo {
         return totalChunks;
     }
 
-    public synchronized String[] getFiles() {
-        return files.clone();
+    public synchronized ArrayList<FileMetadata> getFiles() {
+        return new ArrayList<FileMetadata>( files );
     }
 }

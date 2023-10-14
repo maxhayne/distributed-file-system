@@ -17,9 +17,9 @@ import java.util.Scanner;
 
 public class Controller implements Node {
 
-    private String host;
-    private int port;
-    private ChunkServerConnectionCache connectionCache;
+    private final String host;
+    private final int port;
+    private final ChunkServerConnectionCache connectionCache;
 
     public Controller( String host, int port ) {
         this.host = host;
@@ -284,8 +284,7 @@ public class Controller implements Node {
     private void missingFileHelper( Event event ) {
         ChunkServerNoStoreFile message = ( ChunkServerNoStoreFile ) event;
         // We need to remove the Chunk with those properties from the
-        // idealState,
-        // and find a new server that can store the file.
+        // idealState, and find a new server that can store the file.
 
         // Get address of ChunkServer that's missing the file
         String[] split = message.address.split( ":" );
@@ -299,12 +298,11 @@ public class Controller implements Node {
         if ( identifier != -1 ) {
             connectionCache.getIdealState()
                 .removeChunk(
-                    new Chunk( message.filename, sequence, 0, identifier,
+                    new Chunk( message.filename, sequence, 0, 0, identifier,
                         false ) );
         }
         // Just remove the file for now. Can try to repair the file system
-        // during
-        // heartbeats for chunks that aren't replicated 3 times.
+        // during heartbeats for chunks that aren't replicated 3 times.
     }
 
     /**

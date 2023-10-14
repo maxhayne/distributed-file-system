@@ -80,20 +80,14 @@ public class FileDistributionService implements Runnable {
     public static boolean checkChunkFilename( String filename ) {
         boolean matches = filename.matches( ".*_chunk[0-9]*$" );
         String[] split = filename.split( "_chunk" );
-        if ( matches && split.length == 2 ) {
-            return true;
-        }
-        return false;
+        return matches && split.length == 2;
     }
 
     public static boolean checkShardFilename( String filename ) {
         boolean matches = filename.matches( ".*_chunk[0-9]*_shard[0-8]$" );
         String[] split1 = filename.split( "_chunk" );
         String[] split2 = filename.split( "_shard" );
-        if ( matches && split1.length == 2 && split2.length == 2 ) {
-            return true;
-        }
-        return false;
+        return matches && split1.length == 2 && split2.length == 2;
     }
 
     // Function for generating hash
@@ -191,7 +185,8 @@ public class FileDistributionService implements Runnable {
     }
 
     public synchronized void truncateFile( String filename, long size ) {
-        try ( RandomAccessFile file = new RandomAccessFile( filename, "rw" );
+        String filePath = directory.resolve( filename ).toString();
+        try ( RandomAccessFile file = new RandomAccessFile( filePath, "rw" );
               FileChannel channel = file.getChannel();
               FileLock lock = channel.lock() ) {
             channel.truncate( size );
@@ -353,15 +348,15 @@ public class FileDistributionService implements Runnable {
     }
 
     // Check chunk for errors and return integer array containing slice numbers
-    public static Vector<Integer> checkChunkForCorruption( byte[] chunkArray ) {
+    public static Vector<Integer> checkChunkForCorruption( byte[] chunkBytes ) {
         Vector<Integer> corrupt = new Vector<Integer>();
         for ( int i = 0; i < 8; ++i ) {
             corrupt.add( i );
         }
-        if ( chunkArray == null ) {
+        if ( chunkBytes == null ) {
             return corrupt;
         }
-        ByteBuffer chunk = ByteBuffer.wrap( chunkArray );
+        ByteBuffer chunk = ByteBuffer.wrap( chunkBytes );
         byte[] hash = new byte[20];
         byte[] slice = new byte[8195];
         try {
@@ -390,11 +385,11 @@ public class FileDistributionService implements Runnable {
         return corrupt;
     }
 
-    public static boolean checkShardForCorruption( byte[] shardArray ) {
-        if ( shardArray == null ) {
+    public static boolean checkShardForCorruption( byte[] shardBytes ) {
+        if ( shardBytes == null ) {
             return true;
         }
-        ByteBuffer shardArrayBuffer = ByteBuffer.wrap( shardArray );
+        ByteBuffer shardArrayBuffer = ByteBuffer.wrap( shardBytes );
         boolean corrupt = false;
         byte[] hash = new byte[20];
         byte[] shard =

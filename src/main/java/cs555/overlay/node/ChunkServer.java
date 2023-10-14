@@ -91,6 +91,21 @@ public class ChunkServer implements Node {
         }
     }
 
+    /**
+     * Little helper function used to deal with some of the file corruption
+     * logic.
+     *
+     * @param vec Vector<Integer> to convert to int[]
+     * @return int[] converted from Vector
+     */
+    public static int[] vecToArr( Vector<Integer> vec ) {
+        int[] arr = new int[vec.size()];
+        for ( int i = 0; i < vec.size(); ++i ) {
+            arr[i] = vec.get( i );
+        }
+        return arr;
+    }
+
     @Override
     public String getHost() {
         return host;
@@ -220,10 +235,7 @@ public class ChunkServer implements Node {
                 FileDistributionService.checkChunkForCorruption( fileBytes );
             // Add event to fileService queue
             if ( !corruptSlices.isEmpty() ) {
-                int[] slices = new int[corruptSlices.size()];
-                for ( int i = 0; i < corruptSlices.size(); i++ ) {
-                    slices[i] = corruptSlices.elementAt( i );
-                }
+                int[] slices = vecToArr( corruptSlices );
                 ChunkServerReportsFileCorruption event =
                     new ChunkServerReportsFileCorruption( identifier, filename,
                         slices );
@@ -245,15 +257,8 @@ public class ChunkServer implements Node {
                 fileService.addToQueue( event );
                 return false;
             }
-            // If fileBytes is too long for a properly formatted shard,
-            // truncate it to the correct length, remove the hash, remove the
-            // metadata, and send. The reason strip the shard of the hash and
-            // metadata is because they aren't useful for the ChunkServer
-            // trying to reconstruct the file. Whereas for Chunks, they are.
             dataToSend = FileDistributionService.getDataFromShard(
-                FileDistributionService.removeHashFromShard(
-                    Arrays.copyOfRange( fileBytes, 0, 10994 ) ) );
-            // Hopefully 10994 is the correct length
+                FileDistributionService.removeHashFromShard( fileBytes ) );
         }
 
         // File is not corrupt, and can be served to the requester
@@ -335,10 +340,7 @@ public class ChunkServer implements Node {
 
         // If there are corrupt slices, make sure the fileService tries to
         // repair them
-        int[] slicesToRepair = new int[corruptSlices.size()];
-        for ( int i = 0; i < corruptSlices.size(); i++ ) {
-            slicesToRepair[i] = corruptSlices.elementAt( i );
-        }
+        int[] slicesToRepair = vecToArr( corruptSlices );
         ChunkServerReportsFileCorruption report =
             new ChunkServerReportsFileCorruption( identifier, request.filename,
                 slicesToRepair );
@@ -348,10 +350,7 @@ public class ChunkServer implements Node {
         if ( servableSlices.isEmpty() ) {
             return false;
         } else { // Serve slices that are healthy
-            int[] cleanSlices = new int[servableSlices.size()];
-            for ( int i = 0; i < servableSlices.size(); ++i ) {
-                cleanSlices[i] = servableSlices.elementAt( i );
-            }
+            int[] cleanSlices = vecToArr( servableSlices );
             // Create slices array we can serve
             byte[][] slicesToServe =
                 fileService.getSlices( fileBytes, cleanSlices );
@@ -562,10 +561,7 @@ public class ChunkServer implements Node {
             FileDistributionService.checkChunkForCorruption( fileBytes );
         int[] corruptSlices = null;
         if ( !errors.isEmpty() ) {
-            corruptSlices = new int[errors.size()];
-            for ( int i = 0; i < errors.size(); ++i ) {
-                corruptSlices[i] = errors.elementAt( i );
-            }
+            corruptSlices = vecToArr( errors );
         }
 
         // If there are corrupt slices, give event to fileService to deal with
