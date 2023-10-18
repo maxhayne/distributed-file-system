@@ -12,91 +12,90 @@ import java.util.ArrayList;
  */
 public class ChunkServerSendsHeartbeat implements Event {
 
-    public byte type;
-    public int identifier;
-    public int beatType; // 1 is major, 0 is minor
-    public int totalChunks;
-    public long freeSpace;
-    public ArrayList<FileMetadata> files;
+  public byte type;
+  public int identifier;
+  public int beatType; // 1 is major, 0 is minor
+  public int totalChunks;
+  public long freeSpace;
+  public ArrayList<FileMetadata> files;
 
-    public ChunkServerSendsHeartbeat( int identifier, int beatType,
-        int totalChunks, long freeSpace, ArrayList<FileMetadata> files ) {
-        this.type = Protocol.CHUNK_SERVER_SENDS_HEARTBEAT;
-        this.identifier = identifier;
-        this.beatType = type;
-        this.totalChunks = totalChunks;
-        this.freeSpace = freeSpace;
-        this.files = files;
+  public ChunkServerSendsHeartbeat(int identifier, int beatType,
+      int totalChunks, long freeSpace, ArrayList<FileMetadata> files) {
+    this.type = Protocol.CHUNK_SERVER_SENDS_HEARTBEAT;
+    this.identifier = identifier;
+    this.beatType = type;
+    this.totalChunks = totalChunks;
+    this.freeSpace = freeSpace;
+    this.files = files;
+  }
+
+  public ChunkServerSendsHeartbeat(byte[] marshalledBytes) throws IOException {
+    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+    DataInputStream din = new DataInputStream( bin );
+
+    type = din.readByte();
+
+    identifier = din.readInt();
+
+    beatType = din.readInt();
+
+    totalChunks = din.readInt();
+
+    freeSpace = din.readLong();
+
+    int totalFiles = din.readInt();
+    files = new ArrayList<>();
+    for ( int i = 0; i < totalFiles; ++i ) {
+      int len = din.readInt();
+      byte[] array = new byte[len];
+      din.readFully( array );
+      String filename = new String( array );
+
+      int version = din.readInt();
+
+      long timestamp = din.readLong();
+
+      files.add( new FileMetadata( filename, version, timestamp ) );
     }
 
-    public ChunkServerSendsHeartbeat( byte[] marshalledBytes )
-        throws IOException {
-        ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-        DataInputStream din = new DataInputStream( bin );
+    bin.close();
+    din.close();
+  }
 
-        type = din.readByte();
+  @Override
+  public byte[] getBytes() throws IOException {
+    ByteArrayOutputStream bout = new ByteArrayOutputStream();
+    DataOutputStream dout = new DataOutputStream( (bout) );
 
-        identifier = din.readInt();
+    dout.writeByte( type );
 
-        beatType = din.readInt();
+    dout.writeInt( identifier );
 
-        totalChunks = din.readInt();
+    dout.writeInt( beatType );
 
-        freeSpace = din.readLong();
+    dout.writeInt( totalChunks );
 
-        int totalFiles = din.readInt();
-        files = new ArrayList<>();
-        for ( int i = 0; i < totalFiles; ++i ) {
-            int len = din.readInt();
-            byte[] array = new byte[len];
-            din.readFully( array );
-            String filename = new String( array );
+    dout.writeLong( freeSpace );
 
-            int version = din.readInt();
+    dout.writeInt( files.size() );
+    for ( FileMetadata meta : files ) {
+      byte[] array = meta.filename.getBytes();
+      dout.writeInt( array.length );
+      dout.write( array );
 
-            long timestamp = din.readLong();
+      dout.writeInt( meta.version );
 
-            files.add( new FileMetadata( filename, version, timestamp ) );
-        }
-
-        bin.close();
-        din.close();
+      dout.writeLong( meta.timestamp );
     }
 
-    @Override
-    public byte[] getBytes() throws IOException {
-        ByteArrayOutputStream bout = new ByteArrayOutputStream();
-        DataOutputStream dout = new DataOutputStream( ( bout ) );
+    byte[] marshalledBytes = bout.toByteArray();
+    dout.close();
+    bout.close();
+    return marshalledBytes;
+  }
 
-        dout.writeByte( type );
-
-        dout.writeInt( identifier );
-
-        dout.writeInt( beatType );
-
-        dout.writeInt( totalChunks );
-
-        dout.writeLong( freeSpace );
-
-        dout.writeInt( files.size() );
-        for ( FileMetadata meta : files ) {
-            byte[] array = meta.filename.getBytes();
-            dout.writeInt( array.length );
-            dout.write( array );
-
-            dout.writeInt( meta.version );
-
-            dout.writeLong( meta.timestamp );
-        }
-
-        byte[] marshalledBytes = bout.toByteArray();
-        dout.close();
-        bout.close();
-        return marshalledBytes;
-    }
-
-    @Override
-    public byte getType() {
-        return type;
-    }
+  @Override
+  public byte getType() {
+    return type;
+  }
 }
