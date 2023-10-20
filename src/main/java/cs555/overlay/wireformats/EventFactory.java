@@ -15,8 +15,7 @@ public class EventFactory {
   /**
    * Private Constructor.
    */
-  private EventFactory() {
-  }
+  private EventFactory() {}
 
   /**
    * Gets instance of singleton EventFactory.

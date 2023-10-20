@@ -8,7 +8,7 @@ import java.util.ArrayList;
  *
  * @author hayne
  */
-public class HeartbeatInfo {
+public class HeartbeatInformation {
 
   private long lastMajorHeartbeat;
   private long lastMinorHeartbeat;
@@ -17,7 +17,7 @@ public class HeartbeatInfo {
   private int totalChunks;
   private ArrayList<FileMetadata> files;
 
-  public HeartbeatInfo() {
+  public HeartbeatInformation() {
     this.lastMajorHeartbeat = -1;
     this.lastMinorHeartbeat = -1;
     this.freeSpace = -1;
@@ -57,8 +57,8 @@ public class HeartbeatInfo {
     return new ArrayList<FileMetadata>( files );
   }
 
-  public synchronized HeartbeatInfo copy() {
-    HeartbeatInfo copy = new HeartbeatInfo();
+  public synchronized HeartbeatInformation copy() {
+    HeartbeatInformation copy = new HeartbeatInformation();
     copy.lastMajorHeartbeat = lastMajorHeartbeat;
     copy.lastMinorHeartbeat = lastMinorHeartbeat;
     copy.files = files;

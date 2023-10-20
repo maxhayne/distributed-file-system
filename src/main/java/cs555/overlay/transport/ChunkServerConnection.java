@@ -1,6 +1,6 @@
 package cs555.overlay.transport;
 
-import cs555.overlay.util.HeartbeatInfo;
+import cs555.overlay.util.HeartbeatInformation;
 
 /**
  * Maintains an active connection with a ChunkServer. Its function is to
@@ -17,7 +17,7 @@ public class ChunkServerConnection {
   // Status information
   private final long startTime;
   // HeartbeatInformation
-  private final HeartbeatInfo heartbeatInfo; // latest heartbeat info
+  private final HeartbeatInformation heartbeatInformation; // latest heartbeat info
   private int unhealthy;
   private int pokes;
   private int pokeReplies;
@@ -27,7 +27,7 @@ public class ChunkServerConnection {
     this.identifier = identifier;
     this.address = address;
     this.connection = connection;
-    this.heartbeatInfo = new HeartbeatInfo();
+    this.heartbeatInformation = new HeartbeatInformation();
 
     this.startTime = System.currentTimeMillis();
     this.unhealthy = 0;
@@ -47,8 +47,8 @@ public class ChunkServerConnection {
     return (pokes-pokeReplies);
   }
 
-  public HeartbeatInfo getHeartbeatInfo() {
-    return heartbeatInfo;
+  public HeartbeatInformation getHeartbeatInfo() {
+    return heartbeatInformation;
   }
 
   public synchronized long getStartTime() {
@@ -83,8 +83,9 @@ public class ChunkServerConnection {
 
   public synchronized String toString() {
     String sb =
-        address+", "+identifier+", "+heartbeatInfo.getFreeSpace()/(1024*1024)+
-        "MB"+", "+heartbeatInfo.getTotalChunks()+" chunks"+", "+"health: "+
+        address+", "+identifier+", "+
+        heartbeatInformation.getFreeSpace()/(1024*1024)+
+        "MB"+", "+heartbeatInformation.getTotalChunks()+" chunks"+", "+"health: "+
         unhealthy;
     return "[ "+sb+" ]";
   }

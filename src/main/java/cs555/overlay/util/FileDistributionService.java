@@ -14,11 +14,17 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Vector;
 import java.util.stream.Stream;
 
 public class FileDistributionService {
+
+  public static int CHUNK_DATA_LENGTH = 65536;
+  public static int CHUNK_METADATA_LENGTH;
+  public static int SHA1_LENGTH = 20;
+  public static int CHUNK_FILE_LENGTH = 65720;
+  public static int SHARD_FILE_LENGTH = 10994;
 
   private final Path directory;
 
@@ -33,13 +39,13 @@ public class FileDistributionService {
   }
 
   public static boolean checkChunkFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk[0-9]*$" );
+    boolean matches = filename.matches( ".*_chunk(0|[1-9][0-9]*)*$" );
     String[] split = filename.split( "_chunk" );
     return matches && split.length == 2;
   }
 
   public static boolean checkShardFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk[0-9]*_shard[0-8]$" );
+    boolean matches = filename.matches( ".*_chunk(0|[1-9][0-9]*)_shard[0-8]$" );
     String[] split1 = filename.split( "_chunk" );
     String[] split2 = filename.split( "_shard" );
     return matches && split1.length == 2 && split2.length == 2;
@@ -169,8 +175,7 @@ public class FileDistributionService {
   }
 
   // Takes chunk data, combines with metadata and hashes, basically
-  // prepares it for
-  // writing to a file.
+  // prepares it for writing to a file.
   public static byte[] readyChunkForStorage(int sequence, int version,
       byte[] chunkArray) {
     int chunkArrayRemaining = chunkArray.length;
@@ -229,7 +234,7 @@ public class FileDistributionService {
     byte[] shardToFileArray =
         new byte[20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+
                  10954]; // Hash+Sequence
-    // +Fragment+Version+Timestamp+Shard, 10994 bytes in total
+    // +Fragment+Version+Timestamp+Data, 10994 bytes in total
     byte[] shardWithMetaData =
         new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10954];
     ByteBuffer shardMetaWrap = ByteBuffer.wrap( shardWithMetaData );
@@ -253,8 +258,8 @@ public class FileDistributionService {
   }
 
   // Check chunk for errors and return integer array containing slice numbers
-  public static Vector<Integer> checkChunkForCorruption(byte[] chunkBytes) {
-    Vector<Integer> corrupt = new Vector<Integer>();
+  public static ArrayList<Integer> checkChunkForCorruption(byte[] chunkBytes) {
+    ArrayList<Integer> corrupt = new ArrayList<Integer>();
     for ( int i = 0; i < 8; ++i ) {
       corrupt.add( i );
     }
@@ -270,7 +275,7 @@ public class FileDistributionService {
         chunk.get( slice );
         byte[] computedHash = SHA1FromBytes( slice );
         if ( Arrays.equals( hash, computedHash ) ) {
-          corrupt.removeElement( i );
+          corrupt.remove( Integer.valueOf( i ) );
         }
         Arrays.fill( hash, ( byte ) 0 );
         Arrays.fill( slice, ( byte ) 0 );
@@ -342,7 +347,7 @@ public class FileDistributionService {
     return cleanedShard;
     // cleanedShard will start like this:
     // Sequence (int)
-    // ShardNumber (int)
+    // Fragment (int)
     // Version (int)
     // Timestamp (long)
     // Data
@@ -427,6 +432,29 @@ public class FileDistributionService {
       System.out.println( "readBytesFromFile: Unable to read '"+filename+"'."+
                           ioe.getMessage() );
       return null;
+    }
+    return fileBytes;
+  }
+
+  /**
+   * Reads the first N bytes of a file.
+   *
+   * @param filename name of file to read
+   * @param N bytes of file will be read
+   * @return byte string of length N, filled until an exception is thrown or the
+   * entire file has been read
+   */
+  public synchronized byte[] readNBytesFromFile(String filename, int N) {
+    String fileWithPath = directory.resolve( filename ).toString();
+    byte[] fileBytes = new byte[N];
+    try ( RandomAccessFile file = new RandomAccessFile( fileWithPath, "r" );
+          FileChannel channel = file.getChannel();
+          FileLock lock = channel.lock() ) {
+      file.readFully( fileBytes );
+    } catch ( IOException ioe ) {
+      System.err.println(
+          "readFileTo: Unable to read "+N+" bytes of '"+filename+". "+
+          ioe.getMessage() );
     }
     return fileBytes;
   }
@@ -517,5 +545,4 @@ public class FileDistributionService {
     }
     return sliceData;
   }
-
 }

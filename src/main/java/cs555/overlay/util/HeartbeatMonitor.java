@@ -55,17 +55,17 @@ public class HeartbeatMonitor extends TimerTask {
     return "";
   }
 
-  private long getTimeSinceLastHeartbeat(long now, HeartbeatInfo info) {
+  private long getTimeSinceLastHeartbeat(long now, HeartbeatInformation info) {
     return Math.min( now-info.getLastMajorHeartbeat(),
         now-info.getLastMinorHeartbeat() );
   }
 
-  private int getLastHeartbeatType(long now, HeartbeatInfo info) {
+  private int getLastHeartbeatType(long now, HeartbeatInformation info) {
     return now-info.getLastMajorHeartbeat() < now-info.getLastMinorHeartbeat() ?
                0 : 1;
   }
 
-  private ArrayList<Chunk> getNewChunks(int identifier, HeartbeatInfo info) {
+  private ArrayList<Chunk> getNewChunks(int identifier, HeartbeatInformation info) {
     ArrayList<Chunk> newChunks = new ArrayList<Chunk>();
     for ( FileMetadata meta : info.getFiles() ) {
       String[] splitFilename = splitFilename( meta.filename );
@@ -79,7 +79,7 @@ public class HeartbeatMonitor extends TimerTask {
     return newChunks;
   }
 
-  private ArrayList<Shard> getNewShards(int identifier, HeartbeatInfo info) {
+  private ArrayList<Shard> getNewShards(int identifier, HeartbeatInformation info) {
     ArrayList<Shard> newShards = new ArrayList<Shard>();
     for ( FileMetadata meta : info.getFiles() ) {
       String[] splitFilename = splitFilename( meta.filename );
@@ -95,7 +95,7 @@ public class HeartbeatMonitor extends TimerTask {
   }
 
   private void updateStateIfHealthyHeartbeat(long timeSinceLastHeartbeat,
-      int lastBeatType, int identifier, HeartbeatInfo info) {
+      int lastBeatType, int identifier, HeartbeatInformation info) {
     if ( timeSinceLastHeartbeat < Constants.HEARTRATE ) {
       ArrayList<Chunk> newChunks = getNewChunks( identifier, info );
       ArrayList<Shard> newShards = getNewShards( identifier, info );
@@ -115,7 +115,7 @@ public class HeartbeatMonitor extends TimerTask {
   }
 
   private int calculateUnhealthyScore(long now, long connectionStartTime,
-      HeartbeatInfo info) {
+      HeartbeatInformation info) {
     int unhealthyScore = 0;
     // ChunkServer has missed a major heartbeat
     if ( info.getLastMajorHeartbeat() != -1 &&
@@ -171,25 +171,26 @@ public class HeartbeatMonitor extends TimerTask {
 
         sb.append( "\n" ).append( connection.toString() );
 
-        HeartbeatInfo heartbeatInfo = connection.getHeartbeatInfo().copy();
+        HeartbeatInformation
+            heartbeatInformation = connection.getHeartbeatInfo().copy();
 
         // Append list of new files to print later
         sb.append( "\n" )
-          .append( createStringOfFiles( heartbeatInfo.getFiles() ) );
+          .append( createStringOfFiles( heartbeatInformation.getFiles() ) );
 
         long timeSinceLastHeartbeat =
-            getTimeSinceLastHeartbeat( now, heartbeatInfo );
-        int lastBeatType = getLastHeartbeatType( now, heartbeatInfo );
+            getTimeSinceLastHeartbeat( now, heartbeatInformation );
+        int lastBeatType = getLastHeartbeatType( now, heartbeatInformation );
 
 
         updateStateIfHealthyHeartbeat( timeSinceLastHeartbeat, lastBeatType,
-            connection.getIdentifier(), heartbeatInfo );
+            connection.getIdentifier(), heartbeatInformation );
 
         // Give the connection between the Controller and this ChunkServer a
         // score measuring how unhealthy it is.
         int unhealthyScore =
             calculateUnhealthyScore( now, connection.getStartTime(),
-                heartbeatInfo );
+                heartbeatInformation );
 
         // Add a 'poke' message to send to the ChunkServer, and on
         // the next heartbeat, add to 'unhealthy' the discrepancy

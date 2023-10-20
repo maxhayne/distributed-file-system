@@ -1,6 +1,6 @@
 package cs555.overlay.util;
 
-import java.util.Vector;
+import java.util.ArrayList;
 
 public class ArrayUtilities {
 
@@ -50,18 +50,13 @@ public class ArrayUtilities {
   }
 
   /**
-   * Little helper function used to deal with some of the file corruption logic.
-   * Converts a Vector<Integer> to an int[].
+   * Helper function to convert an ArrayList<Integer> to an int[].
    *
-   * @param vec Vector<Integer> to convert to int[]
-   * @return int[] converted from Vector
+   * @param list ArrayList<Integer> to convert to int[]
+   * @return int[] converted from ArrayList
    */
-  public static int[] vecToArr(Vector<Integer> vec) {
-    int[] arr = new int[vec.size()];
-    for ( int i = 0; i < vec.size(); ++i ) {
-      arr[i] = vec.get( i );
-    }
-    return arr;
+  public static int[] arrayListToArray(ArrayList<Integer> list) {
+    return list.stream().mapToInt( i -> i ).toArray();
   }
 
 }

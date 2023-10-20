@@ -1,11 +1,12 @@
 package cs555.overlay.util;
 
+import cs555.overlay.files.FileReader;
+import cs555.overlay.files.FileReaderFactory;
 import cs555.overlay.node.ChunkServer;
 import cs555.overlay.wireformats.ChunkServerReportsFileCorruption;
 import cs555.overlay.wireformats.ChunkServerSendsHeartbeat;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
@@ -58,91 +59,39 @@ public class HeartbeatService extends TimerTask {
    */
   private byte[] heartbeat(int beatType)
       throws IOException, NoSuchAlgorithmException {
-    // fileMap will be the map that we are modifying during this
-    // heartbeat. If minorHeartbeat, fileMap = minorFiles, if
-    // majorHeartbeat, fileMap = majorFiles
+    // fileMap will be the map that we are modifying during this heartbeat.
+    // If minorHeartbeat, fileMap = minorFiles, if majorHeartbeat, fileMap =
+    // majorFiles
     Map<String, FileMetadata> fileMap = beatType == 0 ? minorFiles : majorFiles;
     fileMap.clear();
     String[] files = chunkServer.getFileService().listFiles();
     // loop through list of filenames stored at ChunkServer
     for ( String filename : files ) {
-      // if this is a minor heartbeat, skip files that have already
-      // been added to majorFiles
+      // if this is a minor heartbeat, skip files that have already been
+      // added to majorFiles
       if ( beatType == 0 && majorFiles.containsKey( filename ) ) {
         continue;
       }
-      // read the file
-      byte[] fileBytes =
-          chunkServer.getFileService().readBytesFromFile( filename );
-      if ( fileBytes == null ) { // skip if read failed
-        continue;
-      }
 
-      if ( !FileDistributionService.checkShardFilename( filename ) ) {
-        // it is a chunk
-        // if file is too large for a chunk, truncate it to proper
-        // length, and truncate byte string already read
-        fileBytes = truncateIfNecessary( filename, fileBytes, 65720 );
+      FileReaderFactory factory = FileReaderFactory.getInstance();
+      FileReader fileReader = factory.createFileReader( filename );
+      fileReader.readAndProcess( chunkServer.getFileService() );
 
-        // check if chunk is corrupt
-        Vector<Integer> corruptSlices =
-            FileDistributionService.checkChunkForCorruption( fileBytes );
-        int[] corruptArray = null;
-        if ( !corruptSlices.isEmpty() ) {
-          corruptArray = ArrayUtilities.vecToArr( corruptSlices );
+      if ( fileReader.isCorrupt() ) {
+        ChunkServerReportsFileCorruption report =
+            new ChunkServerReportsFileCorruption( chunkServer.getIdentifier(),
+                filename, fileReader.getCorruption() );
+        try {
+          chunkServer.getControllerConnection()
+                     .getSender()
+                     .sendData( report.getBytes() );
+        } catch ( IOException ioe ) {
+          System.out.println(
+              "heartbeat: Couldn't notify the Controller of corruption. "+
+              ioe.getMessage() );
         }
-
-        // if chunk isn't corrupt, add to fileMap
-        if ( corruptArray == null ) {
-          ByteBuffer buffer = ByteBuffer.wrap( fileBytes );
-          fileMap.put( filename,
-              new FileMetadata( filename, buffer.getInt( 28 ),
-                  buffer.getLong( 36 ) ) );
-          // version starts at 28, timestamp starts at 36
-        } else { // chunk is corrupt
-          // add corruption event to fileService queue
-          ChunkServerReportsFileCorruption report =
-              new ChunkServerReportsFileCorruption( chunkServer.getIdentifier(),
-                  filename, corruptArray );
-          try {
-            chunkServer.getControllerConnection()
-                       .getSender()
-                       .sendData( report.getBytes() );
-          } catch ( IOException ioe ) {
-            System.out.println(
-                "heartbeat: Couldn't notify "+"Controller of corruption. "+
-                ioe.getMessage() );
-          }
-        }
-      } else { // it is a shard
-        // if shard is too long, truncate both the file and the bytes
-        // that have already been read
-        fileBytes = truncateIfNecessary( filename, fileBytes, 10994 );
-
-        // check if shard is corrupt
-        boolean corrupt =
-            FileDistributionService.checkShardForCorruption( fileBytes );
-
-        // if corrupt, add corruption event to fileService queue
-        if ( corrupt ) {
-          ChunkServerReportsFileCorruption report =
-              new ChunkServerReportsFileCorruption( chunkServer.getIdentifier(),
-                  filename, null );
-          try {
-            chunkServer.getControllerConnection()
-                       .getSender()
-                       .sendData( report.getBytes() );
-          } catch ( IOException ioe ) {
-            System.out.println(
-                "heartbeat: Couldn't notify "+"Controller of corruption. "+
-                ioe.getMessage() );
-          }
-        } else { // if not corrupt, add to fileMap
-          ByteBuffer buffer = ByteBuffer.wrap( fileBytes );
-          fileMap.put( filename,
-              new FileMetadata( filename, buffer.getInt( 28 ),
-                  buffer.getLong( 32 ) ) );
-        }
+      } else {
+        fileMap.put( filename, fileReader.getMetadata() );
       }
     }
 

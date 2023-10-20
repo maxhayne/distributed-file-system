@@ -124,3 +124,5 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - A fair bit of cleanup to do in the HeartbeatMonitor still. Still need to cleanup and rework the FileDistributionService. And even after cleaning that up, there's still the ChunkServerConnectionCache, and the DistributedFileCache to think about, both of which are just horrendous, I almost think I should tackle a rework of the way the Controller stores files, as the current setup of the DistributedFileCache is too complicated.
 
 - It would simplify things a lot for the Controller not have to keep track of whether the servers storing a particular file are storing shards or replications of chunks.
+
+- The Controller might receive a corruption message from a ChunkServer for a file that it shouldn't have. If it does, it shouldn't respond, or it should send a message to that ChunkServer telling it to delete the file.

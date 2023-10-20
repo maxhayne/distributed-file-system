@@ -1,5 +1,6 @@
 package cs555.overlay.node;
 
+import cs555.overlay.files.ChunkReader;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.transport.TCPServerThread;
@@ -10,10 +11,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Arrays;
-import java.util.Scanner;
-import java.util.Timer;
-import java.util.Vector;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -131,12 +129,8 @@ public class ChunkServer implements Node {
         acknowledgeHeartbeat( connection );
         break;
 
-      case Protocol.REQUESTS_SLICES:
-        serveSlices( event, connection );
-        break;
-
-      case Protocol.CHUNK_SERVER_REQUESTS_FILE:
-        serveFileToChunkServer( event, connection );
+      case Protocol.REPAIR_CHUNK:
+        repairChunkHelper( event );
         break;
 
       case Protocol.CHUNK_SERVER_SERVES_FILE:
@@ -153,104 +147,19 @@ public class ChunkServer implements Node {
   }
 
   /**
-   * Calls a helper function which attempt to serve a requested file to a
-   * ChunkServer. If that function fails, and returns false, this method sends a
-   * denial of the request to the requesting server.
+   * Checks to see if this ChunkServer is storing the relevant file. If it is,
+   * it tries to retrieve the relevant slices which need repairing from that
+   * file. If all slices needed for the repair are present, attaches the slices
+   * to the message and sends the message to the ChunkServer needing the repair.
+   * If not all slices were found and there is another ChunkServer that might
+   * store the needed slices, forwards the message to that server.
    *
-   * @param event
-   * @param connection
+   * @param event message being processed
    */
-  private void serveFileToChunkServer(Event event, TCPConnection connection) {
-    String filename = (( GeneralMessage ) event).getMessage();
-    boolean success = serveFileToChunkServerHelper( filename, connection );
-    if ( !success ) {
-      System.out.println( "serveFileToChunkServer: Unable to serve file." );
-      try {
-        sendGeneralMessage( Protocol.CHUNK_SERVER_DENIES_REQUEST, filename,
-            connection );
-      } catch ( IOException ioe ) {
-        System.err.println(
-            "serveFileToChunkServer: Unable to send "+"denial of request. "+
-            ioe.getMessage() );
-      }
-    }
-  }
+  private void repairChunkHelper(Event event) {
+    RepairChunk repairMessage = ( RepairChunk ) event;
+    ChunkReader chunkReader = new ChunkReader( repairMessage.getFilename() );
 
-  /**
-   * Attempts to read a file from the disk, check to see that it isn't corrupt,
-   * sends the data on to the requester and returns true. If it can't read the
-   * file, or the file is corrupt, it returns false. Additionally, if the file
-   * is corrupt, it adds an event to the fileService queue.
-   *
-   * @param filename
-   * @param connection
-   * @return
-   */
-  private boolean serveFileToChunkServerHelper(String filename,
-      TCPConnection connection) {
-
-    // If read fails, return false
-    byte[] fileBytes = fileService.readBytesFromFile( filename );
-    if ( fileBytes == null ) {
-      return false;
-    }
-
-    // Different protocols for serving a chunk and serving a shard, only
-    // because we have to do some checks for whether the file is
-    // corrupt
-    byte[] dataToSend;
-    if ( FileDistributionService.checkChunkFilename( filename ) ) { // chunk
-      // Check for corrupt slices
-      Vector<Integer> corruptSlices =
-          FileDistributionService.checkChunkForCorruption( fileBytes );
-      // Add event to fileService queue
-      if ( !corruptSlices.isEmpty() ) {
-        int[] slices = ArrayUtilities.vecToArr( corruptSlices );
-        ChunkServerReportsFileCorruption report =
-            new ChunkServerReportsFileCorruption( identifier, filename,
-                slices );
-        try {
-          controllerConnection.getSender().sendData( report.getBytes() );
-        } catch ( IOException ioe ) {
-          System.out.println(
-              "serveFileToChunkServerHelper: "+"Couldn't notify Controller of "+
-              "corruption. "+ioe.getMessage() );
-        }
-        return false;
-      }
-      // If fileBytes is too long, only send the length of a properly
-      // formatted chunk
-      dataToSend = Arrays.copyOfRange( fileBytes, 0, 65720 );
-    } else { // shard
-      // Check for corruption
-      boolean corrupt =
-          FileDistributionService.checkShardForCorruption( fileBytes );
-      // Add event to fileService queue
-      if ( corrupt ) {
-        ChunkServerReportsFileCorruption report =
-            new ChunkServerReportsFileCorruption( identifier, filename, null );
-        try {
-          controllerConnection.getSender().sendData( report.getBytes() );
-        } catch ( IOException ioe ) {
-          System.out.println( "serveFileToChunkServerHelper: Couldn't notify "+
-                              "Controller of corruption. "+ioe.getMessage() );
-        }
-        return false;
-      }
-      dataToSend = FileDistributionService.getDataFromShard(
-          FileDistributionService.removeHashFromShard( fileBytes ) );
-    }
-
-    // File is not corrupt, and can be served to the requester
-    ChunkServerServesFile serveFile =
-        new ChunkServerServesFile( filename, dataToSend );
-    try {
-      connection.getSender().sendData( serveFile.getBytes() );
-    } catch ( IOException ioe ) {
-      System.err.println( "serverFileToChunkServerHelper: Unable to "+
-                          "send file to requester. "+ioe.getMessage() );
-    }
-    return true;
   }
 
   /**
@@ -307,9 +216,9 @@ public class ChunkServer implements Node {
 
     // Create vector of slices that are both requested, and healthy,
     // called servableSlices
-    Vector<Integer> corruptSlices =
+    ArrayList<Integer> corruptSlices =
         FileDistributionService.checkChunkForCorruption( fileBytes );
-    Vector<Integer> servableSlices = new Vector<Integer>();
+    ArrayList<Integer> servableSlices = new ArrayList<Integer>();
     for ( int i = 0; i < request.slices.length; ++i ) {
       if ( !corruptSlices.contains( request.slices[i] ) ) {
         servableSlices.add( request.slices[i] );
@@ -318,7 +227,7 @@ public class ChunkServer implements Node {
 
     // If there are corrupt slices, make sure the fileService tries to
     // repair them
-    int[] slicesToRepair = ArrayUtilities.vecToArr( corruptSlices );
+    int[] slicesToRepair = ArrayUtilities.arrayListToArray( corruptSlices );
     ChunkServerReportsFileCorruption report =
         new ChunkServerReportsFileCorruption( identifier, request.filename,
             slicesToRepair );
@@ -333,7 +242,7 @@ public class ChunkServer implements Node {
     if ( servableSlices.isEmpty() ) {
       return false;
     } else { // Serve slices that are healthy
-      int[] cleanSlices = ArrayUtilities.vecToArr( servableSlices );
+      int[] cleanSlices = ArrayUtilities.arrayListToArray( servableSlices );
       // Create slices array we can serve
       byte[][] slicesToServe = fileService.getSlices( fileBytes, cleanSlices );
       ChunkServerServesSlices serveSlices =
@@ -509,11 +418,11 @@ public class ChunkServer implements Node {
 
     // Check chunk for errors, create corruptSlices int array filled with
     // indices of corrupt slices
-    Vector<Integer> errors =
+    ArrayList<Integer> errors =
         FileDistributionService.checkChunkForCorruption( fileBytes );
     int[] corruptSlices = null;
     if ( !errors.isEmpty() ) {
-      corruptSlices = ArrayUtilities.vecToArr( errors );
+      corruptSlices = ArrayUtilities.arrayListToArray( errors );
     }
 
     // If there are corrupt slices, give event to fileService to deal with
@@ -666,7 +575,7 @@ public class ChunkServer implements Node {
               String.valueOf( status ), controllerConnection );
         } catch ( IOException ioe ) {
           System.err.println( "registrationInterpreter: Unable to "+
-                              "send deregistration request to "+"Controller. "+
+                              "send deregistration request to Controller. "+
                               ioe.getMessage() );
         }
       }

@@ -36,7 +36,7 @@ public class FileMetadata {
   }
 
   private boolean checkShardFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk[0-9]*_shard[0-8]$" );
+    boolean matches = filename.matches( ".*_chunk(0|[1-9][0-9]*)_shard[0-8]$" );
     String[] split1 = filename.split( "_chunk" );
     String[] split2 = filename.split( "_shard" );
     return matches && split1.length == 2 && split2.length == 2;
