@@ -8,10 +8,10 @@ public class RepairChunk implements Event {
   private final String filename; // including _chunk#
   private final String destination; // host:port of server that needs repair
   private final int[] slicesToRepair;
-      // array of slice numbers that need repairing
+  // array of slice numbers that need repairing
   private final String[] servers; // array of host:port addresses to servers
   private final byte[][] replacementSlices; // array for chunk slices that have
-  // been retrieved so far
+  // been retrieved so far, will have hashes attached
   private int position; // current position in server list
 
   public RepairChunk(String filename, String destination, int[] slicesToRepair,
@@ -116,8 +116,8 @@ public class RepairChunk implements Event {
    * otherwise
    */
   public boolean allSlicesRetrieved() {
-    for ( byte[] sliceBytes : replacementSlices ) {
-      if ( sliceBytes == null ) {
+    for ( byte[] replacementSlice : replacementSlices ) {
+      if ( replacementSlice == null ) {
         return false;
       }
     }
@@ -159,7 +159,7 @@ public class RepairChunk implements Event {
    * @return int[] containing the indices of slices that need repairing, null if
    * there are no slices left to repair
    */
-  public int[] getSlicesToRepair() {
+  public int[] slicesStillNeedingRepair() {
     int count = 0;
     for ( byte[] replacementSlice : replacementSlices ) {
       if ( replacementSlice == null ) {
@@ -175,6 +175,60 @@ public class RepairChunk implements Event {
       }
     }
     return slicesNeedingRepair;
+  }
+
+  /**
+   * Returns an int[] containing the slice indices that correspond to non-null
+   * entries in the replacementSlices array.
+   *
+   * @return int[] of slice indices retrieved thus far, null if no slices
+   * have been retrieved thus far
+   */
+  public int[] getRepairedSlices() {
+    int totalSlicesRetrieved = 0;
+    for ( byte[] replacementSlice : replacementSlices ) {
+      if ( replacementSlice != null ) {
+        totalSlicesRetrieved++;
+      }
+    }
+    if ( totalSlicesRetrieved == 0 ) {
+      return null;
+    }
+    int[] repairedSlices = new int[totalSlicesRetrieved];
+    int index = 0;
+    for ( int i = 0; i < replacementSlices.length; ++i ) {
+      if ( replacementSlices[i] != null ) {
+        slicesToRepair[index] = slicesToRepair[i];
+        index++;
+      }
+    }
+    return repairedSlices;
+  }
+
+  /**
+   * Get array of non-null slices that have been retrieved so far.
+   *
+   * @return array of slices that have been retrieved so far
+   */
+  public byte[][] getReplacementSlices() {
+    int totalSlicesRetrieved = 0;
+    for ( byte[] replacementSlice : replacementSlices ) {
+      if ( replacementSlice != null ) {
+        totalSlicesRetrieved++;
+      }
+    }
+    if ( totalSlicesRetrieved == 0 ) {
+      return null;
+    }
+    byte[][] slicesRetrieved = new byte[totalSlicesRetrieved][];
+    int index = 0;
+    for ( byte[] replacementSlice : replacementSlices ) {
+      if ( replacementSlice != null ) {
+        slicesRetrieved[index] = replacementSlice;
+        index++;
+      }
+    }
+    return slicesRetrieved;
   }
 
   @Override

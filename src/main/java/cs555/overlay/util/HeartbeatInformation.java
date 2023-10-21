@@ -54,7 +54,7 @@ public class HeartbeatInformation {
   }
 
   public synchronized ArrayList<FileMetadata> getFiles() {
-    return new ArrayList<FileMetadata>( files );
+    return new ArrayList<>( files );
   }
 
   public synchronized HeartbeatInformation copy() {

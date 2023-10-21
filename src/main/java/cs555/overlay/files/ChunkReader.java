@@ -22,7 +22,7 @@ public class ChunkReader implements FileReader {
   private boolean corrupt;
   private FileMetadata metadata;
   private int[] corruptSlices;
-  private byte[][] slices; // slices include hash
+  private byte[][] slices; // slices include SHA1
 
   public ChunkReader(String filename) {
     this.filename = filename;
@@ -98,6 +98,20 @@ public class ChunkReader implements FileReader {
       metadata = new FileMetadata( filename, chunkBuffer.getInt( 20+8 ),
           chunkBuffer.getInt( 20+16 ) );
     }
+  }
+
+  /**
+   * Getter for the raw slices read off the disk.
+   *
+   * @return slices that have been read off the disk
+   */
+  public byte[][] getSlices() {
+    return slices;
+  }
+
+  @Override
+  public String getFilename() {
+    return filename;
   }
 
   @Override

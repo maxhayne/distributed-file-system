@@ -243,7 +243,7 @@ public class FileDistributionService {
     shardMetaWrap.putInt( version );
     shardMetaWrap.putLong( System.currentTimeMillis() );
     shardMetaWrap.put( shardArray );
-    byte[] hash = null;
+    byte[] hash;
     try {
       hash = SHA1FromBytes( shardWithMetaData );
       ByteBuffer shardFileArrayWrap = ByteBuffer.wrap( shardToFileArray );
@@ -259,7 +259,7 @@ public class FileDistributionService {
 
   // Check chunk for errors and return integer array containing slice numbers
   public static ArrayList<Integer> checkChunkForCorruption(byte[] chunkBytes) {
-    ArrayList<Integer> corrupt = new ArrayList<Integer>();
+    ArrayList<Integer> corrupt = new ArrayList<>();
     for ( int i = 0; i < 8; ++i ) {
       corrupt.add( i );
     }
@@ -479,7 +479,7 @@ public class FileDistributionService {
   }
 
   // Write new file, replace if it already exists.
-  public synchronized boolean overwriteNewFile(String filename, byte[] data) {
+  public synchronized boolean overwriteFile(String filename, byte[] data) {
     try ( RandomAccessFile file = new RandomAccessFile( filename, "rw" );
           FileChannel channel = file.getChannel();
           FileLock lock = channel.lock() ) {

@@ -126,3 +126,5 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - It would simplify things a lot for the Controller not have to keep track of whether the servers storing a particular file are storing shards or replications of chunks.
 
 - The Controller might receive a corruption message from a ChunkServer for a file that it shouldn't have. If it does, it shouldn't respond, or it should send a message to that ChunkServer telling it to delete the file.
+
+- Need to gracefully shutdown the ChunkServer after sending a deregistration request. This will include closing all open TCPConnections and cancelling the heartbeat Timer.

@@ -149,6 +149,15 @@ public class RepairShard implements Event {
     return count;
   }
 
+  /**
+   * Returns the array of fragments that have been collected, however complete.
+   *
+   * @return byte[][] of fragments
+   */
+  public byte[][] getFragments() {
+    return fragments;
+  }
+
   @Override
   public byte getType() {
     return type;

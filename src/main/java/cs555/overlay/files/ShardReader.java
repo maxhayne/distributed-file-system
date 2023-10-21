@@ -60,6 +60,11 @@ public class ShardReader implements FileReader {
   }
 
   @Override
+  public String getFilename() {
+    return filename;
+  }
+
+  @Override
   public boolean isCorrupt() {
     return corrupt;
   }

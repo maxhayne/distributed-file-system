@@ -11,13 +11,15 @@ import cs555.overlay.util.FileMetadata;
  * @author hayne
  */
 public interface FileReader {
-  public void readAndProcess(FileDistributionService fileService);
+  String getFilename();
 
-  public boolean isCorrupt();
+  void readAndProcess(FileDistributionService fileService);
 
-  public int[] getCorruption();
+  boolean isCorrupt();
 
-  public FileMetadata getMetadata();
+  int[] getCorruption();
 
-  public byte[] getData();
+  FileMetadata getMetadata();
+
+  byte[] getData();
 }

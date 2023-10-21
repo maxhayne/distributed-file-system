@@ -11,7 +11,7 @@ import cs555.overlay.util.FileDistributionService;
  */
 public class FileReaderFactory {
   private static final FileReaderFactory fileReaderFactory =
-      new FileReaderFactory();
+      new FileReaderFactory(); // singleton factory
 
   private FileReaderFactory() {}
 
@@ -19,6 +19,14 @@ public class FileReaderFactory {
     return fileReaderFactory;
   }
 
+  /**
+   * Creates the right type of FileReader based on the name of the file to be
+   * read.
+   *
+   * @param filename of file to be read
+   * @return fresh FileReader object, or null if filename doesn't match a file
+   * type
+   */
   public FileReader createFileReader(String filename) {
     if ( FileDistributionService.checkChunkFilename( filename ) ) {
       return new ChunkReader( filename );

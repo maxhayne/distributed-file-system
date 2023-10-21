@@ -59,4 +59,24 @@ public class ArrayUtilities {
     return list.stream().mapToInt( i -> i ).toArray();
   }
 
+  /**
+   * Helper function to check if an int[] contains a specific int. If
+   * supplied int[] is null, will always return true.
+   *
+   * @param value the array is being checked for
+   * @param array being checked
+   * @return true if array contains value, false otherwise
+   */
+  public static boolean contains(int[] array, int value) {
+    if ( array == null ) {
+      return false;
+    }
+    for ( int i : array ) {
+      if ( i == value ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
 }

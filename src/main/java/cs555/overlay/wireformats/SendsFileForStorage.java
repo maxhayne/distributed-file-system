@@ -4,18 +4,19 @@ import java.io.*;
 
 public class SendsFileForStorage implements Event {
 
-  public byte type;
-  public String filename;
-  public byte[] data;
-  public String[] servers;
-  public int nextServer;
+  private final byte type;
+  private final String filename;
+  private final byte[] content;
+  private String[] servers;
+  private int position;
 
-  public SendsFileForStorage(String filename, byte[] data, String[] servers) {
+  public SendsFileForStorage(String filename, byte[] content,
+      String[] servers) {
     this.type = Protocol.SENDS_FILE_FOR_STORAGE;
     this.filename = filename;
-    this.data = data;
+    this.content = content;
     this.servers = servers;
-    this.nextServer = 0;
+    this.position = 0;
   }
 
   public SendsFileForStorage(byte[] marshalledBytes) throws IOException {
@@ -32,7 +33,7 @@ public class SendsFileForStorage implements Event {
     len = din.readInt();
     array = new byte[len];
     din.readFully( array );
-    data = array;
+    content = array;
 
     int numServers = din.readInt();
     if ( numServers != 0 ) {
@@ -45,7 +46,7 @@ public class SendsFileForStorage implements Event {
       }
     }
 
-    nextServer = din.readInt();
+    position = din.readInt();
 
     din.close();
     bin.close();
@@ -62,13 +63,13 @@ public class SendsFileForStorage implements Event {
     dout.writeInt( array.length );
     dout.write( array );
 
-    dout.writeInt( data.length );
-    dout.write( data );
+    dout.writeInt( content.length );
+    dout.write( content );
 
     if ( servers != null ) {
       dout.writeInt( servers.length );
-      for ( int i = 0; i < servers.length; ++i ) {
-        array = servers[i].getBytes();
+      for ( String server : servers ) {
+        array = server.getBytes();
         dout.writeInt( array.length );
         dout.write( array );
       }
@@ -76,7 +77,7 @@ public class SendsFileForStorage implements Event {
       dout.writeInt( 0 );
     }
 
-    dout.writeInt( nextServer );
+    dout.writeInt( position );
 
     byte[] returnable = bout.toByteArray();
     dout.close();
@@ -87,5 +88,47 @@ public class SendsFileForStorage implements Event {
   @Override
   public byte getType() {
     return type;
+  }
+
+  /**
+   * Getter for filename to be stored.
+   *
+   * @return filename string
+   */
+  public String getFilename() {
+    return filename;
+  }
+
+  /**
+   * Increment 'position' member to point to the index of the next server in
+   * relay list.
+   *
+   * @return true if there is another server to relay to, false if not
+   */
+  public boolean nextPosition() {
+    if ( position < servers.length-1 ) {
+      position++;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Returns the file's content.
+   *
+   * @return byte[] of file's content
+   */
+  public byte[] getContent() {
+    return content;
+  }
+
+  /**
+   * Returns the host:port address of the server in servers[position]. Should be
+   * called if nextPosition() was just called and returned true.
+   *
+   * @return host:port address of servers[position]
+   */
+  public String getServer() {
+    return servers[position];
   }
 }
