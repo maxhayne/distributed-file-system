@@ -37,7 +37,7 @@ public class HeartbeatService extends TimerTask {
   private byte[] truncateIfNecessary(String filename, byte[] fileBytes,
       int length) {
     if ( fileBytes.length > length ) {
-      chunkServer.getFileService().truncateFile( filename, length );
+      chunkServer.getFileSynchronizer().truncateFile( filename, length );
       byte[] truncatedBytes = new byte[length];
       System.arraycopy( fileBytes, 0, truncatedBytes, 0, length );
       fileBytes = truncatedBytes;
@@ -64,7 +64,7 @@ public class HeartbeatService extends TimerTask {
     // majorFiles
     Map<String, FileMetadata> fileMap = beatType == 0 ? minorFiles : majorFiles;
     fileMap.clear();
-    String[] files = chunkServer.getFileService().listFiles();
+    String[] files = chunkServer.getFileSynchronizer().listFiles();
     // loop through list of filenames stored at ChunkServer
     for ( String filename : files ) {
       // if this is a minor heartbeat, skip files that have already been
@@ -75,7 +75,7 @@ public class HeartbeatService extends TimerTask {
 
       FileReaderFactory factory = FileReaderFactory.getInstance();
       FileReader fileReader = factory.createFileReader( filename );
-      fileReader.readAndProcess( chunkServer.getFileService() );
+      fileReader.readAndProcess( chunkServer.getFileSynchronizer() );
 
       if ( fileReader.isCorrupt() ) {
         ChunkServerReportsFileCorruption report =
@@ -103,7 +103,7 @@ public class HeartbeatService extends TimerTask {
 
     // create heartbeat message, and return bytes of that message
     int totalChunks = majorFiles.size();
-    long freeSpace = chunkServer.getFileService().getUsableSpace();
+    long freeSpace = chunkServer.getFileSynchronizer().getUsableSpace();
     ChunkServerSendsHeartbeat heartbeat =
         new ChunkServerSendsHeartbeat( chunkServer.getIdentifier(), beatType,
             totalChunks, freeSpace, new ArrayList<>( fileMap.values() ) );

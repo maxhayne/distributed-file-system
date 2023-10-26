@@ -1,6 +1,9 @@
 package cs555.overlay.transport;
 
-import cs555.overlay.util.*;
+import cs555.overlay.util.ApplicationProperties;
+import cs555.overlay.util.ArrayUtilities;
+import cs555.overlay.util.Constants;
+import cs555.overlay.util.HeartbeatMonitor;
 import cs555.overlay.wireformats.Event;
 import cs555.overlay.wireformats.RepairChunk;
 import cs555.overlay.wireformats.RepairShard;
@@ -13,19 +16,15 @@ public class ServerConnectionCache {
   private final ArrayList<Integer> availableIdentifiers;
   private final Map<Integer, ServerConnection> registeredServers;
 
-  private final DistributedFileCache idealState;
-  private final DistributedFileCache reportedState;
+  private final Map<String, TreeMap<Integer, String[]>> table;
 
   private static final Comparator<ServerConnection> serverComparator =
       Comparator.comparingInt( ServerConnection::getTotalChunks )
                 .thenComparing( ServerConnection::getFreeSpace,
                     Comparator.reverseOrder() );
 
-  public ServerConnectionCache(DistributedFileCache idealState,
-      DistributedFileCache reportedState) {
-    this.idealState = idealState;
-    this.reportedState = reportedState;
-
+  public ServerConnectionCache() {
+    this.table = new HashMap<>();
     this.registeredServers = new HashMap<Integer, ServerConnection>();
     this.availableIdentifiers = new ArrayList<Integer>();
     for ( int i = 1; i <= 32; ++i ) {
@@ -42,8 +41,8 @@ public class ServerConnectionCache {
   }
 
   /**
-   * Returns the ServerConnection object of a registered ChunkServer with
-   * the identifier specified as a parameter.
+   * Returns the ServerConnection object of a registered ChunkServer with the
+   * identifier specified as a parameter.
    *
    * @param identifier of ChunkServer
    * @return ServerConnection with that identifier, null if doesn't exist
@@ -55,8 +54,8 @@ public class ServerConnectionCache {
   }
 
   /**
-   * Return the ServerConnection object of a registered ChunkServer with
-   * the host:port address specified as a parameter.
+   * Return the ServerConnection object of a registered ChunkServer with the
+   * host:port address specified as a parameter.
    *
    * @param address of ChunkServer's connection to get
    * @return ServerConnection
@@ -70,14 +69,6 @@ public class ServerConnectionCache {
       }
     }
     return null;
-  }
-
-  public DistributedFileCache getIdealState() {
-    return idealState;
-  }
-
-  public DistributedFileCache getReportedState() {
-    return reportedState;
   }
 
   public String[] getAllServerAddresses() {
@@ -113,51 +104,23 @@ public class ServerConnectionCache {
     return "";
   }
 
-  public String getChunkStorageInfo(String filename, int sequence) {
-    //String info = reportedState.getChunkStorageInfo( filename, sequence );
-    String info = idealState.getChunkStorageInfo( filename, sequence );
-    if ( info.equals( "|" ) ) {
-      return "|";
+  /**
+   * Returns the set of servers storing the particular chunk with that filename
+   * and sequence number.
+   *
+   * @param filename base filename of chunk -- what comes before "_chunk#"
+   * @param sequence the sequence number of the chunk
+   * @return String[] of host:port addresses to the servers storing this
+   * particular chunk
+   */
+  public String[] getServers(String filename, int sequence) {
+    if ( table.containsKey( filename ) ) {
+      return table.get( filename ).get( sequence );
     }
-    String[] parts = info.split( "\\|", -1 );
-    StringBuilder sb = new StringBuilder();
-    if ( !parts[0].isEmpty() ) {
-      String[] replications = parts[0].split( "," );
-      boolean added = false;
-      for ( String replication : replications ) {
-        String address =
-            getChunkServerAddress( Integer.parseInt( replication ) );
-        if ( !address.isEmpty() ) {
-          sb.append( address ).append( "," );
-          added = true;
-        }
-      }
-      if ( added ) {
-        sb.deleteCharAt( sb.length()-1 );
-      }
-    }
-    sb.append( "|" );
-    if ( !parts[1].isEmpty() ) {
-      String[] shardServers = parts[1].split( "," );
-      for ( String shardServer : shardServers ) {
-        if ( !shardServer.equals( "-1" ) ) {
-          String address =
-              getChunkServerAddress( Integer.parseInt( shardServer ) );
-          if ( !address.isEmpty() ) {
-            sb.append( address ).append( "," );
-          } else {
-            sb.append( "-1" ).append( "," );
-          }
-        } else {
-          sb.append( "-1" ).append( "," );
-        }
-      }
-      sb.deleteCharAt( sb.length()-1 );
-    }
-    return sb.toString();
+    return null;
   }
 
-  public ArrayList<String> sortServers() {
+  private ArrayList<String> getSortedServers() {
     synchronized( registeredServers ) {
       List<ServerConnection> orderedServers =
           new ArrayList<>( registeredServers.values() );
@@ -170,130 +133,41 @@ public class ServerConnectionCache {
     }
   }
 
-  public ArrayList<String> listFreestServers() {
-    ArrayList<Long[]> servers = new ArrayList<Long[]>();
-    synchronized( registeredServers ) {
-      for ( ServerConnection connection : registeredServers.values() ) {
-        if ( connection.getUnhealthy() <= 3 &&
-             connection.getHeartbeatInfo().getFreeSpace() != -1 &&
-             connection.getHeartbeatInfo().getFreeSpace() >= 65720 ) {
-          servers.add( new Long[]{ connection.getHeartbeatInfo().getFreeSpace(),
-              ( long ) connection.getIdentifier() } );
-        }
-      }
+  /**
+   * Allocates a set of servers to store a particular chunk of a particular
+   * file. If the particular chunk was previously allocated a set of servers, it
+   * overwrites the previous allocation.
+   *
+   * @param filename base filename of chunk -- what comes before "_chunk#"
+   * @param sequence the sequence number of the chunk
+   * @return String[] of host:port addresses to the servers which should store
+   * this chunk, or null, if servers couldn't be allocated
+   */
+  public String[] allocateServers(String filename, int sequence) {
+    ArrayList<String> sortedServers = getSortedServers();
+
+    int serversNeeded = 3; // standard replication factor
+    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+      serversNeeded = Constants.TOTAL_SHARDS;
     }
 
-    servers.sort( Comparators.SERVER_SORT );
-    Collections.reverse( servers );
-
-    ArrayList<String> freestServers = new ArrayList<String>();
-    for ( Long[] server : servers ) {
-      freestServers.add( String.valueOf( server[1] ) );
+    if ( sortedServers.size() >= serversNeeded ) { // are enough servers
+      TreeMap<Integer, String[]> servers = table.get( filename );
+      if ( servers == null ) { // case of first chunk
+        table.put( filename, new TreeMap<>() );
+        servers = table.get( filename );
+      }
+      String[] reservedServers = new String[serversNeeded];
+      for ( int i = 0; i < serversNeeded; ++i ) {
+        reservedServers[i] = sortedServers.get( i );
+      }
+      servers.put( sequence, reservedServers );
+      // Need to add the file to the ServerConnection instance, in a
+      // data structure that holds the list of files that should be stored at
+      // that ChunkServer
+      return reservedServers;
     }
-    return freestServers;
-  }
-
-  // Return the best ChunkServers in terms of storage
-  public String availableChunkServers(String filename, int sequence) {
-    // Need three freest servers
-    ArrayList<Long[]> servers = new ArrayList<Long[]>();
-    synchronized( registeredServers ) {
-      for ( ServerConnection connection : registeredServers.values() ) {
-        if ( connection.getUnhealthy() <= 3 &&
-             connection.getHeartbeatInfo().getFreeSpace() != -1 &&
-             connection.getHeartbeatInfo().getFreeSpace() >= 65720 ) {
-          servers.add( new Long[]{ connection.getHeartbeatInfo().getFreeSpace(),
-              ( long ) connection.getIdentifier() } );
-        }
-      }
-    }
-
-    servers.sort( Comparators.SERVER_SORT );
-    Collections.reverse( servers );
-
-    synchronized( idealState ) { // If already allocated, return the same
-      // three servers
-      if ( !idealState.getChunkStorageInfo( filename, sequence )
-                      .split( "\\|", -1 )[0].isEmpty() ) {
-        String[] temp = idealState.getChunkStorageInfo( filename, sequence )
-                                  .split( "\\|", -1 )[0].split( "," );
-        StringBuilder sb = new StringBuilder();
-        for ( String server : temp ) {
-          sb.append( getChunkServerAddress( Integer.parseInt( server ) ) )
-            .append( "," );
-        }
-        sb.deleteCharAt( sb.length()-1 );
-        return sb.toString();
-      }
-      if ( servers.size() < 3 ) {
-        return "";
-      }
-      StringBuilder sb = new StringBuilder();
-      for ( int i = 0; i < 3; i++ ) {
-        Chunk chunk =
-            new Chunk( filename, sequence, 0, System.currentTimeMillis(),
-                ( int ) ( long ) servers.get( i )[1], false );
-        idealState.addChunk( chunk );
-        sb.append(
-              getChunkServerAddress( ( int ) ( long ) servers.get( i )[1] ) )
-          .append( "," );
-      }
-      sb.deleteCharAt( sb.length()-1 );
-      return sb.toString();
-    }
-  }
-
-  // Return the best ChunkServers in terms of storage
-  public String availableShardServers(String filename, int sequence) {
-    // Need nine freest servers
-    ArrayList<Long[]> servers = new ArrayList<Long[]>();
-    synchronized( registeredServers ) {
-      for ( ServerConnection connection : registeredServers.values() ) {
-        if ( connection.getUnhealthy() <= 3 &&
-             connection.getHeartbeatInfo().getFreeSpace() != -1 &&
-             connection.getHeartbeatInfo().getFreeSpace() >= 65720 ) {
-          servers.add( new Long[]{ connection.getHeartbeatInfo().getFreeSpace(),
-              ( long ) connection.getIdentifier() } );
-        }
-      }
-    }
-
-    servers.sort( Comparators.SERVER_SORT );
-    Collections.reverse( servers );
-
-    synchronized( idealState ) { // If already allocated, return the same
-      // three servers
-      if ( !idealState.getChunkStorageInfo( filename, sequence )
-                      .split( "\\|", -1 )[1].isEmpty() ) {
-        String[] temp = idealState.getChunkStorageInfo( filename, sequence )
-                                  .split( "\\|", -1 )[1].split( "," );
-        StringBuilder sb = new StringBuilder();
-        for ( String server : temp ) {
-          if ( server.equals( "-1" ) ) {
-            sb.append( "-1" );
-            continue;
-          }
-          sb.append( Integer.parseInt( server ) ).append( "," );
-        }
-        sb.deleteCharAt( sb.length()-1 );
-        return sb.toString();
-      }
-      if ( servers.size() < 9 ) {
-        return "";
-      }
-      StringBuilder sb = new StringBuilder();
-      for ( int i = 0; i < 9; i++ ) {
-        Shard shard =
-            new Shard( filename, sequence, i, 0, System.currentTimeMillis(),
-                ( int ) ( long ) servers.get( i )[1], false );
-        idealState.addShard( shard );
-        sb.append(
-              getChunkServerAddress( ( int ) ( long ) servers.get( i )[1] ) )
-          .append( "," );
-      }
-      sb.deleteCharAt( sb.length()-1 );
-      return sb.toString();
-    }
+    return null;
   }
 
   /**
@@ -463,27 +337,5 @@ public class ServerConnectionCache {
         }
       }
     }
-  }
-
-  /**
-   * Class to house Comparators which will be used in the methods of the
-   * ServerConnectionCache.
-   */
-  public static class Comparators {
-
-    // Will be provided a Long[] filled with Long[] tuples. Each tuple
-    // is formatted [ FREE_SPACE, SERVER_ID ]. We want to sort based on
-    // FREE_SPACE first, then by ID.
-    public static Comparator<Long[]> SERVER_SORT = new Comparator<Long[]>() {
-      @Override
-      public int compare(Long[] l1, Long[] l2) {
-        int compareSpace = l1[0].compareTo( l2[0] );
-        if ( compareSpace == 0 ) {
-          return l1[1].compareTo( l2[1] );
-        }
-        return compareSpace;
-      }
-    };
-
   }
 }

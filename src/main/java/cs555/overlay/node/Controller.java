@@ -188,12 +188,12 @@ public class Controller implements Node {
     String baseFilename;
     int sequence;
     // Check if the filename refers to a chunk, shard, or neither
-    if ( FileDistributionService.checkChunkFilename(
+    if ( FileSynchronizer.checkChunkFilename(
         request.getMessage() ) ) { // chunk
       String[] split = request.getMessage().split( "_chunk" );
       baseFilename = split[0];
       sequence = Integer.parseInt( split[1] );
-    } else if ( FileDistributionService.checkShardFilename(
+    } else if ( FileSynchronizer.checkShardFilename(
         request.getMessage() ) ) { // shard
       String[] split = request.getMessage().split( "_chunk" );
       baseFilename = split[0];
@@ -254,7 +254,7 @@ public class Controller implements Node {
     // ChunkServer as a source for future file requests.
     String baseFilename;
     int sequence;
-    if ( FileDistributionService.checkChunkFilename(
+    if ( FileSynchronizer.checkChunkFilename(
         report.filename ) ) { // chunk
       String[] split = report.filename.split( "_chunk" );
       baseFilename = split[0];
@@ -262,7 +262,7 @@ public class Controller implements Node {
       connectionCache.getReportedState()
                      .markChunkHealthy( baseFilename, sequence,
                          report.identifier ); // Mark healthy
-    } else if ( FileDistributionService.checkShardFilename(
+    } else if ( FileSynchronizer.checkShardFilename(
         report.filename ) ) { // shard
       String[] split = report.filename.split( "_chunk" );
       baseFilename = split[0];
@@ -320,14 +320,14 @@ public class Controller implements Node {
     // a Client to look there for a copy.
     String baseFilename;
     int sequence;
-    if ( FileDistributionService.checkChunkFilename( report.filename ) ) {
+    if ( FileSynchronizer.checkChunkFilename( report.filename ) ) {
       String[] split = report.filename.split( "_chunk" );
       baseFilename = split[0];
       sequence = Integer.parseInt( split[1] );
       connectionCache.getReportedState()
                      .markChunkCorrupt( baseFilename, sequence,
                          report.identifier ); // Mark the chunk corrupt
-    } else if ( FileDistributionService.checkShardFilename(
+    } else if ( FileSynchronizer.checkShardFilename(
         report.filename ) ) {
       String[] split = report.filename.split( "_chunk" );
       baseFilename = split[0];
@@ -361,7 +361,7 @@ public class Controller implements Node {
 
     // Send a RepairChunk or RepairShard message to a ChunkServer that
     // can help
-    if ( FileDistributionService.checkShardFilename( report.filename ) ) {
+    if ( FileSynchronizer.checkShardFilename( report.filename ) ) {
       if ( shardServers.length == Constants.TOTAL_SHARDS ) {
         int count =
             Collections.frequency( Arrays.asList( shardServers ), "-1" );
@@ -594,9 +594,7 @@ public class Controller implements Node {
    */
   private void listAllocatedFiles() {
     String[] fileList = connectionCache.getIdealState().getFileList();
-    if ( fileList == null ) {
-      System.out.println();
-    } else {
+    if ( fileList != null ) {
       for ( String filename : fileList ) {
         System.out.printf( "%3s%s%n", "", filename );
       }
@@ -617,11 +615,11 @@ public class Controller implements Node {
    * Prints a list of commands available to the user.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-10s : %s%n", "", "servers",
+    System.out.printf( "%3s%-8s : %s%n", "", "servers",
         "print the addresses of all registered ChunkServers" );
-    System.out.printf( "%3s%-10s : %s%n", "", "files",
+    System.out.printf( "%3s%-8s : %s%n", "", "files",
         "print the names of all files earmarked for storage" );
-    System.out.printf( "%3s%-10s : %s%n", "", "help",
+    System.out.printf( "%3s%-8s : %s%n", "", "help",
         "print a list of valid commands" );
   }
 }

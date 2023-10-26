@@ -1,6 +1,6 @@
 package cs555.overlay.files;
 
-import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.FileSynchronizer;
 
 import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
@@ -45,7 +45,7 @@ public class ChunkWriter implements FileWriter {
   private void prepareNewChunk() {
     int sequence = getSequenceFromFilename();
     preparedChunk =
-        FileDistributionService.readyChunkForStorage( sequence, 0, content );
+        FileSynchronizer.readyChunkForStorage( sequence, 0, content );
   }
 
   /**
@@ -58,7 +58,7 @@ public class ChunkWriter implements FileWriter {
   private void prepareChunk() throws NoSuchAlgorithmException {
     byte[][] slices = replaceSlices();
     updateMetadata( slices[0] );
-    preparedChunk = new byte[FileDistributionService.CHUNK_FILE_LENGTH];
+    preparedChunk = new byte[FileSynchronizer.CHUNK_FILE_LENGTH];
     ByteBuffer preparedChunkBuffer = ByteBuffer.wrap( preparedChunk );
     for ( byte[] slice : slices ) {
       preparedChunkBuffer.put( slice );
@@ -102,7 +102,7 @@ public class ChunkWriter implements FileWriter {
     firstSliceBuffer.get( 20, updatedSliceData );
 
     byte[] recomputedHash =
-        FileDistributionService.SHA1FromBytes( updatedSliceData );
+        FileSynchronizer.SHA1FromBytes( updatedSliceData );
 
     firstSliceBuffer.put( 0, recomputedHash );
   }
@@ -153,14 +153,14 @@ public class ChunkWriter implements FileWriter {
   /**
    * Writes the 'preparedChunk' to the disk with the name 'filename'.
    *
-   * @param fileService the ChunkServer is using to synchronize file accesses
+   * @param synchronizer the ChunkServer is using to synchronize file accesses
    * across this node
    * @return true if write succeeded, false for failure
    */
   @Override
-  public boolean write(FileDistributionService fileService) {
+  public boolean write(FileSynchronizer synchronizer) {
     if ( preparedChunk != null ) {
-      return fileService.overwriteFile( filename, preparedChunk );
+      return synchronizer.overwriteFile( filename, preparedChunk );
     }
     return false;
   }

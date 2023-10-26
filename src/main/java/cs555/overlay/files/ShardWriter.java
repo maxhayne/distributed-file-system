@@ -1,6 +1,6 @@
 package cs555.overlay.files;
 
-import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.FileSynchronizer;
 
 import java.security.NoSuchAlgorithmException;
 
@@ -55,7 +55,7 @@ public class ShardWriter implements FileWriter {
     int sequence = getSequenceFromFilename();
     int fragment = getFragmentFromFilename();
     preparedShard =
-        FileDistributionService.readyShardForStorage( sequence, fragment, 0,
+        FileSynchronizer.readyShardForStorage( sequence, fragment, 0,
             content );
   }
 
@@ -65,12 +65,12 @@ public class ShardWriter implements FileWriter {
   private void prepareShard() {
     if ( reconstructionShards != null ) {
       byte[][] reconstructedShards =
-          FileDistributionService.decodeMissingShards( reconstructionShards );
+          FileSynchronizer.decodeMissingShards( reconstructionShards );
       if ( reconstructedShards != null ) {
         int sequence = getSequenceFromFilename();
         int fragment = getFragmentFromFilename();
         preparedShard =
-            FileDistributionService.readyShardForStorage( sequence, fragment, 0,
+            FileSynchronizer.readyShardForStorage( sequence, fragment, 0,
                 reconstructedShards[fragment] );
       }
     }
@@ -109,14 +109,14 @@ public class ShardWriter implements FileWriter {
   /**
    * Writes the preparedShard byte string to disk with the name 'filename'.
    *
-   * @param fileService this ChunkServer is using to synchronize file accesses
+   * @param synchronizer this ChunkServer is using to synchronize file accesses
    * across threads
    * @return true for success, false for failure
    */
   @Override
-  public boolean write(FileDistributionService fileService) {
+  public boolean write(FileSynchronizer synchronizer) {
     if ( preparedShard != null ) {
-      return fileService.overwriteFile( filename, preparedShard );
+      return synchronizer.overwriteFile( filename, preparedShard );
     }
     return false;
   }

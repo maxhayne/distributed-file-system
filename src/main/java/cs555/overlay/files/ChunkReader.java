@@ -1,7 +1,7 @@
 package cs555.overlay.files;
 
 import cs555.overlay.util.ArrayUtilities;
-import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.FileSynchronizer;
 import cs555.overlay.util.FileMetadata;
 
 import java.nio.ByteBuffer;
@@ -34,19 +34,19 @@ public class ChunkReader implements FileReader {
    * chunk's data is extracted. If the Chunk is corrupt, 'corrupt' is set to
    * true and 'corruptSlices' is populated.
    *
-   * @param fileService the ChunkServer is using to synchronize file reads
+   * @param synchronizer the ChunkServer is using to synchronize file reads
    * across threads
    */
   @Override
-  public void readAndProcess(FileDistributionService fileService) {
-    chunkBytes = fileService.readNBytesFromFile( filename,
-        FileDistributionService.CHUNK_FILE_LENGTH );
+  public void readAndProcess(FileSynchronizer synchronizer) {
+    chunkBytes = synchronizer.readNBytesFromFile( filename,
+        FileSynchronizer.CHUNK_FILE_LENGTH );
     populateSlices();
     checkForCorruption();
     readMetadata();
     if ( !corrupt ) {
-      chunkBytes = FileDistributionService.removeHashesFromChunk( chunkBytes );
-      chunkBytes = FileDistributionService.getDataFromChunk( chunkBytes );
+      chunkBytes = FileSynchronizer.removeHashesFromChunk( chunkBytes );
+      chunkBytes = FileSynchronizer.getDataFromChunk( chunkBytes );
     }
   }
 
@@ -57,7 +57,7 @@ public class ChunkReader implements FileReader {
    */
   private void checkForCorruption() {
     ArrayList<Integer> corruptions =
-        FileDistributionService.checkChunkForCorruption( chunkBytes );
+        FileSynchronizer.checkChunkForCorruption( chunkBytes );
     if ( corruptions.isEmpty() ) {
       corrupt = false;
     } else {

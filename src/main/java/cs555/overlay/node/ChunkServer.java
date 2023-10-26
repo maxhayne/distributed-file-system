@@ -27,7 +27,7 @@ public class ChunkServer implements Node {
   private final AtomicBoolean isRegistered;
   private TCPConnection controllerConnection;
   private int identifier;
-  private FileDistributionService fileService;
+  private FileSynchronizer synchronizer;
   private Timer heartbeatTimer;
 
   public ChunkServer(String host, int port) {
@@ -160,7 +160,7 @@ public class ChunkServer implements Node {
   private void repairShardHelper(Event event) {
     RepairShard repairMessage = ( RepairShard ) event;
     ShardReader shardReader = new ShardReader( repairMessage.getFilename() );
-    shardReader.readAndProcess( fileService );
+    shardReader.readAndProcess( synchronizer );
 
     // If we are the target in the repair
     if ( repairMessage.getDestination().equals( host+":"+port ) ) {
@@ -224,7 +224,7 @@ public class ChunkServer implements Node {
     shardWriter.setReconstructionShards( repairMessage.getFragments() );
     try {
       shardWriter.prepare();
-      return shardWriter.write( fileService );
+      return shardWriter.write( synchronizer );
     } catch ( NoSuchAlgorithmException nsae ) {
       System.err.println( "repairAndWriteShard: SHA1 unavailable. '"+
                           repairMessage.getFilename()+
@@ -244,7 +244,7 @@ public class ChunkServer implements Node {
   private void repairChunkHelper(Event event) {
     RepairChunk repairMessage = ( RepairChunk ) event;
     ChunkReader chunkReader = new ChunkReader( repairMessage.getFilename() );
-    chunkReader.readAndProcess( fileService );
+    chunkReader.readAndProcess( synchronizer );
 
     // If we are the target for the repair
     if ( repairMessage.getDestination().equals( host+":"+port ) ) {
@@ -315,7 +315,7 @@ public class ChunkServer implements Node {
         repairMessage.getReplacementSlices() );
     try {
       chunkWriter.prepare();
-      return chunkWriter.write( fileService );
+      return chunkWriter.write( synchronizer );
     } catch ( NoSuchAlgorithmException nsae ) {
       System.err.println( "repairAndWriteChunk: SHA1 unavailable. '"+
                           repairMessage.getFilename()+
@@ -366,7 +366,7 @@ public class ChunkServer implements Node {
     // Read the file, READER MIGHT BE NULL!
     FileReaderFactory factory = FileReaderFactory.getInstance();
     FileReader reader = factory.createFileReader( filename );
-    reader.readAndProcess( fileService );
+    reader.readAndProcess( synchronizer );
 
     // Notify Controller of corruption and deny request
     if ( reader.isCorrupt() ) {
@@ -432,7 +432,7 @@ public class ChunkServer implements Node {
     boolean writtenSuccessfully = false;
     try {
       writer.prepare();
-      writtenSuccessfully = writer.write( fileService );
+      writtenSuccessfully = writer.write( synchronizer );
     } catch ( NoSuchAlgorithmException nsae ) {
       System.err.println(
           "storeAndRelay: SHA1 is not available. "+nsae.getMessage() );
@@ -474,7 +474,7 @@ public class ChunkServer implements Node {
     System.out.println( "deleteRequestHelper: Attempting to delete '"+filename+
                         "' from the ChunkServer." );
     try {
-      fileService.deleteFile( filename );
+      synchronizer.deleteFile( filename );
     } catch ( IOException ioe ) {
       System.out.println(
           "deleteRequestHelper: Could not delete file. "+ioe.getMessage() );
@@ -514,7 +514,7 @@ public class ChunkServer implements Node {
         System.err.println(
             "registrationInterpreter: Though the Controller approved our "+
             "registration request, there was a problem setting up the "+
-            "FileDistributionService and HeartbeatService. Sending "+
+            "FileSynchronizer and HeartbeatService. Sending "+
             "deregistration back to Controller." );
         try {
           sendGeneralMessage( Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION,
@@ -530,7 +530,7 @@ public class ChunkServer implements Node {
 
   /**
    * After receiving a successful registration response from the Controller,
-   * creates the FileDistributionService and starts the HeartbeatService in a
+   * creates the FileSynchronizer and starts the HeartbeatService in a
    * unique directory in the file system's /tmp folder.
    *
    * @param identifier controller has assigned this ChunkServer
@@ -539,7 +539,7 @@ public class ChunkServer implements Node {
   private boolean registrationSetup(int identifier) {
     try {
       this.identifier = identifier;
-      fileService = new FileDistributionService( identifier );
+      synchronizer = new FileSynchronizer( identifier );
       HeartbeatService heartbeatService = new HeartbeatService( this );
       // create timer to schedule heartbeatService to run once every
       // Constants.HEARTRATE milliseconds, give it a random offset to start
@@ -555,8 +555,8 @@ public class ChunkServer implements Node {
           "registrationInterpreter: There was a problem setting up "+
           "the ChunkServer for operation after it had been registered. "+
           e.getMessage() );
-      if ( fileService != null ) {
-        fileService = null;
+      if ( synchronizer != null ) {
+        synchronizer = null;
       }
       if ( heartbeatTimer != null ) {
         heartbeatTimer.cancel();
@@ -652,14 +652,16 @@ public class ChunkServer implements Node {
   private void listFiles() {
     String[] fileList;
     try {
-      fileList = fileService.listFiles();
+      fileList = synchronizer.listFiles();
     } catch ( IOException ioe ) {
       System.err.println( "listFiles: There was a problem generating a list "+
                           "of stored files. "+ioe.getMessage() );
       return;
     }
-    for ( String filename : fileList ) {
-      System.out.printf( "%3s%s%n", "", filename );
+    if ( fileList != null ) {
+      for ( String filename : fileList ) {
+        System.out.printf( "%3s%s%n", "", filename );
+      }
     }
   }
 
@@ -667,13 +669,13 @@ public class ChunkServer implements Node {
    * Prints a list of valid commands.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-10s : %s%n", "", "info",
+    System.out.printf( "%3s%-5s : %s%n", "", "info",
         "print host:port server address of this ChunkServer" );
-    System.out.printf( "%3s%-10s : %s%n", "", "list",
+    System.out.printf( "%3s%-5s : %s%n", "", "list",
         "print a list of files stored at this ChunkServer" );
-    System.out.printf( "%3s%-10s : %s%n", "", "exit",
+    System.out.printf( "%3s%-5s : %s%n", "", "exit",
         "attempt to deregister and shutdown the ChunkServer" );
-    System.out.printf( "%3s%-10s : %s%n", "", "help",
+    System.out.printf( "%3s%-5s : %s%n", "", "help",
         "print a list of valid commands" );
   }
 
@@ -687,12 +689,12 @@ public class ChunkServer implements Node {
   }
 
   /**
-   * Returns the fileService running on this ChunkServer.
+   * Returns the synchronizer running on this ChunkServer.
    *
-   * @return fileService (FileDistributionService)
+   * @return synchronizer (FileSynchronizer)
    */
-  public FileDistributionService getFileService() {
-    return fileService;
+  public FileSynchronizer getFileSynchronizer() {
+    return synchronizer;
   }
 
   /**

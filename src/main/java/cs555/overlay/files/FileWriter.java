@@ -1,7 +1,7 @@
 package cs555.overlay.files;
 
 
-import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.FileSynchronizer;
 
 import java.security.NoSuchAlgorithmException;
 
@@ -32,10 +32,10 @@ public interface FileWriter {
    * Writes the prepared byte string to disk with the filename associated with
    * this FileWriter.
    *
-   * @param fileService the ChunkServer is using to synchronize file accesses
+   * @param synchronizer the ChunkServer is using to synchronize file accesses
    * across threads
    * @return true if the file was written successfully, false otherwise
    */
-  boolean write(FileDistributionService fileService);
+  boolean write(FileSynchronizer synchronizer);
 
 }

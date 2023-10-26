@@ -19,7 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
-public class FileDistributionService {
+public class FileSynchronizer {
 
   public static int CHUNK_DATA_LENGTH = 65536;
   public static int SHA1_LENGTH = 20;
@@ -29,7 +29,7 @@ public class FileDistributionService {
 
   private final Path directory;
 
-  public FileDistributionService(int identifier) throws IOException {
+  public FileSynchronizer(int identifier) throws IOException {
     this.directory =
         Paths.get( File.separator, "tmp", "ChunkServer"+"-"+identifier );
     Files.createDirectories( directory );

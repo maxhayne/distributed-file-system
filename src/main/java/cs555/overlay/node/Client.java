@@ -123,7 +123,7 @@ public class Client implements Node {
   //      }
   //      shards[index] = fileData;
   //    }
-  //    return FileDistributionService.decodeMissingShards( shards );
+  //    return FileSynchronizer.decodeMissingShards( shards );
   //  }
   //
   //  public static TCPSender getTCPSender(Map<String, TCPSender>
@@ -165,7 +165,7 @@ public class Client implements Node {
   //    }
   //    try {
   //      double totalChunks =
-  //          Math.ceil( FileDistributionService.getFileSize( filename )
+  //          Math.ceil( FileSynchronizer.getFileSize( filename )
   //          /65536 );
   //      double tenth = totalChunks/10, prints = 0; // For updating an upload
   //      // progress bar
@@ -175,7 +175,7 @@ public class Client implements Node {
   //      boolean finished = false;
   //      while ( !finished ) {
   //        byte[] newchunk =
-  //            FileDistributionService.getNextChunkFromFile( filename, index );
+  //            FileSynchronizer.getNextChunkFromFile( filename, index );
   //        if ( newchunk == null ) {
   //          finished = true;
   //          break;
@@ -276,14 +276,14 @@ public class Client implements Node {
   //            byte[] chunkForStorage;
   //            try {
   //              chunkForStorage =
-  //                  FileDistributionService.readyChunkForStorage( index, 0,
+  //                  FileSynchronizer.readyChunkForStorage( index, 0,
   //                      newchunk );
   //            } catch ( Exception e ) {
   //              System.out.println( "\nstore: SHA1 is not available." );
   //              break;
   //            }
   //            byte[][] shards =
-  //                FileDistributionService.makeShardsFromChunk(
+  //                FileSynchronizer.makeShardsFromChunk(
   //                chunkForStorage );
   //            for ( int i = 0; i < response.servers.length; i++ ) {
   //              TCPSender serverConnection =
@@ -548,10 +548,10 @@ public class Client implements Node {
   //              getShardsFromServers( chunkName, storageList.servers,
   //                  connections );
   //          if ( shards != null ) {
-  //            download = FileDistributionService.getChunkFromShards( shards );
+  //            download = FileSynchronizer.getChunkFromShards( shards );
   //            download =
-  //                FileDistributionService.removeHashesFromChunk( download );
-  //            download = FileDistributionService.getDataFromChunk( download );
+  //                FileSynchronizer.removeHashesFromChunk( download );
+  //            download = FileSynchronizer.getDataFromChunk( download );
   //          }
   //        }
   //        if ( download == null ) {
@@ -560,7 +560,7 @@ public class Client implements Node {
   //          break;
   //        } else {
   //          // We have the data, now need to write the data to a file.
-  //          FileDistributionService.appendFile( location+basename, download );
+  //          FileSynchronizer.appendFile( location+basename, download );
   //          lastChunk++;
   //          if ( i == reportedSize.totalChunks-1 ) {
   //            finished = true;

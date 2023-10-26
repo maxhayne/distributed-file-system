@@ -1,6 +1,6 @@
 package cs555.overlay.files;
 
-import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.FileSynchronizer;
 import cs555.overlay.util.FileMetadata;
 
 import java.nio.ByteBuffer;
@@ -29,18 +29,18 @@ public class ShardReader implements FileReader {
    * member 'corrupt' is set to true. Otherwise, 'corrupt' is set to false, and
    * the shard's data and metadata is extracted.
    *
-   * @param fileService the ChunkServer is using to synchronize file reads
+   * @param synchronizer the ChunkServer is using to synchronize file reads
    * across threads
    */
   @Override
-  public void readAndProcess(FileDistributionService fileService) {
-    shardBytes = fileService.readNBytesFromFile( filename,
-        FileDistributionService.SHARD_FILE_LENGTH );
+  public void readAndProcess(FileSynchronizer synchronizer) {
+    shardBytes = synchronizer.readNBytesFromFile( filename,
+        FileSynchronizer.SHARD_FILE_LENGTH );
     checkForCorruption();
     if ( !corrupt ) {
-      shardBytes = FileDistributionService.removeHashFromShard( shardBytes );
+      shardBytes = FileSynchronizer.removeHashFromShard( shardBytes );
       readMetadata();
-      shardBytes = FileDistributionService.getDataFromShard( shardBytes );
+      shardBytes = FileSynchronizer.getDataFromShard( shardBytes );
     }
 
   }
@@ -50,7 +50,7 @@ public class ShardReader implements FileReader {
    * the member 'corrupt' accordingly.
    */
   private void checkForCorruption() {
-    corrupt = FileDistributionService.checkShardForCorruption( shardBytes );
+    corrupt = FileSynchronizer.checkShardForCorruption( shardBytes );
   }
 
   private void readMetadata() {

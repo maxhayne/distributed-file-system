@@ -134,7 +134,7 @@ public class ClientWriter implements Runnable {
     } else { // erasure coding
       int length = content.length;
       content = standardizeLength( content );
-      return FileDistributionService.makeShardsFromContent( length, content );
+      return FileSynchronizer.makeShardsFromContent( length, content );
     }
   }
 

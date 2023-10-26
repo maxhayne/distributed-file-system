@@ -164,4 +164,17 @@ public class FileTable {
     }
   }
 
+  /**
+   * Deletes an entire file from the table. Will be called from a
+   * synchronized function in the Controller, and will be followed by an
+   * operation to delete all filename entries from every ServerConnection too
+   * . Then, a broadcast message will be sent out to all ServerConnections to
+   * delete the filename from their storage.
+   *
+   * @param filename filename to be deleted
+   */
+  public void deleteFile(String filename) {
+    table.remove( filename );
+  }
+
 }

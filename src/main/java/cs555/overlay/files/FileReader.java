@@ -1,6 +1,6 @@
 package cs555.overlay.files;
 
-import cs555.overlay.util.FileDistributionService;
+import cs555.overlay.util.FileSynchronizer;
 import cs555.overlay.util.FileMetadata;
 
 /**
@@ -13,7 +13,7 @@ import cs555.overlay.util.FileMetadata;
 public interface FileReader {
   String getFilename();
 
-  void readAndProcess(FileDistributionService fileService);
+  void readAndProcess(FileSynchronizer synchronizer);
 
   boolean isCorrupt();
 
