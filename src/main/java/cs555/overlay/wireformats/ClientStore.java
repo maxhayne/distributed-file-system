@@ -2,18 +2,18 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
-public class ClientRequestsFileStorageInfo implements Event {
+public class ClientStore implements Event {
+  private final byte type;
+  private final String filename;
+  private int sequence;
 
-  public byte type;
-  public String filename;
-
-  public ClientRequestsFileStorageInfo(String filename) {
-    this.type = Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO;
+  public ClientStore(byte type, String filename, int sequence) {
+    this.type = type;
     this.filename = filename;
+    this.sequence = sequence;
   }
 
-  public ClientRequestsFileStorageInfo(byte[] marshalledBytes)
-      throws IOException {
+  public ClientStore(byte[] marshalledBytes) throws IOException {
     ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
     DataInputStream din = new DataInputStream( bin );
 
@@ -24,27 +24,45 @@ public class ClientRequestsFileStorageInfo implements Event {
     din.readFully( array );
     filename = new String( array );
 
+    sequence = din.readInt();
+
     din.close();
     bin.close();
   }
 
+  @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
     DataOutputStream dout = new DataOutputStream( bout );
 
-    dout.write( type );
+    dout.writeByte( type );
 
     byte[] array = filename.getBytes();
     dout.writeInt( array.length );
     dout.write( array );
 
-    byte[] returnable = bout.toByteArray();
-    dout.close();
+    dout.writeInt( sequence );
+
+    byte[] marshalledBytes = bout.toByteArray();
     bout.close();
-    return returnable;
+    dout.close();
+    return marshalledBytes;
   }
 
+  @Override
   public byte getType() {
     return type;
+  }
+
+  public String getFilename() {
+    return filename;
+  }
+
+  public int getSequence() {
+    return sequence;
+  }
+
+  public void incrementSequence() {
+    sequence++;
   }
 }

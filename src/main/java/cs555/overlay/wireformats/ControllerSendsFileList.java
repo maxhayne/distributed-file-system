@@ -4,8 +4,8 @@ import java.io.*;
 
 public class ControllerSendsFileList implements Event {
 
-  public byte type;
-  public String[] list;
+  private final byte type;
+  private String[] list;
 
   public ControllerSendsFileList(String[] list) {
     this.type = Protocol.CONTROLLER_SENDS_FILE_LIST;
@@ -44,8 +44,8 @@ public class ControllerSendsFileList implements Event {
       dout.writeInt( 0 );
     } else {
       dout.writeInt( list.length );
-      for ( int i = 0; i < list.length; ++i ) {
-        byte[] array = list[i].getBytes();
+      for ( String s : list ) {
+        byte[] array = s.getBytes();
         dout.writeInt( array.length );
         dout.write( array );
       }
@@ -61,4 +61,11 @@ public class ControllerSendsFileList implements Event {
   public byte getType() {
     return type;
   }
+
+  /**
+   * Getter for file list.
+   *
+   * @return String[] of filenames
+   */
+  public String[] getList() {return list;}
 }

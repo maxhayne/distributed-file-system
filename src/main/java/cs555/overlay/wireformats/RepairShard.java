@@ -158,6 +158,16 @@ public class RepairShard implements Event {
     return fragments;
   }
 
+  /**
+   * Attach a fragment to the 'fragments' array at a particular index.
+   *
+   * @param index of fragment to attach
+   * @param fragment byte string of valid fragment
+   */
+  public void attachFragment(int index, byte[] fragment) {
+    fragments[index] = fragment;
+  }
+
   @Override
   public byte getType() {
     return type;

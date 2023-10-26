@@ -4,7 +4,7 @@ import java.util.ArrayList;
 
 /**
  * Class used to store information from the latest heartbeat sent by the
- * ChunkServer in whose ChunkServerConnection this object is stored.
+ * ChunkServer in whose ServerConnection this object is stored.
  *
  * @author hayne
  */

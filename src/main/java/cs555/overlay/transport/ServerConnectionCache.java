@@ -8,59 +8,62 @@ import cs555.overlay.wireformats.RepairShard;
 import java.io.IOException;
 import java.util.*;
 
-public class ChunkServerConnectionCache {
+public class ServerConnectionCache {
 
-  private final Vector<Integer> availableIdentifiers;
-  private final Map<Integer, ChunkServerConnection> chunkCache;
+  private final ArrayList<Integer> availableIdentifiers;
+  private final Map<Integer, ServerConnection> registeredServers;
 
   private final DistributedFileCache idealState;
   private final DistributedFileCache reportedState;
 
-  private final HeartbeatMonitor heartbeatMonitor;
-  private final Timer heartbeatTimer;
+  private static final Comparator<ServerConnection> serverComparator =
+      Comparator.comparingInt( ServerConnection::getTotalChunks )
+                .thenComparing( ServerConnection::getFreeSpace,
+                    Comparator.reverseOrder() );
 
-  public ChunkServerConnectionCache(DistributedFileCache idealState,
+  public ServerConnectionCache(DistributedFileCache idealState,
       DistributedFileCache reportedState) {
     this.idealState = idealState;
     this.reportedState = reportedState;
 
-    this.chunkCache = new HashMap<Integer, ChunkServerConnection>();
-    this.availableIdentifiers = new Vector<Integer>();
+    this.registeredServers = new HashMap<Integer, ServerConnection>();
+    this.availableIdentifiers = new ArrayList<Integer>();
     for ( int i = 1; i <= 32; ++i ) {
       this.availableIdentifiers.add( i );
     }
 
-    this.heartbeatMonitor =
-        new HeartbeatMonitor( this, chunkCache, idealState, reportedState );
+    HeartbeatMonitor heartbeatMonitor =
+        new HeartbeatMonitor( this, registeredServers, idealState,
+            reportedState );
 
-    this.heartbeatTimer = new Timer();
-    this.heartbeatTimer.scheduleAtFixedRate( heartbeatMonitor, 0,
+    Timer heartbeatTimer = new Timer();
+    heartbeatTimer.scheduleAtFixedRate( heartbeatMonitor, 0,
         Constants.HEARTRATE );
   }
 
   /**
-   * Returns the ChunkServerConnection object of a registered ChunkServer with
+   * Returns the ServerConnection object of a registered ChunkServer with
    * the identifier specified as a parameter.
    *
    * @param identifier of ChunkServer
-   * @return ChunkServerConnection with that identifier, null if doesn't exist
+   * @return ServerConnection with that identifier, null if doesn't exist
    */
-  public ChunkServerConnection getConnection(int identifier) {
-    synchronized( chunkCache ) {
-      return chunkCache.get( identifier );
+  public ServerConnection getConnection(int identifier) {
+    synchronized( registeredServers ) {
+      return registeredServers.get( identifier );
     }
   }
 
   /**
-   * Return the ChunkServerConnection object of a registered ChunkServer with
+   * Return the ServerConnection object of a registered ChunkServer with
    * the host:port address specified as a parameter.
    *
    * @param address of ChunkServer's connection to get
-   * @return ChunkServerConnection
+   * @return ServerConnection
    */
-  public ChunkServerConnection getConnection(String address) {
-    synchronized( chunkCache ) {
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
+  public ServerConnection getConnection(String address) {
+    synchronized( registeredServers ) {
+      for ( ServerConnection connection : registeredServers.values() ) {
         if ( connection.getServerAddress().equals( address ) ) {
           return connection;
         }
@@ -77,22 +80,21 @@ public class ChunkServerConnectionCache {
     return reportedState;
   }
 
-  public String getAllServerAddresses() {
-    StringBuilder sb = new StringBuilder();
-    synchronized( chunkCache ) {
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
-        sb.append( connection.getServerAddress() ).append( "," );
+  public String[] getAllServerAddresses() {
+    synchronized( registeredServers ) {
+      String[] addresses = new String[registeredServers.size()];
+      int index = 0;
+      for ( ServerConnection connection : registeredServers.values() ) {
+        addresses[index] = connection.getServerAddress();
+        index++;
       }
-      if ( !sb.isEmpty() ) {
-        sb.deleteCharAt( sb.length()-1 );
-      }
+      return addresses;
     }
-    return sb.toString();
   }
 
   public int getChunkServerIdentifier(String address) {
-    synchronized( chunkCache ) {
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
+    synchronized( registeredServers ) {
+      for ( ServerConnection connection : registeredServers.values() ) {
         if ( connection.getServerAddress().equals( address ) ) {
           return connection.getIdentifier();
         }
@@ -102,8 +104,8 @@ public class ChunkServerConnectionCache {
   }
 
   public String getChunkServerAddress(int identifier) {
-    synchronized( chunkCache ) {
-      ChunkServerConnection connection = chunkCache.get( identifier );
+    synchronized( registeredServers ) {
+      ServerConnection connection = registeredServers.get( identifier );
       if ( connection != null ) {
         return connection.getServerAddress();
       }
@@ -112,7 +114,8 @@ public class ChunkServerConnectionCache {
   }
 
   public String getChunkStorageInfo(String filename, int sequence) {
-    String info = reportedState.getChunkStorageInfo( filename, sequence );
+    //String info = reportedState.getChunkStorageInfo( filename, sequence );
+    String info = idealState.getChunkStorageInfo( filename, sequence );
     if ( info.equals( "|" ) ) {
       return "|";
     }
@@ -143,10 +146,10 @@ public class ChunkServerConnectionCache {
           if ( !address.isEmpty() ) {
             sb.append( address ).append( "," );
           } else {
-            sb.append( "-1" );
+            sb.append( "-1" ).append( "," );
           }
         } else {
-          sb.append( "-1" );
+          sb.append( "-1" ).append( "," );
         }
       }
       sb.deleteCharAt( sb.length()-1 );
@@ -154,10 +157,23 @@ public class ChunkServerConnectionCache {
     return sb.toString();
   }
 
+  public ArrayList<String> sortServers() {
+    synchronized( registeredServers ) {
+      List<ServerConnection> orderedServers =
+          new ArrayList<>( registeredServers.values() );
+      orderedServers.sort( serverComparator );
+      ArrayList<String> orderedAddresses = new ArrayList<>();
+      for ( ServerConnection server : orderedServers ) {
+        orderedAddresses.add( server.getServerAddress() );
+      }
+      return orderedAddresses;
+    }
+  }
+
   public ArrayList<String> listFreestServers() {
     ArrayList<Long[]> servers = new ArrayList<Long[]>();
-    synchronized( chunkCache ) {
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
+    synchronized( registeredServers ) {
+      for ( ServerConnection connection : registeredServers.values() ) {
         if ( connection.getUnhealthy() <= 3 &&
              connection.getHeartbeatInfo().getFreeSpace() != -1 &&
              connection.getHeartbeatInfo().getFreeSpace() >= 65720 ) {
@@ -181,8 +197,8 @@ public class ChunkServerConnectionCache {
   public String availableChunkServers(String filename, int sequence) {
     // Need three freest servers
     ArrayList<Long[]> servers = new ArrayList<Long[]>();
-    synchronized( chunkCache ) {
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
+    synchronized( registeredServers ) {
+      for ( ServerConnection connection : registeredServers.values() ) {
         if ( connection.getUnhealthy() <= 3 &&
              connection.getHeartbeatInfo().getFreeSpace() != -1 &&
              connection.getHeartbeatInfo().getFreeSpace() >= 65720 ) {
@@ -231,8 +247,8 @@ public class ChunkServerConnectionCache {
   public String availableShardServers(String filename, int sequence) {
     // Need nine freest servers
     ArrayList<Long[]> servers = new ArrayList<Long[]>();
-    synchronized( chunkCache ) {
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
+    synchronized( registeredServers ) {
+      for ( ServerConnection connection : registeredServers.values() ) {
         if ( connection.getUnhealthy() <= 3 &&
              connection.getHeartbeatInfo().getFreeSpace() != -1 &&
              connection.getHeartbeatInfo().getFreeSpace() >= 65720 ) {
@@ -288,8 +304,8 @@ public class ChunkServerConnectionCache {
    * @return true if registered, false if not
    */
   public boolean isRegistered(String address) {
-    synchronized( chunkCache ) {
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
+    synchronized( registeredServers ) {
+      for ( ServerConnection connection : registeredServers.values() ) {
         if ( address.equals( connection.getServerAddress() ) ) {
           return true;
         }
@@ -306,14 +322,14 @@ public class ChunkServerConnectionCache {
    */
   public int register(String address, TCPConnection connection) {
     int registrationStatus = -1; // -1 is a failure
-    synchronized( chunkCache ) {
+    synchronized( registeredServers ) {
       synchronized( availableIdentifiers ) {
         if ( !availableIdentifiers.isEmpty() && !isRegistered( address ) ) {
           int identifier =
               availableIdentifiers.remove( availableIdentifiers.size()-1 );
-          ChunkServerConnection newConnection =
-              new ChunkServerConnection( identifier, address, connection );
-          chunkCache.put( identifier, newConnection );
+          ServerConnection newConnection =
+              new ServerConnection( identifier, address, connection );
+          registeredServers.put( identifier, newConnection );
           registrationStatus = identifier; // registration successful
         }
       }
@@ -323,24 +339,24 @@ public class ChunkServerConnectionCache {
 
   /**
    * Removes the ChunkServer with a particular identifier from the
-   * ChunkServerConnectionCache. Since this ChunkServer may be storing essential
+   * ServerConnectionCache. Since this ChunkServer may be storing essential
    * files for the operation of the distributed file system, files stored on the
    * ChunkServer must be relocated to other available ChunkServers.
    *
    * @param identifier of ChunkServer to deregister
    */
   public void deregister(int identifier) {
-    // Remove from the chunkCache and availableIdentifiers
+    // Remove from the registeredServers and availableIdentifiers
     // Remove all instances of identifier from each DistributedFileCache
     ArrayList<ServerFile> removedIdealStates;
-    synchronized( chunkCache ) {
+    synchronized( registeredServers ) {
       synchronized( availableIdentifiers ) {
-        ChunkServerConnection connection = chunkCache.get( identifier );
+        ServerConnection connection = registeredServers.get( identifier );
         if ( connection == null ) { // no ChunkServer to remove
           return;
         }
         connection.getConnection().close(); // stop the receiver
-        chunkCache.remove( identifier );
+        registeredServers.remove( identifier );
         availableIdentifiers.add( identifier ); // add back identifier
 
         // Must be sure that this is a safe operation
@@ -436,13 +452,13 @@ public class ChunkServerConnectionCache {
    * @param marshalledBytes message to send
    */
   public void broadcast(byte[] marshalledBytes) {
-    synchronized( chunkCache ) {
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
+    synchronized( registeredServers ) {
+      for ( ServerConnection connection : registeredServers.values() ) {
         try {
           connection.getConnection().getSender().sendData( marshalledBytes );
         } catch ( IOException ioe ) {
           System.err.println(
-              "broadcast: Unable to send message to "+"ChunkServer "+
+              "broadcast: Unable to send message to ChunkServer "+
               connection.getIdentifier()+". "+ioe.getMessage() );
         }
       }
@@ -451,7 +467,7 @@ public class ChunkServerConnectionCache {
 
   /**
    * Class to house Comparators which will be used in the methods of the
-   * ChunkServerConnectionCache.
+   * ServerConnectionCache.
    */
   public static class Comparators {
 

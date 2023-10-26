@@ -3,26 +3,28 @@ package cs555.overlay.transport;
 import cs555.overlay.util.HeartbeatInformation;
 
 /**
- * Maintains an active connection with a ChunkServer. Its function is to
- * maintain status information and to actively send messages in its queue to the
- * ChunkServer it's connected with.
+ * Maintains an active TCPConnection with a ChunkServer. Its function is to
+ * maintain status and heartbeat information about the ChunkServer it's
+ * connected to.
+ *
+ * @author hayne
  */
-public class ChunkServerConnection {
+public class ServerConnection {
 
   // Identifying/Connection information
   private final String address;
-  private final TCPConnection connection;
   private final int identifier;
+  private final TCPConnection connection;
 
-  // Status information
   private final long startTime;
   // HeartbeatInformation
-  private final HeartbeatInformation heartbeatInformation; // latest heartbeat info
+  private final HeartbeatInformation heartbeatInformation;
+  // latest heartbeat info
   private int unhealthy;
   private int pokes;
   private int pokeReplies;
 
-  public ChunkServerConnection(int identifier, String address,
+  public ServerConnection(int identifier, String address,
       TCPConnection connection) {
     this.identifier = identifier;
     this.address = address;
@@ -51,7 +53,10 @@ public class ChunkServerConnection {
     return heartbeatInformation;
   }
 
-  public synchronized long getStartTime() {
+  public long getFreeSpace() {return heartbeatInformation.getFreeSpace();}
+  public int getTotalChunks() {return heartbeatInformation.getTotalChunks();}
+
+  public long getStartTime() {
     return startTime;
   }
 
@@ -82,12 +87,11 @@ public class ChunkServerConnection {
   }
 
   public synchronized String toString() {
-    String sb =
-        address+", "+identifier+", "+
-        heartbeatInformation.getFreeSpace()/(1024*1024)+
-        "MB"+", "+heartbeatInformation.getTotalChunks()+" chunks"+", "+"health: "+
-        unhealthy;
-    return "[ "+sb+" ]";
+    String info = address+", "+identifier+", "+
+                  heartbeatInformation.getFreeSpace()/(1024*1024)+"MB"+", "+
+                  heartbeatInformation.getTotalChunks()+" chunks"+", "+
+                  "health: "+unhealthy;
+    return "[ "+info+" ]";
   }
 
 }

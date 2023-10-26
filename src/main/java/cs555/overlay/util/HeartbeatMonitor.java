@@ -1,10 +1,7 @@
 package cs555.overlay.util;
 
-import cs555.overlay.transport.ChunkServerConnection;
-import cs555.overlay.transport.ChunkServerConnectionCache;
-import cs555.overlay.wireformats.Event;
-import cs555.overlay.wireformats.RepairChunk;
-import cs555.overlay.wireformats.RepairShard;
+import cs555.overlay.transport.ServerConnection;
+import cs555.overlay.transport.ServerConnectionCache;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -12,31 +9,18 @@ import java.util.TimerTask;
 
 public class HeartbeatMonitor extends TimerTask {
 
-  private final ChunkServerConnectionCache connectionCache;
-  private final Map<Integer, ChunkServerConnection> chunkCache;
+  private final ServerConnectionCache connectionCache;
+  private final Map<Integer, ServerConnection> chunkCache;
   private final DistributedFileCache idealState;
   private final DistributedFileCache reportedState;
 
-  public HeartbeatMonitor(ChunkServerConnectionCache connectionCache,
-      Map<Integer, ChunkServerConnection> chunkCache,
+  public HeartbeatMonitor(ServerConnectionCache connectionCache,
+      Map<Integer, ServerConnection> chunkCache,
       DistributedFileCache idealState, DistributedFileCache reportedState) {
     this.connectionCache = connectionCache;
     this.chunkCache = chunkCache;
     this.idealState = idealState;
     this.reportedState = reportedState;
-  }
-
-  private boolean checkChunkFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk[0-9]*$" );
-    String[] split = filename.split( "_chunk" );
-    return matches && split.length == 2;
-  }
-
-  private boolean checkShardFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk[0-9]*_shard[0-8]$" );
-    String[] split1 = filename.split( "_chunk" );
-    String[] split2 = filename.split( "_shard" );
-    return matches && split1.length == 2 && split2.length == 2;
   }
 
   private String[] splitFilename(String filename) {
@@ -65,7 +49,8 @@ public class HeartbeatMonitor extends TimerTask {
                0 : 1;
   }
 
-  private ArrayList<Chunk> getNewChunks(int identifier, HeartbeatInformation info) {
+  private ArrayList<Chunk> getNewChunks(int identifier,
+      HeartbeatInformation info) {
     ArrayList<Chunk> newChunks = new ArrayList<Chunk>();
     for ( FileMetadata meta : info.getFiles() ) {
       String[] splitFilename = splitFilename( meta.filename );
@@ -79,7 +64,8 @@ public class HeartbeatMonitor extends TimerTask {
     return newChunks;
   }
 
-  private ArrayList<Shard> getNewShards(int identifier, HeartbeatInformation info) {
+  private ArrayList<Shard> getNewShards(int identifier,
+      HeartbeatInformation info) {
     ArrayList<Shard> newShards = new ArrayList<Shard>();
     for ( FileMetadata meta : info.getFiles() ) {
       String[] splitFilename = splitFilename( meta.filename );
@@ -142,7 +128,7 @@ public class HeartbeatMonitor extends TimerTask {
   }
 
   private void adjustConnectionHealth(int unhealthyScore,
-      ChunkServerConnection connection) {
+      ServerConnection connection) {
     if ( unhealthyScore >= 2 ) {
       connection.incrementUnhealthy();
     } else {
@@ -167,12 +153,12 @@ public class HeartbeatMonitor extends TimerTask {
       sb.append( "\nHeartbeat Monitor:" );
 
       long now = System.currentTimeMillis();
-      for ( ChunkServerConnection connection : chunkCache.values() ) {
+      for ( ServerConnection connection : chunkCache.values() ) {
 
         sb.append( "\n" ).append( connection.toString() );
 
-        HeartbeatInformation
-            heartbeatInformation = connection.getHeartbeatInfo().copy();
+        HeartbeatInformation heartbeatInformation =
+            connection.getHeartbeatInfo().copy();
 
         // Append list of new files to print later
         sb.append( "\n" )
@@ -183,6 +169,7 @@ public class HeartbeatMonitor extends TimerTask {
         int lastBeatType = getLastHeartbeatType( now, heartbeatInformation );
 
 
+        // Update reportedState if heartbeat is healthy
         updateStateIfHealthyHeartbeat( timeSinceLastHeartbeat, lastBeatType,
             connection.getIdentifier(), heartbeatInformation );
 
@@ -206,7 +193,7 @@ public class HeartbeatMonitor extends TimerTask {
       }
 
       // Print the contents of all heartbeats for registered ChunkServers
-      System.out.println( sb );
+      System.out.println( sb.toString() );
 
       // Prune these data structures to remove stragglers
       idealState.prune();
@@ -214,6 +201,10 @@ public class HeartbeatMonitor extends TimerTask {
 
       // Try to replace files missing from ChunkServers
       ArrayList<String> missingFiles = idealState.differences( reportedState );
+      System.out.println( missingFiles.size() );
+      //      for ( String file : missingFiles )
+      //        System.out.print( file + " ");
+      /*
       for ( String missingFile : missingFiles ) {
         // missingFile structure: "timestamp,baseFilename,sequence,
         // serverIdentifier, (optional) fragment"
@@ -280,7 +271,7 @@ public class HeartbeatMonitor extends TimerTask {
                               "."+e.getMessage() );
         }
       }
-      System.out.println();
+      */
     }
     for ( Integer i : toDeregister ) {
       connectionCache.deregister( i );

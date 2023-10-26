@@ -128,3 +128,19 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - The Controller might receive a corruption message from a ChunkServer for a file that it shouldn't have. If it does, it shouldn't respond, or it should send a message to that ChunkServer telling it to delete the file.
 
 - Need to gracefully shutdown the ChunkServer after sending a deregistration request. This will include closing all open TCPConnections and cancelling the heartbeat Timer.
+
+- It is possible to simplify the RepairFile logic at the ChunkServer. Since the ChunkWriter takes a byte[][] of slices paired with a int[] of indices, that could be simplified to just take a byte[8][] of slices which is always length eight, but with null values for slices that weren't retrieved. That would align with the ShardWriter's getReconstructionShards() method, which takes a byte[9][] array, with null values for fragments not retrieved.
+
+- There is a small chance that when a ChunkServer receives a RepairChunk or RepairShard message, and it isn't the destination, a read of its local file reveals corruption. If that happens, should it report its own corruption to the Controller? Should it try to use the RepairMessage to repair its own corruption first, and then contact the Controller? What should it do?
+
+- listFiles() in FileDistributionService feels so confusing for what it does. Is using Files really the best option? Should we return a List<> instead of a String[]?
+
+- Instead of choosing which type of FileReader to instantiate based on the filename, could use the application.properties value for the storage schema type instead? Right now, the ChunkServers are set up to be able to store shards and chunks at the same time, and so is the Controller -- it will allocate servers for either chunks or shards, but what type of storage the Client asks the Controller for will be determined by the value in the application.properties file. Right now, it just feels like the Controller and ChunkServer are overbuilt given that the Controller cannot be given a command line argument for how it stores files. If you could start a Client to use erasure coding, shut it down (without shutting down all the nodes, and start it up again using replication, the current design would make sense, but if the Client will always use the storage schema in application.properies, the Controller and Chunkserver should be changed.
+
+- TCPConnectionCache needs to have some way to clear inactive connections from the cache. The getConnection() method should never return a stale connection. And there should be a method to clear the connections.
+
+- Need to make a choice about whether to use the full path as a filename to store on the ChunkServers or use just the filename.
+
+- Need to make a note that in the ChunkServerConnectionCache, I changed getChunkStorageInfo() to get its information from the idealState, not the reportedState. The idealState will not have corruption.
+
+- When the Client is reading a file, it should get information from the Controller about where to get chunks one chunk at a time. That way, responses from the Controller can only be invalidated for that particular chunk, not the entire file (if say, a server deregisters right after the Client requests information about where a chunk is stored, and that chunk happens to be stored at the server that is in the process of deregistering).

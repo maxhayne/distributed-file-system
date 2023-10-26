@@ -30,6 +30,8 @@ services:
       - controller
     deploy:
       replicas: 9 # adjustable
+    stdin_open: true
+    tty: true
     networks:
       - dfsNetwork
   

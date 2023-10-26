@@ -43,11 +43,9 @@ then
 else
     if [[ -n "$MULTI" ]]
     then
-        mkdir -p "$DIR/servers"
         for tab in `echo $MULTI`
         do
-            mkdir "$DIR/servers/server$tab"
-            new_tab "$DIR/servers/server$tab"
+            new_tab
         done
     fi
 fi

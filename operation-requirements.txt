@@ -1,0 +1,19 @@
+- Add a new file with a specific filename.
+
+- Every filename has at least one chunk (sequence) associated with it.
+
+- A healthy file has no gaps in sequence numbers, they can only be added. Or, deleted en masse. ### Actually, it is the Client's responsibility to handle that.
+
+- When the Client wants to store a new chunk, it sends the Controller a filename and sequence number to allocate servers. 
+
+- The servers that store a specific filename and sequence number need to be quickly accessible.
+
+- When allocating servers for a specific filename and sequence number, servers (represented either by integers or host:port strings) cannot be told to store more than one replication (or fragment) of the same chunk.
+
+- If a server reports that one of its chunks is corrupt, the Controller must be able to mark that that chunk is corrupt. So, it must be able to find out where it is kept that that specific server holds that chunk, and make a change to the data structure so that no one tries to look for that chunk at that server.
+
+- If a server deregisters, need to quickly remove that server from all chunk allocations, and find replacements, based on a list of servers sorted by decreasing storage space. ### This can be done, but not quickly. ALL chunks need to be checked for the host:port combination that is deregistering, and a replacement needs to be found on the spot, and a message dispatched (either RepairChunk/Shard). If we wanted to make this operation more efficient, we'd need to keep track of a separate data structure tightly coupled to this one, that contains a list of all filename:sequence combinations held by the deregistering server, and just iterate throught that upon deregistration. But, if we did that, we'd need to make sure that both data structures are changed simultaneously, and without interruption. That means changing both when allocateServers(), a corruption event occurs.
+
+- This makes me think that a registration message should include the usable space at the server, and also totalChunksStored, which should be zero.
+
+

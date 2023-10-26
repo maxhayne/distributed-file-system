@@ -48,35 +48,31 @@ public class EventFactory {
       case Protocol.REQUESTS_CHUNK:
       case Protocol.REQUESTS_SHARD:
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE:
+      case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FOR_STORAGE:
+      case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS:
+      case Protocol.CHUNK_SERVER_DENIES_REQUEST:
+      case Protocol.CONTROLLER_REQUESTS_FILE_DELETE:
+      case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE:
         return new GeneralMessage( marshalledBytes );
 
-      case Protocol.REQUESTS_SLICES:
-        return new RequestsSlices( marshalledBytes );
+      case Protocol.CONTROLLER_SENDS_FILE_LIST:
+        return new ControllerSendsFileList( marshalledBytes );
 
-      case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS:
-        return new ControllerReportsChunkServerRegistrationStatus(
-            marshalledBytes );
+      case Protocol.CONTROLLER_RESERVES_SERVERS:
+        return new ControllerReservesServers( marshalledBytes );
 
-      case Protocol.CLIENT_REQUESTS_STORE_CHUNK:
-        return new ClientRequestsStoreChunk( marshalledBytes );
+      case Protocol.CLIENT_STORE_SHARDS:
+      case Protocol.CLIENT_STORE_CHUNK:
+        return new ClientStore( marshalledBytes );
 
-      case Protocol.CONTROLLER_SENDS_CLIENT_VALID_CHUNK_SERVERS:
-        return new ControllerSendsClientValidChunkServers( marshalledBytes );
+      case Protocol.REPAIR_CHUNK:
+        return new RepairChunk( marshalledBytes );
 
-      case Protocol.CLIENT_REQUESTS_STORE_SHARDS:
-        return new ClientRequestsStoreShards( marshalledBytes );
-
-      case Protocol.CONTROLLER_SENDS_CLIENT_VALID_SHARD_SERVERS:
-        return new ControllerSendsClientValidShardServers( marshalledBytes );
-
-      case Protocol.CONTROLLER_REQUESTS_FILE_DELETE:
-        return new ControllerRequestsFileDelete( marshalledBytes );
+      case Protocol.REPAIR_SHARD:
+        return new RepairShard( marshalledBytes );
 
       case Protocol.SENDS_FILE_FOR_STORAGE:
         return new SendsFileForStorage( marshalledBytes );
-
-      case Protocol.CHUNK_SERVER_DENIES_REQUEST:
-        return new ChunkServerDeniesRequest( marshalledBytes );
 
       case Protocol.CHUNK_SERVER_SERVES_FILE:
         return new ChunkServerServesFile( marshalledBytes );
@@ -89,9 +85,6 @@ public class EventFactory {
 
       case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION:
         return new ChunkServerReportsFileCorruption( marshalledBytes );
-
-      case Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE:
-        return new ControllerRequestsFileAcquire( marshalledBytes );
 
       default:
         System.err.println( "Event couldn't be created. "+marshalledBytes[0] );

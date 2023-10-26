@@ -37,6 +37,13 @@ public class ChunkServer implements Node {
     this.isRegistered = new AtomicBoolean( false );
   }
 
+  /**
+   * Entry point for the ChunkServer. Creates a ServerSocket with optional port
+   * as a command line argument, connects to the Controller, sends the
+   * Controller a registration request, and then loops for user commands.
+   *
+   * @param args port for ServerSocket (optional)
+   */
   public static void main(String[] args) {
     // Start the TCPServerThread, so that when we try to register with
     // the Controller, we can guarantee it is already running.
@@ -158,13 +165,72 @@ public class ChunkServer implements Node {
     // If we are the target in the repair
     if ( repairMessage.getDestination().equals( host+":"+port ) ) {
       if ( shardReader.isCorrupt() ) { // And if the shard is corrupt
-        // We are here...
-        ShardWriter shardWriter = new ShardWriter( shardReader );
-        shardWriter.setReconstructionShards( repairMessage.getFragments() );
+        boolean repaired = repairAndWriteShard( repairMessage, shardReader );
+        String succeeded = repaired ? "" : "NOT";
+        System.out.println(
+            "repairShardHelper: '"+repairMessage.getFilename()+"' was "+
+            succeeded+" repaired." );
       }
-    } else {
-
+    } else { // try to add our uncorrupted shard
+      contributeToShardRepair( repairMessage, shardReader );
+      // Forward message or send directly to destination
+      String nextServer;
+      if ( repairMessage.fragmentsCollected() >= Constants.DATA_SHARDS ||
+           !repairMessage.nextPosition() ) {
+        nextServer = repairMessage.getDestination();
+      } else {
+        nextServer = repairMessage.getAddress();
+      }
+      try {
+        connectionCache.getConnection( this, nextServer, false )
+                       .getSender()
+                       .sendData( repairMessage.getBytes() );
+      } catch ( IOException ioe ) {
+        System.err.println(
+            "repairShardHelper: Message couldn't be forwarded. "+
+            ioe.getMessage() );
+      }
     }
+  }
+
+  /**
+   * Attaches local fragment to the repair message if the fragment isn't
+   * corrupt.
+   *
+   * @param repairMessage to attach our fragment to
+   * @param shardReader that was used to read the local fragment
+   */
+  private void contributeToShardRepair(RepairShard repairMessage,
+      ShardReader shardReader) {
+    if ( !shardReader.isCorrupt() ) { // if our own shard isn't corrupt
+      int fragmentIndex =
+          Integer.parseInt( shardReader.getFilename().split( "_shard" )[1] );
+      // attach local fragment to correct fragment index (parsed from filename)
+      repairMessage.attachFragment( fragmentIndex, shardReader.getData() );
+    }
+  }
+
+  /**
+   * Uses the shard fragments attached to the message to attempt to repair the
+   * local corrupt fragment, and write it to disk.
+   *
+   * @param repairMessage received from another ChunkServer
+   * @param shardReader that was used to read the local fragment
+   * @return true if repaired fragment was written to disk, false otherwise
+   */
+  private boolean repairAndWriteShard(RepairShard repairMessage,
+      ShardReader shardReader) {
+    ShardWriter shardWriter = new ShardWriter( shardReader );
+    shardWriter.setReconstructionShards( repairMessage.getFragments() );
+    try {
+      shardWriter.prepare();
+      return shardWriter.write( fileService );
+    } catch ( NoSuchAlgorithmException nsae ) {
+      System.err.println( "repairAndWriteShard: SHA1 unavailable. '"+
+                          repairMessage.getFilename()+
+                          "' could not be repaired."+nsae.getMessage() );
+    }
+    return false;
   }
 
   /**
@@ -228,7 +294,7 @@ public class ChunkServer implements Node {
     for ( int index : slicesNeedingRepair ) {
       // 'contains' function always returns false if localCorruptSlices=null
       if ( !ArrayUtilities.contains( localCorruptSlices, index ) ) {
-        repairMessage.addSlice( index, localSlices[index] );
+        repairMessage.attachSlice( index, localSlices[index] );
       }
     }
   }
@@ -251,9 +317,9 @@ public class ChunkServer implements Node {
       chunkWriter.prepare();
       return chunkWriter.write( fileService );
     } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println(
-          "writeRepairedChunk: SHA1 unavailable. '"+repairMessage.getFilename()+
-          "' could not be repaired."+nsae.getMessage() );
+      System.err.println( "repairAndWriteChunk: SHA1 unavailable. '"+
+                          repairMessage.getFilename()+
+                          "' could not be repaired."+nsae.getMessage() );
     }
     return false;
   }
@@ -262,7 +328,7 @@ public class ChunkServer implements Node {
    * Responds to Controller's heartbeat message. In the Controller, these
    * messages it sends to ChunkServers are called 'pokes', and the responses it
    * receives are called 'pokeReplies'. A count of each is kept in the
-   * ChunkServerConnection of every registrant, and if the discrepancy between
+   * ServerConnection of every registrant, and if the discrepancy between
    * the two counts becomes too great, the ChunkServer is automatically
    * deregistered.
    *
@@ -389,10 +455,10 @@ public class ChunkServer implements Node {
       }
     }
 
-    // If boolean 'saved' is false (the file could not be stored), could
-    // send message back to Controller that the store operation failed.
-    // Then the Controller could find a suitable replacement home for the
-    // file.
+    // If boolean 'writtenSuccessfully ' is false (the file could not be
+    // stored), could send message back to Controller that the store
+    // operation failed. Then the Controller could find a suitable
+    // replacement home for the file.
 
   }
 
@@ -483,6 +549,7 @@ public class ChunkServer implements Node {
                                                (Constants.HEARTRATE/2000)+1 );
       heartbeatTimer.scheduleAtFixedRate( heartbeatService, randomOffset*1000L,
           Constants.HEARTRATE );
+      isRegistered.set( true ); // set the registered status
     } catch ( Exception e ) {
       System.err.println(
           "registrationInterpreter: There was a problem setting up "+
@@ -495,6 +562,7 @@ public class ChunkServer implements Node {
         heartbeatTimer.cancel();
         heartbeatTimer = null;
       }
+      isRegistered.set( false );
       return false;
     }
     return true;
@@ -543,6 +611,7 @@ public class ChunkServer implements Node {
 
         case "help":
           showHelp();
+          break;
 
         default:
           System.err.println( "Unrecognized command. Use 'help' command." );

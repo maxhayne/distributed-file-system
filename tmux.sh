@@ -39,13 +39,6 @@ do
 done
 tmux new-window -d -n Client
 
-# Create folders for ChunkServers to store information in
-mkdir -p "$DIR/servers"
-for server in $MULTI
-do
-    mkdir -p "$DIR/servers/server$server"
-done
-
 # Send start commands to all windows and execute
 echo ""
 echo "Attempting to start Controller..."
@@ -54,7 +47,7 @@ sleep 3
 echo "Attempting to start ChunkServers..."
 for server in $MULTI
 do
-	tmux send-keys -t dfs:ChunkServer$server "$START_CHUNKSERVER $DIR/servers/server$server" C-m
+	tmux send-keys -t dfs:ChunkServer$server "$START_CHUNKSERVER" C-m
 	sleep 0.2
 done
 echo "Attempting to start Client..."

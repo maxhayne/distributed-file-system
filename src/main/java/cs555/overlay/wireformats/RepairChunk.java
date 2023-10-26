@@ -100,7 +100,7 @@ public class RepairChunk implements Event {
    * @param sliceIndex the number of the slice that will be sliceBytes
    * @param sliceBytes the replacement slice byte string
    */
-  public void addSlice(int sliceIndex, byte[] sliceBytes) {
+  public void attachSlice(int sliceIndex, byte[] sliceBytes) {
     for ( int i = 0; i < slicesToRepair.length; ++i ) {
       if ( slicesToRepair[i] == sliceIndex ) {
         replacementSlices[i] = sliceBytes;
@@ -181,8 +181,8 @@ public class RepairChunk implements Event {
    * Returns an int[] containing the slice indices that correspond to non-null
    * entries in the replacementSlices array.
    *
-   * @return int[] of slice indices retrieved thus far, null if no slices
-   * have been retrieved thus far
+   * @return int[] of slice indices retrieved thus far, null if no slices have
+   * been retrieved thus far
    */
   public int[] getRepairedSlices() {
     int totalSlicesRetrieved = 0;

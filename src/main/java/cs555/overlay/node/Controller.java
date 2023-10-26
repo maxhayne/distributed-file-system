@@ -1,7 +1,7 @@
 package cs555.overlay.node;
 
-import cs555.overlay.transport.ChunkServerConnection;
-import cs555.overlay.transport.ChunkServerConnectionCache;
+import cs555.overlay.transport.ServerConnection;
+import cs555.overlay.transport.ServerConnectionCache;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPServerThread;
 import cs555.overlay.util.*;
@@ -13,22 +13,36 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Scanner;
 
-
+/**
+ * Controller node in the DFS. It is responsible for keeping track of registered
+ * ChunkServers, deciding where new chunks/shards should be stored, dispatching
+ * instructions to deal with file corruptions, and more.
+ *
+ * @author hayne
+ */
 public class Controller implements Node {
 
   private final String host;
   private final int port;
-  private final ChunkServerConnectionCache connectionCache;
+  private final ServerConnectionCache connectionCache;
 
   public Controller(String host, int port) {
     this.host = host;
     this.port = port;
     this.connectionCache =
-        new ChunkServerConnectionCache( new DistributedFileCache(),
+        new ServerConnectionCache( new DistributedFileCache(),
             new DistributedFileCache() );
   }
 
-  public static void main(String[] args) throws Exception {
+  /**
+   * Entry point for the Controller. Creates a ServerSocket at the port
+   * specified in the 'application.properties' file, creates a
+   * ServerConnectionCache (which starts the HeartbeatMonitor), starts
+   * looping for user commands.
+   *
+   * @param args ignored
+   */
+  public static void main(String[] args) {
     try ( ServerSocket serverSocket = new ServerSocket(
         ApplicationProperties.controllerPort ) ) {
 
@@ -70,12 +84,9 @@ public class Controller implements Node {
         registrationHelper( event, connection, false );
         break;
 
-      case Protocol.CLIENT_REQUESTS_STORE_CHUNK:
+      case Protocol.CLIENT_STORE_CHUNK:
+      case Protocol.CLIENT_STORE_SHARDS:
         storeChunk( event, connection );
-        break;
-
-      case Protocol.CLIENT_REQUESTS_STORE_SHARDS:
-        storeShards( event, connection );
         break;
 
       case Protocol.CLIENT_REQUESTS_FILE_DELETE:
@@ -91,17 +102,21 @@ public class Controller implements Node {
         break;
 
       case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION:
-        corruptionHelper( event, connection );
+        corruptionHelper( event );
         break;
 
+      // Might not need, would be received by ChunkServer processing a
+      // SendsFileForStorage request
       case Protocol.CHUNK_SERVER_NO_STORE_FILE:
         missingFileHelper( event );
         break;
 
+      // Might not need this anymore, fix will be picked up in heartbeat?
       case Protocol.CHUNK_SERVER_REPORTS_FILE_FIX:
         markFileFixed( event );
         break;
 
+      // Better to combine this case and next into one?
       case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
         clientRead( event, connection );
         break;
@@ -111,14 +126,8 @@ public class Controller implements Node {
         break;
 
       case Protocol.CLIENT_REQUESTS_FILE_LIST:
-        fileListRequest( event, connection );
+        fileListRequest( connection );
         break;
-
-      case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE:
-        String filename = (( GeneralMessage ) event).getMessage();
-        System.out.println(
-            "onEvent: ChunkServer acknowledges that "+"it should acquire '"+
-            filename+"'." );
 
       default:
         System.err.println( "Event couldn't be processed. "+event.getType() );
@@ -129,11 +138,9 @@ public class Controller implements Node {
   /**
    * Respond to a request for the list of files stored on the DFS.
    *
-   * @param event message being handled
    * @param connection that produced the event
    */
-  private void fileListRequest(Event event, TCPConnection connection) {
-    String filename = (( GeneralMessage ) event).getMessage();
+  private void fileListRequest(TCPConnection connection) {
 
     ControllerSendsFileList response = new ControllerSendsFileList(
         connectionCache.getIdealState().getFileList() );
@@ -298,14 +305,14 @@ public class Controller implements Node {
 
   /**
    * Changes the reportedState DistributedFileCache to reflect the fact that a
-   * file at the sender (a ChunkServer) is corrupt. Then, if possible, sends a
-   * response with a list of ChunkServers where replicas (or shards) for the
-   * same chunk are stored.
+   * file at the sender (a ChunkServer) is corrupt. Then, if possible, starts a
+   * relay chain that visits all ChunkServers that have replica chunks (or
+   * shards) for that particular file, whose destination is the ChunkServer with
+   * the corrupt file.
    *
    * @param event message being handled
-   * @param connection that produced the event
    */
-  private void corruptionHelper(Event event, TCPConnection connection) {
+  private void corruptionHelper(Event event) {
     ChunkServerReportsFileCorruption report =
         ( ChunkServerReportsFileCorruption ) event;
 
@@ -339,10 +346,11 @@ public class Controller implements Node {
     // Get list of ChunkServer host:port combos where chunk replacement
     // or shards are available.
     String info = connectionCache.getChunkStorageInfo( baseFilename, sequence );
-    if ( info == null ) {
+    System.out.println( info );
+    if ( info.equals( "|" ) ) {
       System.err.println( "corruptionHelper: No servers could be found which"+
                           " could help repair '"+report.filename+
-                          "' on ChunkServer"+report.identifier+"." );
+                          "' on ChunkServer "+report.identifier+"." );
       return;
     }
 
@@ -357,7 +365,7 @@ public class Controller implements Node {
       if ( shardServers.length == Constants.TOTAL_SHARDS ) {
         int count =
             Collections.frequency( Arrays.asList( shardServers ), "-1" );
-        if ( count >= Constants.TOTAL_SHARDS-Constants.PARITY_SHARDS ) {
+        if ( count >= Constants.DATA_SHARDS ) {
           ArrayUtilities.replaceArrayItem( shardServers, "-1", null );
           RepairShard repairMessage = new RepairShard( report.filename,
               connectionCache.getChunkServerAddress( report.identifier ),
@@ -405,7 +413,7 @@ public class Controller implements Node {
   }
 
   /**
-   * Update ChunkServerConnection to reflect the fact that it responded to a
+   * Update ServerConnection to reflect the fact that it responded to a
    * poke from the Controller.
    *
    * @param event message being handled
@@ -413,7 +421,7 @@ public class Controller implements Node {
   private void pokeHelper(Event event) {
     ChunkServerRespondsToHeartbeat response =
         ( ChunkServerRespondsToHeartbeat ) event;
-    ChunkServerConnection connection =
+    ServerConnection connection =
         connectionCache.getConnection( response.identifier );
     if ( connection == null ) {
       System.err.println( "pokeHelper: there is no registered ChunkServer"+
@@ -435,7 +443,7 @@ public class Controller implements Node {
     // happen? In the same way as before, or does a new function need
     // to be written to update the heartbeat information all in one go?
     // It should be done with one function call.
-    ChunkServerConnection connection =
+    ServerConnection connection =
         connectionCache.getConnection( heartbeat.identifier );
     if ( connection == null ) {
       System.err.println( "heartbeatHelper: there is no registered ChunkServer"+
@@ -467,7 +475,7 @@ public class Controller implements Node {
       connectionCache.broadcast( deleteRequest.getBytes() );
     } catch ( IOException ioe ) {
       System.err.println(
-          "Error while sending file delete request "+"to all ChunkServers. "+
+          "Error while sending file delete request to all ChunkServers. "+
           ioe.getMessage() );
     }
 
@@ -490,21 +498,22 @@ public class Controller implements Node {
    * @param connection that produced the event
    */
   private void storeChunk(Event event, TCPConnection connection) {
-    ClientRequestsStoreChunk request = ( ClientRequestsStoreChunk ) event;
+    ClientStore request = ( ClientStore ) event;
 
-    // Try to add chunk and where it is stored to DistributedFileSystem
-    String[] servers = connectionCache.availableChunkServers( request.filename,
-        request.sequence ).split( "," );
+    // Try to reserve servers to store chunk in DistributedFileSystem
+    String reserved = request.getType() == Protocol.CLIENT_STORE_CHUNK ?
+                          connectionCache.availableChunkServers(
+                              request.getFilename(), request.getSequence() ) :
+                          connectionCache.availableShardServers(
+                              request.getFilename(), request.getSequence() );
+
+    String[] servers = reserved.split( "," ); // split into array
 
     // Choose which response to send
-    Event response;
-    if ( servers[0].isEmpty() ) { // failure
-      response =
-          new GeneralMessage( Protocol.CONTROLLER_DENIES_STORAGE_REQUEST );
-    } else { // success
-      response = new ControllerSendsClientValidChunkServers( request.filename,
-          request.sequence, servers );
-    }
+    Event response = servers[0].isEmpty() ? new GeneralMessage(
+        Protocol.CONTROLLER_DENIES_STORAGE_REQUEST, request.getFilename() ) :
+                         new ControllerReservesServers( request.getFilename(),
+                             request.getSequence(), servers );
 
     // Respond to Client
     try {
@@ -512,39 +521,6 @@ public class Controller implements Node {
     } catch ( IOException ioe ) {
       System.err.println(
           "Unable to respond to Client's request to store chunk. "+
-          ioe.getMessage() );
-    }
-  }
-
-  /**
-   * Handles requests to store a chunk at the Controller.
-   *
-   * @param event message being handled
-   * @param connection that produced the event
-   */
-  private void storeShards(Event event, TCPConnection connection) {
-    ClientRequestsStoreShards request = ( ClientRequestsStoreShards ) event;
-
-    // Try to add shard and where it is stored to DistributedFileCache
-    String[] servers = connectionCache.availableShardServers( request.filename,
-        request.sequence ).split( "," );
-
-    // Choose which response to send
-    Event response;
-    if ( servers[0].isEmpty() ) { // failure
-      response =
-          new GeneralMessage( Protocol.CONTROLLER_DENIES_STORAGE_REQUEST );
-    } else { // success
-      response = new ControllerSendsClientValidShardServers( request.filename,
-          request.sequence, servers );
-    }
-
-    // Respond to Client
-    try {
-      connection.getSender().sendData( response.getBytes() );
-    } catch ( IOException ioe ) {
-      System.err.println(
-          "Unable to respond to Client's request to store shards. "+
           ioe.getMessage() );
     }
   }
@@ -561,16 +537,14 @@ public class Controller implements Node {
     GeneralMessage request = ( GeneralMessage ) event;
     if ( type ) { // attempt to register
       String address = request.getMessage();
-      int registrationStatus =
-          connectionCache.register( address, connection ); // attempt to
-      // register
+      int registrationStatus = connectionCache.register( address, connection );
 
       // Respond to ChunkServer
-      ControllerReportsChunkServerRegistrationStatus response =
-          new ControllerReportsChunkServerRegistrationStatus(
-              registrationStatus );
+      GeneralMessage message = new GeneralMessage(
+          Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS,
+          String.valueOf( registrationStatus ) );
       try {
-        connection.getSender().sendData( response.getBytes() );
+        connection.getSender().sendData( message.getBytes() );
       } catch ( IOException ioe ) {
         System.err.println(
             "Failed to notify ChunkServer of registration status. "+
@@ -585,7 +559,7 @@ public class Controller implements Node {
   }
 
   /**
-   * Loop here for user input to the Controller.
+   * Loops for user input to the Controller.
    */
   private void interact() {
     System.out.println(
@@ -595,6 +569,15 @@ public class Controller implements Node {
       String command = scanner.nextLine();
       String[] splitCommand = command.split( "\\s+" );
       switch ( splitCommand[0].toLowerCase() ) {
+
+        case "servers":
+          listRegisteredChunkServers();
+          break;
+
+        case "files":
+          listAllocatedFiles();
+          break;
+
         case "help":
           showHelp();
           break;
@@ -606,7 +589,38 @@ public class Controller implements Node {
     }
   }
 
+  /**
+   * Prints a list of files allocated by the Controller.
+   */
+  private void listAllocatedFiles() {
+    String[] fileList = connectionCache.getIdealState().getFileList();
+    if ( fileList == null ) {
+      System.out.println();
+    } else {
+      for ( String filename : fileList ) {
+        System.out.printf( "%3s%s%n", "", filename );
+      }
+    }
+  }
+
+  /**
+   * Prints a list of registered ChunkServers.
+   */
+  private void listRegisteredChunkServers() {
+    String[] servers = connectionCache.getAllServerAddresses();
+    for ( String server : servers ) {
+      System.out.printf( "%3s%s%n", "", server );
+    }
+  }
+
+  /**
+   * Prints a list of commands available to the user.
+   */
   private void showHelp() {
+    System.out.printf( "%3s%-10s : %s%n", "", "servers",
+        "print the addresses of all registered ChunkServers" );
+    System.out.printf( "%3s%-10s : %s%n", "", "files",
+        "print the names of all files earmarked for storage" );
     System.out.printf( "%3s%-10s : %s%n", "", "help",
         "print a list of valid commands" );
   }

@@ -16,15 +16,16 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Stream;
 
 public class FileDistributionService {
 
   public static int CHUNK_DATA_LENGTH = 65536;
-  public static int CHUNK_METADATA_LENGTH;
   public static int SHA1_LENGTH = 20;
   public static int CHUNK_FILE_LENGTH = 65720;
-  public static int SHARD_FILE_LENGTH = 10994;
+  public static int SHARD_FILE_LENGTH =
+      10924+20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG;
 
   private final Path directory;
 
@@ -58,25 +59,30 @@ public class FileDistributionService {
     return digest.digest( data );
   }
 
-  public static byte[][] makeShardsFromChunk(byte[] chunk) {
-    if ( chunk.length != 65720 ) {
-      return null;
-    }
-    int fileSize = 65720;
-    int storedSize = fileSize+Constants.BYTES_IN_INT;
-    int shardSize = storedSize/Constants.DATA_SHARDS;
+  /**
+   * Transforms a byte[] of length CHUNK_DATA_LENGTH (2^16) into shards. Does
+   * not assert that the length of content is 2^16!
+   *
+   * @param length of actual content within the 2^8 byte array
+   * @param content content of file
+   * @return byte[TOTAL_SHARDS][] of shards
+   */
+  public static byte[][] makeShardsFromContent(int length, byte[] content) {
+    int storedSize = Constants.BYTES_IN_INT+Constants.CHUNK_DATA_LENGTH;
+    int shardSize = (storedSize+8)/Constants.DATA_SHARDS;
+    System.out.println( shardSize );
     int bufferSize = shardSize*Constants.DATA_SHARDS;
     byte[] allBytes = new byte[bufferSize];
     ByteBuffer allBytesBuffer = ByteBuffer.wrap( allBytes );
-    allBytesBuffer.putInt( chunk.length );
-    allBytesBuffer.put( chunk );
+    allBytesBuffer.putInt( length );
+    allBytesBuffer.put( content );
     byte[][] shards = new byte[Constants.TOTAL_SHARDS][shardSize];
-    for ( int i = 0; i < Constants.DATA_SHARDS; i++ ) {
+    for ( int i = 0; i < Constants.DATA_SHARDS; ++i ) {
       System.arraycopy( allBytes, i*shardSize, shards[i], 0, shardSize );
     }
-    ReedSolomon reedSolomon =
+    ReedSolomon rs =
         new ReedSolomon( Constants.DATA_SHARDS, Constants.PARITY_SHARDS );
-    reedSolomon.encodeParity( shards, 0, shardSize );
+    rs.encodeParity( shards, 0, shardSize );
     return shards;
   }
 
@@ -102,9 +108,9 @@ public class FileDistributionService {
         shards[i] = new byte[shardSize];
       }
     }
-    ReedSolomon reedSolomon =
+    ReedSolomon rs =
         new ReedSolomon( Constants.DATA_SHARDS, Constants.PARITY_SHARDS );
-    reedSolomon.decodeMissing( shards, shardPresent, 0, shardSize );
+    rs.decodeMissing( shards, shardPresent, 0, shardSize );
     return shards;
   }
 
@@ -233,10 +239,10 @@ public class FileDistributionService {
       int version, byte[] shardArray) {
     byte[] shardToFileArray =
         new byte[20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+
-                 10954]; // Hash+Sequence
+                 10924]; // Hash+Sequence
     // +Fragment+Version+Timestamp+Data, 10994 bytes in total
     byte[] shardWithMetaData =
-        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10954];
+        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10924];
     ByteBuffer shardMetaWrap = ByteBuffer.wrap( shardWithMetaData );
     shardMetaWrap.putInt( sequence );
     shardMetaWrap.putInt( fragment );
@@ -300,10 +306,9 @@ public class FileDistributionService {
       return true;
     }
     ByteBuffer shardArrayBuffer = ByteBuffer.wrap( shardBytes );
-    boolean corrupt = false;
     byte[] hash = new byte[20];
     byte[] shard =
-        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10954];
+        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10924];
     try {
       shardArrayBuffer.get( hash );
       shardArrayBuffer.get( shard );
@@ -341,7 +346,7 @@ public class FileDistributionService {
   public static byte[] removeHashFromShard(byte[] shardArray) {
     ByteBuffer shard = ByteBuffer.wrap( shardArray );
     byte[] cleanedShard =
-        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10954];
+        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10924];
     shard.position( shard.position()+20 );
     shard.get( cleanedShard, 0, cleanedShard.length );
     return cleanedShard;
@@ -367,7 +372,7 @@ public class FileDistributionService {
   public static byte[] getDataFromShard(byte[] shardArray) {
     ByteBuffer shard = ByteBuffer.wrap( shardArray );
     shard.position( 20 );
-    byte[] data = new byte[10954];
+    byte[] data = new byte[10924];
     shard.get( data );
     return data;
   }
@@ -402,12 +407,18 @@ public class FileDistributionService {
 
   public String[] listFiles() throws IOException {
     try ( Stream<Path> stream = Files.list( directory ) ) {
-      return ( String[] ) stream.filter( file -> !Files.isDirectory( file ) )
-                                .map( Path::getFileName )
-                                .map( Path::toString )
-                                .filter( file -> checkChunkFilename( file ) ||
-                                                 checkShardFilename( file ) )
-                                .toArray();
+      List<String> filenames =
+          stream.filter( file -> !Files.isDirectory( file ) )
+                .map( Path::getFileName )
+                .map( Path::toString )
+                .filter( file -> checkChunkFilename( file ) ||
+                                 checkShardFilename( file ) )
+                .toList();
+      String[] filenameArray = new String[filenames.size()];
+      for ( int i = 0; i < filenames.size(); ++i ) {
+        filenameArray[i] = filenames.get( i );
+      }
+      return filenameArray;
     }
   }
 
@@ -437,7 +448,7 @@ public class FileDistributionService {
   }
 
   /**
-   * Reads the first N bytes of a file.
+   * Reads up to the first N bytes of a file.
    *
    * @param filename name of file to read
    * @param N bytes of file will be read
@@ -449,11 +460,11 @@ public class FileDistributionService {
     byte[] fileBytes = new byte[N];
     try ( RandomAccessFile file = new RandomAccessFile( fileWithPath, "r" );
           FileChannel channel = file.getChannel();
-          FileLock lock = channel.lock() ) {
-      file.readFully( fileBytes );
+          FileLock lock = channel.lock( 0, N, true ) ) {
+      file.read( fileBytes );
     } catch ( IOException ioe ) {
       System.err.println(
-          "readFileTo: Unable to read "+N+" bytes of '"+filename+". "+
+          "readNBytesFromFile: Unable to read "+N+" bytes of '"+filename+"'. "+
           ioe.getMessage() );
     }
     return fileBytes;
@@ -480,13 +491,17 @@ public class FileDistributionService {
 
   // Write new file, replace if it already exists.
   public synchronized boolean overwriteFile(String filename, byte[] data) {
-    try ( RandomAccessFile file = new RandomAccessFile( filename, "rw" );
-          FileChannel channel = file.getChannel();
-          FileLock lock = channel.lock() ) {
+    String filenameWithPath = directory.resolve( filename ).toString();
+    try (
+        RandomAccessFile file = new RandomAccessFile( filenameWithPath, "rw" );
+        FileChannel channel = file.getChannel();
+        FileLock lock = channel.lock() ) {
       channel.truncate( 0 );
       ByteBuffer buffer = ByteBuffer.wrap( data );
       while ( buffer.hasRemaining() ) {
-        channel.write( buffer );
+        int bytesWritten = channel.write( buffer );
+        System.out.println(
+            "overwriteFile: "+bytesWritten+" bytes "+"written to '"+filename );
       }
       return true;
     } catch ( IOException ioe ) {

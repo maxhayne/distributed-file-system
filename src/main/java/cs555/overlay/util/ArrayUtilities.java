@@ -50,6 +50,23 @@ public class ArrayUtilities {
   }
 
   /**
+   * Same as replaceArrayItem, but only replaces the first instance of the item
+   * setTo.
+   *
+   * @param array to search for value toReplace
+   * @param toReplace the item to replace
+   * @param setTo the item to replace it with
+   */
+  public static <T> void replaceFirst(T[] array, T toReplace, T setTo) {
+    for ( int i = 0; i < array.length; ++i ) {
+      if ( java.util.Objects.equals( array[i], toReplace ) ) {
+        array[i] = setTo;
+        break;
+      }
+    }
+  }
+
+  /**
    * Helper function to convert an ArrayList<Integer> to an int[].
    *
    * @param list ArrayList<Integer> to convert to int[]
@@ -60,8 +77,8 @@ public class ArrayUtilities {
   }
 
   /**
-   * Helper function to check if an int[] contains a specific int. If
-   * supplied int[] is null, will always return true.
+   * Helper function to check if an int[] contains a specific int. If supplied
+   * int[] is null, will always return true.
    *
    * @param value the array is being checked for
    * @param array being checked
@@ -77,6 +94,26 @@ public class ArrayUtilities {
       }
     }
     return false;
+  }
+
+  /**
+   * Checks if an array contains a specific element. If it does, returns the
+   * index of the first occurrence of that element. Otherwise, returns -1.
+   *
+   * @param array to be checked
+   * @param value to check the array for
+   * @return index of first occurrence of value, -1 if no occurrences
+   */
+  public static int contains(String[] array, String value) {
+    if ( array == null ) {
+      return -1;
+    }
+    for ( int i = 0; i < array.length; ++i ) {
+      if ( java.util.Objects.equals( array[i], value ) ) {
+        return i;
+      }
+    }
+    return -1;
   }
 
 }

@@ -51,7 +51,7 @@ public class ShardWriter implements FileWriter {
   /**
    * Prepares a new shard based on the content byte string.
    */
-  public void prepareNewShard() {
+  private void prepareNewShard() {
     int sequence = getSequenceFromFilename();
     int fragment = getFragmentFromFilename();
     preparedShard =
