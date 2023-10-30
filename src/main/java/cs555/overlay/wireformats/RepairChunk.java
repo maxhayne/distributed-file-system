@@ -184,7 +184,7 @@ public class RepairChunk implements Event {
    * @return int[] of slice indices retrieved thus far, null if no slices have
    * been retrieved thus far
    */
-  public int[] getRepairedSlices() {
+  public int[] getRepairedIndices() {
     int totalSlicesRetrieved = 0;
     for ( byte[] replacementSlice : replacementSlices ) {
       if ( replacementSlice != null ) {
@@ -198,7 +198,7 @@ public class RepairChunk implements Event {
     int index = 0;
     for ( int i = 0; i < replacementSlices.length; ++i ) {
       if ( replacementSlices[i] != null ) {
-        slicesToRepair[index] = slicesToRepair[i];
+        repairedSlices[index] = slicesToRepair[i];
         index++;
       }
     }
@@ -210,7 +210,7 @@ public class RepairChunk implements Event {
    *
    * @return array of slices that have been retrieved so far
    */
-  public byte[][] getReplacementSlices() {
+  public byte[][] getReplacedSlices() {
     int totalSlicesRetrieved = 0;
     for ( byte[] replacementSlice : replacementSlices ) {
       if ( replacementSlice != null ) {

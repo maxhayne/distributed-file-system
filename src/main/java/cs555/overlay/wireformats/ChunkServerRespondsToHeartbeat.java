@@ -4,8 +4,8 @@ import java.io.*;
 
 public class ChunkServerRespondsToHeartbeat implements Event {
 
-  public byte type;
-  public int identifier;
+  private final byte type;
+  private final int identifier;
 
   public ChunkServerRespondsToHeartbeat(int identifier) {
     this.type = Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT;
@@ -43,5 +43,9 @@ public class ChunkServerRespondsToHeartbeat implements Event {
   @Override
   public byte getType() {
     return type;
+  }
+
+  public int getIdentifier() {
+    return identifier;
   }
 }

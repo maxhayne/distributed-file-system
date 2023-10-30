@@ -4,9 +4,9 @@ import java.io.*;
 
 public class ControllerSendsStorageList implements Event {
 
-  public byte type;
-  public String filename;
-  public String[] servers;
+  private final byte type;
+  private final String filename;
+  private final String[] servers;
 
   public ControllerSendsStorageList(String filename, String[] servers) {
     this.type = Protocol.CONTROLLER_SENDS_STORAGE_LIST;
@@ -54,10 +54,8 @@ public class ControllerSendsStorageList implements Event {
     dout.write( array );
 
     // Write list of servers
-    int serverCount = 0;
-    if ( servers != null ) {
-      serverCount = servers.length;
-    }
+    int serverCount = servers != null ? servers.length : 0;
+    dout.writeInt( serverCount );
     for ( int i = 0; i < serverCount; ++i ) {
       array = servers[i].getBytes();
       dout.writeInt( array.length );

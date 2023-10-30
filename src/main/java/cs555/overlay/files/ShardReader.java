@@ -1,14 +1,14 @@
 package cs555.overlay.files;
 
-import cs555.overlay.util.FileSynchronizer;
 import cs555.overlay.util.FileMetadata;
+import cs555.overlay.util.FileSynchronizer;
 
 import java.nio.ByteBuffer;
 
 /**
- * Class used to simplify the reading of Shards off of the disk. Instead of
- * doing everything manually, an instance of this class can be instantiated with
- * the desired filename, and the reading and error-checking can be performed
+ * Class used to simplify the reading of Shards from the disk. Instead of doing
+ * everything manually, an instance of this class can be instantiated with the
+ * desired filename, and the reading and error-checking can be performed
  * automatically.
  *
  * @author hayne
@@ -25,7 +25,7 @@ public class ShardReader implements FileReader {
   }
 
   /**
-   * Attempts to read the shard off the disk. If the shard is corrupt, the
+   * Attempts to read the shard from the disk. If the shard is corrupt, the
    * member 'corrupt' is set to true. Otherwise, 'corrupt' is set to false, and
    * the shard's data and metadata is extracted.
    *

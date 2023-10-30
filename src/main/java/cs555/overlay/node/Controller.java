@@ -4,14 +4,18 @@ import cs555.overlay.transport.ServerConnection;
 import cs555.overlay.transport.ServerConnectionCache;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPServerThread;
-import cs555.overlay.util.*;
+import cs555.overlay.util.ApplicationProperties;
+import cs555.overlay.util.Constants;
+import cs555.overlay.util.FilenameUtilities;
+import cs555.overlay.util.HeartbeatMonitor;
 import cs555.overlay.wireformats.*;
 
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.util.Arrays;
-import java.util.Collections;
+import java.util.Map;
 import java.util.Scanner;
+import java.util.Timer;
+import java.util.TreeMap;
 
 /**
  * Controller node in the DFS. It is responsible for keeping track of registered
@@ -29,16 +33,14 @@ public class Controller implements Node {
   public Controller(String host, int port) {
     this.host = host;
     this.port = port;
-    this.connectionCache =
-        new ServerConnectionCache( new DistributedFileCache(),
-            new DistributedFileCache() );
+    this.connectionCache = new ServerConnectionCache();
   }
 
   /**
    * Entry point for the Controller. Creates a ServerSocket at the port
    * specified in the 'application.properties' file, creates a
-   * ServerConnectionCache (which starts the HeartbeatMonitor), starts
-   * looping for user commands.
+   * ServerConnectionCache (which starts the HeartbeatMonitor), starts looping
+   * for user commands.
    *
    * @param args ignored
    */
@@ -50,10 +52,20 @@ public class Controller implements Node {
       Controller controller =
           new Controller( host, ApplicationProperties.controllerPort );
 
+      // Start the ServerThread
       (new Thread( new TCPServerThread( controller, serverSocket ) )).start();
 
       System.out.println( "Controller's ServerThread has started at ["+host+":"+
                           ApplicationProperties.controllerPort+"]" );
+
+      // Start the HeartbeatMonitor
+      HeartbeatMonitor heartbeatMonitor =
+          new HeartbeatMonitor( controller, controller.connectionCache );
+      Timer heartbeatTimer = new Timer();
+      heartbeatTimer.scheduleAtFixedRate( heartbeatMonitor, 0,
+          Constants.HEARTRATE );
+
+      // Start looping for user interaction
       controller.interact();
     } catch ( IOException ioe ) {
       System.err.println( "Controller failed to start. "+ioe.getMessage() );
@@ -84,8 +96,7 @@ public class Controller implements Node {
         registrationHelper( event, connection, false );
         break;
 
-      case Protocol.CLIENT_STORE_CHUNK:
-      case Protocol.CLIENT_STORE_SHARDS:
+      case Protocol.CLIENT_STORE:
         storeChunk( event, connection );
         break;
 
@@ -113,7 +124,7 @@ public class Controller implements Node {
 
       // Might not need this anymore, fix will be picked up in heartbeat?
       case Protocol.CHUNK_SERVER_REPORTS_FILE_FIX:
-        markFileFixed( event );
+        //markFileFixed( event );
         break;
 
       // Better to combine this case and next into one?
@@ -140,11 +151,14 @@ public class Controller implements Node {
    *
    * @param connection that produced the event
    */
-  private void fileListRequest(TCPConnection connection) {
+  private synchronized void fileListRequest(TCPConnection connection) {
+    String[] fileList =
+        connectionCache.getFileTable().keySet().toArray( new String[0] );
+    if ( fileList.length == 0 ) {
+      fileList = null;
+    }
 
-    ControllerSendsFileList response = new ControllerSendsFileList(
-        connectionCache.getIdealState().getFileList() );
-
+    ControllerSendsFileList response = new ControllerSendsFileList( fileList );
     try {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
@@ -160,11 +174,17 @@ public class Controller implements Node {
    * @param event message being handled
    * @param connection that produced the event
    */
-  private void fileSizeRequest(Event event, TCPConnection connection) {
+  private synchronized void fileSizeRequest(Event event,
+      TCPConnection connection) {
     String filename = (( GeneralMessage ) event).getMessage();
+
+    TreeMap<Integer, String[]> sequences =
+        connectionCache.getFileTable().get( filename );
+
+    int totalChunks = sequences == null ? 0 : sequences.size();
+
     ControllerReportsFileSize response =
-        new ControllerReportsFileSize( filename,
-            connectionCache.getIdealState().getFileSize( filename ) );
+        new ControllerReportsFileSize( filename, totalChunks );
 
     try {
       connection.getSender().sendData( response.getBytes() );
@@ -182,239 +202,160 @@ public class Controller implements Node {
    * @param event message being handled
    * @param connection that produced the event
    */
-  private void clientRead(Event event, TCPConnection connection) {
-    GeneralMessage request = ( GeneralMessage ) event;
+  private synchronized void clientRead(Event event, TCPConnection connection) {
+    String filename = (( GeneralMessage ) event).getMessage();
 
-    String baseFilename;
-    int sequence;
-    // Check if the filename refers to a chunk, shard, or neither
-    if ( FileSynchronizer.checkChunkFilename(
-        request.getMessage() ) ) { // chunk
-      String[] split = request.getMessage().split( "_chunk" );
-      baseFilename = split[0];
-      sequence = Integer.parseInt( split[1] );
-    } else if ( FileSynchronizer.checkShardFilename(
-        request.getMessage() ) ) { // shard
-      String[] split = request.getMessage().split( "_chunk" );
-      baseFilename = split[0];
-      split = split[1].split( "_shard" );
-      sequence = Integer.parseInt( split[0] );
-    } else {
-      // Add in functionality for returning the storage information
-      // about an entire file here...
-      // For now, print an error message
-      System.err.println( "clientRead: '"+request.getMessage()+
-                          "' does not refer to a chunk or a shard." );
-      return;
-    }
+    String baseFilename = FilenameUtilities.getBaseFilename( filename );
+    int sequence = FilenameUtilities.getSequence( filename );
 
-    // Get storage information
-    String storageInfo =
-        connectionCache.getChunkStorageInfo( baseFilename, sequence );
-    if ( storageInfo.equals( "|" ) ) {
-      System.err.println( "clientRead: '"+request.getMessage()+
-                          "' is stored on no ChunkServer." );
-      return; // There are no ChunkServers storing either chunks or shards
-    }
+    // Get servers for that particular chunk, which, if it doesn't exist,
+    // will be null...
+    String[] servers = connectionCache.getServers( baseFilename, sequence );
 
-    // Create response message
-    String[] split = storageInfo.split( "\\|", -1 );
-    String[] replications = split[0].split( "," );
-    String[] shards = split[1].split( "," );
-
-    ControllerSendsStorageList response;
-    if ( ApplicationProperties.storageType.equals( "replication" ) ) {
-      response = new ControllerSendsStorageList( baseFilename, replications );
-    } else {
-      ArrayUtilities.replaceArrayItem( shards, "-1", null );
-      response = new ControllerSendsStorageList( baseFilename, shards );
-    }
-
+    ControllerSendsStorageList response =
+        new ControllerSendsStorageList( filename, servers );
     try {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
       System.err.println( "clientRead: Unable to send response to Client"+
-                          " containing storage information about "+
-                          request.getMessage()+"." );
+                          " containing storage information about "+filename+
+                          "." );
     }
   }
 
+  //  /**
+  //   * Mark the chunk/shard healthy (not corrupt) in the reportedState
+  //   * DistributedFileCache. This action will allow the Controller to tell
+  //   future
+  //   * Clients or ChunkServers that this particular file at this particular
+  //   server
+  //   * is available to be requested.
+  //   *
+  //   * @param event message being handled
+  //   */
+  //  private synchronized void markFileFixed(Event event) {
+  //    ChunkServerReportsFileFix report = ( ChunkServerReportsFileFix ) event;
+  //
+  //    // Mark the specified chunk/shard as healthy, so we can use this
+  //    // ChunkServer as a source for future file requests.
+  //    String baseFilename =
+  //        FilenameUtilities.getBaseFilename( report.getFilename() );
+  //    int sequence = FilenameUtilities.getSequence( report.getFilename() );
+  //    if ( FileSynchronizer.checkChunkFilename( report.filename ) ) { // chunk
+  //      connectionCache.getReportedState()
+  //                     .markChunkHealthy( baseFilename, sequence,
+  //                         report.getIdentifier() ); // Mark healthy
+  //    } else if ( FileSynchronizer.checkShardFilename(
+  //        report.getFilename() ) ) { // shard
+  //      int fragment = FilenameUtilities.getFragment( report.getFilename() );
+  //      connectionCache.getReportedState()
+  //                     .markShardHealthy( baseFilename, sequence, fragment,
+  //                         report.getIdentifier() ); // Mark healthy
+  //    } else {
+  //      System.err.println( "markFileFixed: '"+report.getFilename()+"' is
+  //      not"+
+  //                          " a valid name for either a chunk or a shard"+"
+  //                          ." );
+  //    }
+  //  }
+
+  // This isn't actually used at the moment -- the ChunkServer will never
+  // send this message.
+
   /**
-   * Mark the chunk/shard healthy (not corrupt) in the reportedState
-   * DistributedFileCache. This action will allow the Controller to tell future
-   * Clients or ChunkServers that this particular file at this particular server
-   * is available to be requested.
+   * Change the address in the String[] of servers in the fileTable for this
+   * particular filename and sequence number to null.
    *
    * @param event message being handled
    */
-  private void markFileFixed(Event event) {
-    ChunkServerReportsFileFix report = ( ChunkServerReportsFileFix ) event;
-
-    // Mark the specified chunk/shard as healthy, so we can use this
-    // ChunkServer as a source for future file requests.
-    String baseFilename;
-    int sequence;
-    if ( FileSynchronizer.checkChunkFilename(
-        report.filename ) ) { // chunk
-      String[] split = report.filename.split( "_chunk" );
-      baseFilename = split[0];
-      sequence = Integer.parseInt( split[1] );
-      connectionCache.getReportedState()
-                     .markChunkHealthy( baseFilename, sequence,
-                         report.identifier ); // Mark healthy
-    } else if ( FileSynchronizer.checkShardFilename(
-        report.filename ) ) { // shard
-      String[] split = report.filename.split( "_chunk" );
-      baseFilename = split[0];
-      split = split[1].split( "_shard" );
-      sequence = Integer.parseInt( split[0] );
-      int fragment = Integer.parseInt( split[1] );
-      connectionCache.getReportedState()
-                     .markShardHealthy( baseFilename, sequence, fragment,
-                         report.identifier ); // Mark healthy
-    } else {
-      System.err.println( "markFileFixed: '"+report.filename+"' is not"+
-                          " a valid name for either a chunk or a shard"+"." );
-    }
-  }
-
-  /**
-   * Update the idealState DistributedFileCache to indicate that the filename
-   * provided in the message is not stored there. Then, find a suitable
-   * ChunkServer to store the missing replication or shard.
-   *
-   * @param event message being handled
-   */
-  private void missingFileHelper(Event event) {
+  private synchronized void missingFileHelper(Event event) {
     ChunkServerNoStoreFile message = ( ChunkServerNoStoreFile ) event;
     // We need to remove the Chunk with those properties from the
     // idealState, and find a new server that can store the file.
 
     // Remove missing Chunk from idealState
+    String baseFilename =
+        FilenameUtilities.getBaseFilename( message.getFilename() );
     int identifier =
-        connectionCache.getChunkServerIdentifier( message.address );
-    int sequence = Integer.parseInt( message.filename.split( "_chunk" )[1] );
+        connectionCache.getChunkServerIdentifier( message.getAddress() );
+    int sequence = FilenameUtilities.getSequence( message.getFilename() );
     if ( identifier != -1 ) {
-      connectionCache.getIdealState()
-                     .removeChunk( new Chunk( message.filename, sequence, 0, 0,
-                         identifier, false ) );
+      connectionCache.removeServer( baseFilename, sequence,
+          message.getAddress() );
     }
     // Just remove the file for now. Can try to repair the file system
     // during heartbeats for chunks that aren't replicated 3 times.
   }
 
+  // I've begun to think that the only reason an entry in the String[] server
+  // array should be marked null, is when a ChunkServer deregisters, and we
+  // cannot find another server to take its place. If we were to mark servers
+  // as null when they reported corruption, there is a possibility in the
+  // timing that all three servers could be marked null at the same time (not
+  // in succession), but that the repairMessages are making the rounds and
+  // doing their work properly (especially in the case of slices that are
+  // corrupt, but are non-overlapping between servers).
+
   /**
-   * Changes the reportedState DistributedFileCache to reflect the fact that a
-   * file at the sender (a ChunkServer) is corrupt. Then, if possible, starts a
-   * relay chain that visits all ChunkServers that have replica chunks (or
-   * shards) for that particular file, whose destination is the ChunkServer with
-   * the corrupt file.
+   * Constructs a message which will be passed (hopefully) amongst those servers
+   * that have copies of the file that needs repairing, eventually ending up at
+   * the server that produced this corruption event.
    *
    * @param event message being handled
    */
-  private void corruptionHelper(Event event) {
+  private synchronized void corruptionHelper(Event event) {
     ChunkServerReportsFileCorruption report =
         ( ChunkServerReportsFileCorruption ) event;
 
-    // Mark the specified chunk/shard as corrupt, so that we don't tell
-    // a Client to look there for a copy.
-    String baseFilename;
-    int sequence;
-    if ( FileSynchronizer.checkChunkFilename( report.filename ) ) {
-      String[] split = report.filename.split( "_chunk" );
-      baseFilename = split[0];
-      sequence = Integer.parseInt( split[1] );
-      connectionCache.getReportedState()
-                     .markChunkCorrupt( baseFilename, sequence,
-                         report.identifier ); // Mark the chunk corrupt
-    } else if ( FileSynchronizer.checkShardFilename(
-        report.filename ) ) {
-      String[] split = report.filename.split( "_chunk" );
-      baseFilename = split[0];
-      split = split[1].split( "_shard" );
-      sequence = Integer.parseInt( split[0] );
-      int fragment = Integer.parseInt( split[1] );
-      connectionCache.getReportedState()
-                     .markShardCorrupt( baseFilename, sequence, fragment,
-                         report.identifier ); // Mark the shard corrupt
-    } else {
-      System.err.println( "corruptionHelper: '"+report.filename+"' is not"+
-                          " a valid name for either a chunk or a shard"+"." );
+    String baseFilename =
+        FilenameUtilities.getBaseFilename( report.getFilename() );
+    int sequence = FilenameUtilities.getSequence( report.getFilename() );
+
+    String destination =
+        connectionCache.getChunkServerAddress( report.getIdentifier() );
+    String[] servers = connectionCache.getServers( baseFilename, sequence );
+
+    // If no servers hold this chunk, there is nothing to be done
+    if ( servers == null ) {
+      System.err.println( "corruptionHelper: The Controller doesn't have an "+
+                          "entry in its fileTable for '"+report.getFilename()+
+                          "', so it cannot be repaired." );
+      return;
+    } else if ( destination == null ) {
+      System.err.println( "corruptionHelper: Could not fetch the destination "+
+                          "address of the server needing the repair." );
       return;
     }
 
-    // Get list of ChunkServer host:port combos where chunk replacement
-    // or shards are available.
-    String info = connectionCache.getChunkStorageInfo( baseFilename, sequence );
-    System.out.println( info );
-    if ( info.equals( "|" ) ) {
-      System.err.println( "corruptionHelper: No servers could be found which"+
-                          " could help repair '"+report.filename+
-                          "' on ChunkServer "+report.identifier+"." );
-      return;
+    Event repairMessage;
+    String sendTo;
+    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+      RepairShard repairShard =
+          new RepairShard( report.getFilename(), destination, servers );
+      sendTo = repairShard.getAddress();
+      repairMessage = repairShard;
+    } else {
+      RepairChunk repairChunk =
+          new RepairChunk( report.getFilename(), destination,
+              report.getSlices(), servers );
+      sendTo = repairChunk.getAddress();
+      repairMessage = repairChunk;
     }
 
-    // Split servers into servers holding chunks and servers holding shards
-    String[] split = info.split( "\\|", -1 );
-    String[] replicationServers = split[0].split( "," );
-    String[] shardServers = split[1].split( "," );
-
-    // Send a RepairChunk or RepairShard message to a ChunkServer that
-    // can help
-    if ( FileSynchronizer.checkShardFilename( report.filename ) ) {
-      if ( shardServers.length == Constants.TOTAL_SHARDS ) {
-        int count =
-            Collections.frequency( Arrays.asList( shardServers ), "-1" );
-        if ( count >= Constants.DATA_SHARDS ) {
-          ArrayUtilities.replaceArrayItem( shardServers, "-1", null );
-          RepairShard repairMessage = new RepairShard( report.filename,
-              connectionCache.getChunkServerAddress( report.identifier ),
-              shardServers );
-          if ( !repairMessage.getDestination().isEmpty() ) {
-            try {
-              connectionCache.getConnection( repairMessage.getAddress() )
-                             .getConnection()
-                             .getSender()
-                             .sendData( repairMessage.getBytes() );
-            } catch ( IOException ioe ) {
-              System.err.println(
-                  "corruptionHelper: Failed to send RepairShard to "+
-                  "ChunkServer." );
-            }
-          }
-
-        }
-      }
-    } else {
-      if ( !replicationServers[0].isEmpty() ) {
-        String serverAddress =
-            connectionCache.getChunkServerAddress( report.identifier );
-        if ( !serverAddress.isEmpty() ) {
-          replicationServers =
-              ArrayUtilities.removeFromArray( replicationServers,
-                  serverAddress );
-          if ( replicationServers.length != 0 ) {
-            RepairChunk repairMessage =
-                new RepairChunk( report.filename, serverAddress, report.slices,
-                    replicationServers );
-            try {
-              connectionCache.getConnection( repairMessage.getAddress() )
-                             .getConnection()
-                             .getSender()
-                             .sendData( repairMessage.getBytes() );
-            } catch ( IOException ioe ) {
-              System.err.println( "corruptionHelper: Failed to send "+
-                                  "RepairChunk to ChunkServer." );
-            }
-          }
-        }
-      }
+    try {
+      connectionCache.getConnection( sendTo )
+                     .getConnection()
+                     .getSender()
+                     .sendData( repairMessage.getBytes() );
+    } catch ( IOException ioe ) {
+      System.err.println( "corruptionHelper: Failed to send repair message to"+
+                          " its first hop." );
     }
   }
 
   /**
-   * Update ServerConnection to reflect the fact that it responded to a
-   * poke from the Controller.
+   * Update ServerConnection to reflect the fact that it responded to a poke
+   * from the Controller.
    *
    * @param event message being handled
    */
@@ -422,10 +363,11 @@ public class Controller implements Node {
     ChunkServerRespondsToHeartbeat response =
         ( ChunkServerRespondsToHeartbeat ) event;
     ServerConnection connection =
-        connectionCache.getConnection( response.identifier );
+        connectionCache.getConnection( response.getIdentifier() );
     if ( connection == null ) {
       System.err.println( "pokeHelper: there is no registered ChunkServer"+
-                          " with an identifier of "+response.identifier+"." );
+                          " with an identifier of "+response.getIdentifier()+
+                          "." );
       return;
     }
     connection.incrementPokeReplies();
@@ -444,15 +386,16 @@ public class Controller implements Node {
     // to be written to update the heartbeat information all in one go?
     // It should be done with one function call.
     ServerConnection connection =
-        connectionCache.getConnection( heartbeat.identifier );
+        connectionCache.getConnection( heartbeat.getIdentifier() );
     if ( connection == null ) {
       System.err.println( "heartbeatHelper: there is no registered ChunkServer"+
-                          "with an identifier of "+heartbeat.identifier+"." );
+                          "with an identifier of "+heartbeat.getIdentifier()+
+                          "." );
       return;
     }
     connection.getHeartbeatInfo()
-              .update( heartbeat.type, heartbeat.freeSpace,
-                  heartbeat.totalChunks, heartbeat.files );
+              .update( heartbeat.getBeatType(), heartbeat.getFreeSpace(),
+                  heartbeat.getTotalChunks(), heartbeat.getFiles() );
   }
 
   /**
@@ -461,22 +404,30 @@ public class Controller implements Node {
    * @param event message being handled
    * @param connection that produced the event
    */
-  private void deleteFile(Event event, TCPConnection connection) {
-    GeneralMessage request = ( GeneralMessage ) event;
+  private synchronized void deleteFile(Event event, TCPConnection connection) {
+    String filename = (( GeneralMessage ) event).getMessage();
 
-    // Remove file from DistributedFileCache
-    connectionCache.getIdealState().removeFile( request.getMessage() );
+    // Delete the file from the fileTable
+    connectionCache.deleteFile( filename );
+
+    // Delete the file from the 'storedChunks' map of all servers in
+    // registeredServers
+    Map<Integer, ServerConnection> registeredServers =
+        connectionCache.getRegisteredServers();
+    for ( ServerConnection server : registeredServers.values() ) {
+      server.deleteFile( filename );
+    }
 
     // Send delete request to all registered ChunkServers
     GeneralMessage deleteRequest =
         new GeneralMessage( Protocol.CONTROLLER_REQUESTS_FILE_DELETE,
-            request.getMessage() );
+            filename );
     try {
       connectionCache.broadcast( deleteRequest.getBytes() );
     } catch ( IOException ioe ) {
       System.err.println(
-          "Error while sending file delete request to all ChunkServers. "+
-          ioe.getMessage() );
+          "deleteFile: Error while sending file delete request to all "+
+          "ChunkServers. "+ioe.getMessage() );
     }
 
     // Send client an acknowledgement
@@ -486,8 +437,8 @@ public class Controller implements Node {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
       System.err.println(
-          "Unable to acknowledge Client's request to "+"delete file. "+
-          ioe.getMessage() );
+          "deleteFile: Unable to acknowledge Client's request to "+"delete "+
+          "file. "+ioe.getMessage() );
     }
   }
 
@@ -497,25 +448,30 @@ public class Controller implements Node {
    * @param event message being handled
    * @param connection that produced the event
    */
-  private void storeChunk(Event event, TCPConnection connection) {
+  private synchronized void storeChunk(Event event, TCPConnection connection) {
     ClientStore request = ( ClientStore ) event;
 
-    // Try to reserve servers to store chunk in DistributedFileSystem
-    String reserved = request.getType() == Protocol.CLIENT_STORE_CHUNK ?
-                          connectionCache.availableChunkServers(
-                              request.getFilename(), request.getSequence() ) :
-                          connectionCache.availableShardServers(
-                              request.getFilename(), request.getSequence() );
+    // Attempt to allocate servers for the chunk
+    String[] servers = connectionCache.allocateServers( request.getFilename(),
+        request.getSequence() );
 
-    String[] servers = reserved.split( "," ); // split into array
+    // Add the filename sequence combination to the 'storedChunks' maps of
+    // all servers that have been allocated the file
+    if ( servers != null ) {
+      for ( String address : servers ) {
+        connectionCache.getConnection( address )
+                       .addChunk( request.getFilename(),
+                           request.getSequence() );
+      }
+    }
 
     // Choose which response to send
-    Event response = servers[0].isEmpty() ? new GeneralMessage(
+    Event response = servers == null ? new GeneralMessage(
         Protocol.CONTROLLER_DENIES_STORAGE_REQUEST, request.getFilename() ) :
                          new ControllerReservesServers( request.getFilename(),
                              request.getSequence(), servers );
 
-    // Respond to Client
+    // Respond to the Client
     try {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
@@ -532,8 +488,8 @@ public class Controller implements Node {
    * @param connection that produced the event
    * @param type true = register, false = deregister
    */
-  private void registrationHelper(Event event, TCPConnection connection,
-      boolean type) {
+  private synchronized void registrationHelper(Event event,
+      TCPConnection connection, boolean type) {
     GeneralMessage request = ( GeneralMessage ) event;
     if ( type ) { // attempt to register
       String address = request.getMessage();
@@ -556,6 +512,18 @@ public class Controller implements Node {
     } else { // deregister
       connectionCache.deregister( Integer.parseInt( request.getMessage() ) );
     }
+  }
+
+  /**
+   * A public deregister method which just takes the identifier of the server to
+   * be deregistered. Is simple, but needed for the HeartbeatMonitor because it
+   * has the proper synchronization.
+   *
+   * @param identifier of the server to be deregistered
+   */
+  public synchronized void deregister(int identifier) {
+    System.out.println( "deregister called "+identifier );
+    connectionCache.deregister( identifier );
   }
 
   /**
@@ -592,19 +560,18 @@ public class Controller implements Node {
   /**
    * Prints a list of files allocated by the Controller.
    */
-  private void listAllocatedFiles() {
-    String[] fileList = connectionCache.getIdealState().getFileList();
-    if ( fileList != null ) {
-      for ( String filename : fileList ) {
-        System.out.printf( "%3s%s%n", "", filename );
-      }
+  private synchronized void listAllocatedFiles() {
+    String[] fileList =
+        connectionCache.getFileTable().keySet().toArray( new String[0] );
+    for ( String filename : fileList ) {
+      System.out.printf( "%3s%s%n", "", filename );
     }
   }
 
   /**
    * Prints a list of registered ChunkServers.
    */
-  private void listRegisteredChunkServers() {
+  private synchronized void listRegisteredChunkServers() {
     String[] servers = connectionCache.getAllServerAddresses();
     for ( String server : servers ) {
       System.out.printf( "%3s%s%n", "", server );

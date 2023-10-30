@@ -3,7 +3,6 @@ package cs555.overlay.util;
 import cs555.overlay.node.Client;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.ClientStore;
-import cs555.overlay.wireformats.Protocol;
 import cs555.overlay.wireformats.SendsFileForStorage;
 
 import java.io.IOException;
@@ -62,7 +61,8 @@ public class ClientWriter implements Runnable {
       totalChunks.set( getTotalChunks( file.length() ) );
       int counter = totalChunks.get();
       byte[] chunk = new byte[65536];
-      ClientStore requestMessage = createNewStoreMessage();
+      ClientStore requestMessage =
+          new ClientStore( pathToFile.getFileName().toString(), 0 );
       long before = System.currentTimeMillis();
       for ( int i = 0; i < counter; ++i ) {
         Arrays.fill( chunk, ( byte ) 0 );
@@ -73,6 +73,7 @@ public class ClientWriter implements Runnable {
         } else if ( bytesRead > 0 && bytesRead < 65536 ) {
           content = Arrays.copyOfRange( chunk, 0, bytesRead );
         }
+        // Send Controller a request to store a chunk
         try {
           client.getControllerConnection()
                 .getSender()
@@ -81,8 +82,13 @@ public class ClientWriter implements Runnable {
           System.err.println( "Couldn't send request to Controller, halting." );
           break;
         }
+        // Wait for Controller to send us servers and unlock us
         synchronized( lock ) {
           lock.wait();
+          // If servers == null, we've been stopped by the user
+          if ( servers == null ) {
+            return;
+          }
         }
         // servers have been set at this point
         boolean sent =
@@ -110,11 +116,21 @@ public class ClientWriter implements Runnable {
     }
   }
 
+  /**
+   * Attempts to send the chunk to the first server in the 'servers' member
+   * (which has been sent by the Controller).
+   *
+   * @param sequence of the chunk being sent
+   * @param content of the chunk being sent
+   * @return true if sent, false not
+   */
   private boolean sendChunkToServers(int sequence, byte[] content) {
     byte[][] contentToSend = createContentToSend( content );
     SendsFileForStorage sendMessage =
         new SendsFileForStorage( createFilename( sequence ), contentToSend,
             servers );
+    // Should try sending to the other servers if sending to the first server
+    // fails. Will have to reorder 'servers' though...
     try {
       connectionCache.getConnection( client, servers[0], false )
                      .getSender()
@@ -128,6 +144,15 @@ public class ClientWriter implements Runnable {
     }
   }
 
+  /**
+   * Transforms the content read from disk to the right format to send to the
+   * servers, but the process is different depending on whether we're
+   * replicating or erasure coding.
+   *
+   * @param content of chunk read from the disk
+   * @return byte[][] of content to be attached to the SendsFileForStorage
+   * message
+   */
   private byte[][] createContentToSend(byte[] content) {
     if ( client.getStorageType() == 0 ) { // replicating
       return new byte[][]{ content };
@@ -189,9 +214,7 @@ public class ClientWriter implements Runnable {
    */
   private ClientStore createNewStoreMessage() {
     String filename = pathToFile.getFileName().toString();
-    return client.getStorageType() == 0 ?
-               new ClientStore( Protocol.CLIENT_STORE_CHUNK, filename, 0 ) :
-               new ClientStore( Protocol.CLIENT_STORE_SHARDS, filename, 0 );
+    return new ClientStore( filename, 0 );
   }
 
   /**

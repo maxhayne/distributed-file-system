@@ -61,8 +61,7 @@ public class EventFactory {
       case Protocol.CONTROLLER_RESERVES_SERVERS:
         return new ControllerReservesServers( marshalledBytes );
 
-      case Protocol.CLIENT_STORE_SHARDS:
-      case Protocol.CLIENT_STORE_CHUNK:
+      case Protocol.CLIENT_STORE:
         return new ClientStore( marshalledBytes );
 
       case Protocol.REPAIR_CHUNK:

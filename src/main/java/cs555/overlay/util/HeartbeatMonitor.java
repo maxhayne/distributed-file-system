@@ -1,5 +1,6 @@
 package cs555.overlay.util;
 
+import cs555.overlay.node.Controller;
 import cs555.overlay.transport.ServerConnection;
 import cs555.overlay.transport.ServerConnectionCache;
 
@@ -9,18 +10,13 @@ import java.util.TimerTask;
 
 public class HeartbeatMonitor extends TimerTask {
 
+  private final Controller controller;
   private final ServerConnectionCache connectionCache;
-  private final Map<Integer, ServerConnection> chunkCache;
-  private final DistributedFileCache idealState;
-  private final DistributedFileCache reportedState;
 
-  public HeartbeatMonitor(ServerConnectionCache connectionCache,
-      Map<Integer, ServerConnection> chunkCache,
-      DistributedFileCache idealState, DistributedFileCache reportedState) {
+  public HeartbeatMonitor(Controller controller,
+      ServerConnectionCache connectionCache) {
+    this.controller = controller;
     this.connectionCache = connectionCache;
-    this.chunkCache = chunkCache;
-    this.idealState = idealState;
-    this.reportedState = reportedState;
   }
 
   private String[] splitFilename(String filename) {
@@ -47,57 +43,6 @@ public class HeartbeatMonitor extends TimerTask {
   private int getLastHeartbeatType(long now, HeartbeatInformation info) {
     return now-info.getLastMajorHeartbeat() < now-info.getLastMinorHeartbeat() ?
                0 : 1;
-  }
-
-  private ArrayList<Chunk> getNewChunks(int identifier,
-      HeartbeatInformation info) {
-    ArrayList<Chunk> newChunks = new ArrayList<Chunk>();
-    for ( FileMetadata meta : info.getFiles() ) {
-      String[] splitFilename = splitFilename( meta.filename );
-      int sequence = Integer.parseInt( splitFilename[1] );
-      if ( splitFilename.length == 2 ) { // add a chunk
-        newChunks.add(
-            new Chunk( splitFilename[0], sequence, meta.version, meta.timestamp,
-                identifier, false ) );
-      }
-    }
-    return newChunks;
-  }
-
-  private ArrayList<Shard> getNewShards(int identifier,
-      HeartbeatInformation info) {
-    ArrayList<Shard> newShards = new ArrayList<Shard>();
-    for ( FileMetadata meta : info.getFiles() ) {
-      String[] splitFilename = splitFilename( meta.filename );
-      if ( splitFilename.length == 3 ) { // it's a shard
-        int sequence = Integer.parseInt( splitFilename[1] );
-        int fragment = Integer.parseInt( splitFilename[2] );
-        newShards.add(
-            new Shard( splitFilename[0], sequence, fragment, meta.version,
-                meta.timestamp, identifier, false ) );
-      }
-    }
-    return newShards;
-  }
-
-  private void updateStateIfHealthyHeartbeat(long timeSinceLastHeartbeat,
-      int lastBeatType, int identifier, HeartbeatInformation info) {
-    if ( timeSinceLastHeartbeat < Constants.HEARTRATE ) {
-      ArrayList<Chunk> newChunks = getNewChunks( identifier, info );
-      ArrayList<Shard> newShards = getNewShards( identifier, info );
-
-      if ( lastBeatType == 1 ) {
-        reportedState.removeAllFilesAtServer( identifier );
-      }
-
-      // Add all the new files
-      for ( Chunk chunk : newChunks ) {
-        reportedState.addChunk( chunk );
-      }
-      for ( Shard shard : newShards ) {
-        reportedState.addShard( shard );
-      }
-    }
   }
 
   private int calculateUnhealthyScore(long now, long connectionStartTime,
@@ -136,16 +81,17 @@ public class HeartbeatMonitor extends TimerTask {
     }
   }
 
-  // If the version is -1, it is a shard, not a chunk!
-  // Next step will be to determine if the latest heartbeat is valid,
-  // meaning it has the right type, and the timestamp is within 15 seconds of
-  // the heartbeat.
-
   public synchronized void run() {
     ArrayList<Integer> toDeregister = new ArrayList<>();
 
-    synchronized( chunkCache ) { // lock the chunkCache
-      if ( chunkCache.isEmpty() ) {
+    // THIS SHOULD NOW SYNCHRONIZE ON THE CONTROLLER ITSELF, SO THAT WE CAN
+    // PREVENT CHUNKS FROM BEING ADDED OR SUBTRACTED, OR SERVERS FROM
+    // REGISTERING OR DEREGISTERING WHILE WE ARE CONDUCTING ANALYSIS ON THE
+    // HEARTBEATS
+    synchronized( controller ) { // lock the Controller
+      Map<Integer, ServerConnection> registeredServers =
+          connectionCache.getRegisteredServers();
+      if ( registeredServers.isEmpty() ) {
         return; // no information to report
       }
 
@@ -153,7 +99,7 @@ public class HeartbeatMonitor extends TimerTask {
       sb.append( "\nHeartbeat Monitor:" );
 
       long now = System.currentTimeMillis();
-      for ( ServerConnection connection : chunkCache.values() ) {
+      for ( ServerConnection connection : registeredServers.values() ) {
 
         sb.append( "\n" ).append( connection.toString() );
 
@@ -167,11 +113,6 @@ public class HeartbeatMonitor extends TimerTask {
         long timeSinceLastHeartbeat =
             getTimeSinceLastHeartbeat( now, heartbeatInformation );
         int lastBeatType = getLastHeartbeatType( now, heartbeatInformation );
-
-
-        // Update reportedState if heartbeat is healthy
-        updateStateIfHealthyHeartbeat( timeSinceLastHeartbeat, lastBeatType,
-            connection.getIdentifier(), heartbeatInformation );
 
         // Give the connection between the Controller and this ChunkServer a
         // score measuring how unhealthy it is.
@@ -195,13 +136,14 @@ public class HeartbeatMonitor extends TimerTask {
       // Print the contents of all heartbeats for registered ChunkServers
       System.out.println( sb.toString() );
 
-      // Prune these data structures to remove stragglers
-      idealState.prune();
-      reportedState.prune();
+      // For major heartbeats, the Controller check that there are no chunks
+      // that should be held by the ChunkServer but aren't. It should then
+      // try to replace those missing files by sending out repair messages.
 
       // Try to replace files missing from ChunkServers
-      ArrayList<String> missingFiles = idealState.differences( reportedState );
-      System.out.println( missingFiles.size() );
+      //ArrayList<String> missingFiles = idealState.differences(
+      // reportedState );
+      //System.out.println( missingFiles.size() );
       //      for ( String file : missingFiles )
       //        System.out.print( file + " ");
       /*
@@ -274,7 +216,7 @@ public class HeartbeatMonitor extends TimerTask {
       */
     }
     for ( Integer i : toDeregister ) {
-      connectionCache.deregister( i );
+      controller.deregister( i );
     }
   }
 }

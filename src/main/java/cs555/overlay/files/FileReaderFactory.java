@@ -1,6 +1,6 @@
 package cs555.overlay.files;
 
-import cs555.overlay.util.FileSynchronizer;
+import cs555.overlay.util.FilenameUtilities;
 
 /**
  * Creates FileReader objects based on the name of the file being read. This
@@ -28,9 +28,9 @@ public class FileReaderFactory {
    * type
    */
   public FileReader createFileReader(String filename) {
-    if ( FileSynchronizer.checkChunkFilename( filename ) ) {
+    if ( FilenameUtilities.checkChunkFilename( filename ) ) {
       return new ChunkReader( filename );
-    } else if ( FileSynchronizer.checkShardFilename( filename ) ) {
+    } else if ( FilenameUtilities.checkShardFilename( filename ) ) {
       return new ShardReader( filename );
     } else {
       System.err.println(

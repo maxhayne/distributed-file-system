@@ -20,8 +20,8 @@ public class HeartbeatInformation {
   public HeartbeatInformation() {
     this.lastMajorHeartbeat = -1;
     this.lastMinorHeartbeat = -1;
-    this.freeSpace = -1;
-    this.totalChunks = -1;
+    this.freeSpace = 0;
+    this.totalChunks = 0;
     this.files = new ArrayList<>();
   }
 

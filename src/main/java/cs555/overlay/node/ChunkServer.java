@@ -178,6 +178,7 @@ public class ChunkServer implements Node {
       if ( repairMessage.fragmentsCollected() >= Constants.DATA_SHARDS ||
            !repairMessage.nextPosition() ) {
         nextServer = repairMessage.getDestination();
+        repairMessage.setPositionToDestination(); // new, and necessary
       } else {
         nextServer = repairMessage.getAddress();
       }
@@ -237,7 +238,7 @@ public class ChunkServer implements Node {
    * If this ChunkServer is this message's destination, tries to repair its
    * local chunk with the replacement slices in the message. If it isn't the
    * destination, tries to add its local non-corrupt chunk slices to the message
-   * for relay.
+   * to be relayed.
    *
    * @param event message being processed
    */
@@ -311,8 +312,11 @@ public class ChunkServer implements Node {
   private boolean repairAndWriteChunk(RepairChunk repairMessage,
       ChunkReader chunkReader) {
     ChunkWriter chunkWriter = new ChunkWriter( chunkReader );
-    chunkWriter.setReplacementSlices( repairMessage.getRepairedSlices(),
-        repairMessage.getReplacementSlices() );
+    for ( int i : repairMessage.getRepairedIndices() ) {
+      System.out.print( i+"," );
+    }
+    chunkWriter.setReplacementSlices( repairMessage.getRepairedIndices(),
+        repairMessage.getReplacedSlices() );
     try {
       chunkWriter.prepare();
       return chunkWriter.write( synchronizer );
@@ -328,8 +332,8 @@ public class ChunkServer implements Node {
    * Responds to Controller's heartbeat message. In the Controller, these
    * messages it sends to ChunkServers are called 'pokes', and the responses it
    * receives are called 'pokeReplies'. A count of each is kept in the
-   * ServerConnection of every registrant, and if the discrepancy between
-   * the two counts becomes too great, the ChunkServer is automatically
+   * ServerConnection of every registrant, and if the discrepancy between the
+   * two counts becomes too great, the ChunkServer is automatically
    * deregistered.
    *
    * @param connection that sent the message (should be controllerConnection)
@@ -530,8 +534,8 @@ public class ChunkServer implements Node {
 
   /**
    * After receiving a successful registration response from the Controller,
-   * creates the FileSynchronizer and starts the HeartbeatService in a
-   * unique directory in the file system's /tmp folder.
+   * creates the FileSynchronizer and starts the HeartbeatService in a unique
+   * directory in the file system's /tmp folder.
    *
    * @param identifier controller has assigned this ChunkServer
    * @return true if all actions completed successfully, false otherwise

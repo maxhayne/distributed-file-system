@@ -59,9 +59,11 @@ public class ChunkWriter implements FileWriter {
     byte[][] slices = replaceSlices();
     updateMetadata( slices[0] );
     preparedChunk = new byte[FileSynchronizer.CHUNK_FILE_LENGTH];
-    ByteBuffer preparedChunkBuffer = ByteBuffer.wrap( preparedChunk );
-    for ( byte[] slice : slices ) {
-      preparedChunkBuffer.put( slice );
+    //ByteBuffer preparedChunkBuffer = ByteBuffer.wrap( preparedChunk );
+    for ( int i = 0; i < 8; ++i ) {
+      System.arraycopy( slices[i], 0, preparedChunk, i*(20+8195), 20+8195 );
+      //preparedChunkBuffer.put( slice );
+      //System.out.println( Arrays.toString( slice ) );
     }
   }
 
@@ -101,8 +103,7 @@ public class ChunkWriter implements FileWriter {
     byte[] updatedSliceData = new byte[firstSlice.length-20];
     firstSliceBuffer.get( 20, updatedSliceData );
 
-    byte[] recomputedHash =
-        FileSynchronizer.SHA1FromBytes( updatedSliceData );
+    byte[] recomputedHash = FileSynchronizer.SHA1FromBytes( updatedSliceData );
 
     firstSliceBuffer.put( 0, recomputedHash );
   }

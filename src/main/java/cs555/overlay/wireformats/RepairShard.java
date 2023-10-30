@@ -110,6 +110,17 @@ public class RepairShard implements Event {
   }
 
   /**
+   * The member 'position' only gets changed when 'nextPosition()' is called,
+   * but if we've collected Constants.DATA_SHARDS fragments (6) already, we
+   * can go straight to the destination, so we need a way to move the
+   * 'position' to match 'destination', so the filename is correct when
+   * called at the destination server.
+   */
+  public void setPositionToDestination() {
+    position = destination;
+  }
+
+  /**
    * Moves the 'position' integer to the position of the next non-null entry in
    * the 'servers' array. If the next non-null entry in the 'servers' array is
    * the destination, returns false.

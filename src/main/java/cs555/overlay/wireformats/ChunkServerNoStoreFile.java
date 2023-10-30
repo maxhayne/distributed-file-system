@@ -4,11 +4,11 @@ import java.io.*;
 
 public class ChunkServerNoStoreFile implements Event {
 
-  public byte type;
-  public String address;
-      // Controller performs lookup to find the identifier of server that
-      // failed to store the file
-  public String filename;
+  private final byte type;
+  private final String address;
+  // Controller performs lookup to find the identifier of server that
+  // failed to store the file
+  private final String filename;
 
   public ChunkServerNoStoreFile(String address, String filename) {
     this.type = Protocol.CHUNK_SERVER_NO_STORE_FILE;
@@ -51,14 +51,32 @@ public class ChunkServerNoStoreFile implements Event {
     dout.writeInt( array.length );
     dout.write( array );
 
-    byte[] returnable = bout.toByteArray();
+    byte[] marshalledBytes = bout.toByteArray();
     dout.close();
     bout.close();
-    return returnable;
+    return marshalledBytes;
   }
 
   @Override
   public byte getType() {
     return type;
+  }
+
+  /**
+   * Getter for filename.
+   *
+   * @return filename
+   */
+  public String getFilename() {
+    return filename;
+  }
+
+  /**
+   * Getter for address.
+   *
+   * @return host:port address
+   */
+  public String getAddress() {
+    return address;
   }
 }

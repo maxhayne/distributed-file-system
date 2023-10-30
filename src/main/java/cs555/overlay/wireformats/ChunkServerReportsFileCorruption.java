@@ -4,10 +4,10 @@ import java.io.*;
 
 public class ChunkServerReportsFileCorruption implements Event {
 
-  public byte type;
-  public int identifier;
-  public String filename;
-  public int[] slices;
+  private final byte type;
+  private final int identifier;
+  private final String filename;
+  private final int[] slices;
 
   public ChunkServerReportsFileCorruption(int identifier, String filename,
       int[] slices) {
@@ -62,8 +62,8 @@ public class ChunkServerReportsFileCorruption implements Event {
       dout.writeInt( 0 );
     } else {
       dout.writeInt( slices.length );
-      for ( int i = 0; i < slices.length; ++i ) {
-        dout.writeInt( slices[i] );
+      for ( int slice : slices ) {
+        dout.writeInt( slice );
       }
     }
 
@@ -76,5 +76,32 @@ public class ChunkServerReportsFileCorruption implements Event {
   @Override
   public byte getType() {
     return type;
+  }
+
+  /**
+   * Getter for filename.
+   *
+   * @return filename
+   */
+  public String getFilename() {
+    return filename;
+  }
+
+  /**
+   * Getter for identifier.
+   *
+   * @return identifier
+   */
+  public int getIdentifier() {
+    return identifier;
+  }
+
+  /**
+   * Getter for slices that are corrupt.
+   *
+   * @return int[] of corrupt slice indices
+   */
+  public int[] getSlices() {
+    return slices;
   }
 }

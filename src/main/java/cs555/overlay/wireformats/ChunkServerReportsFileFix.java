@@ -4,9 +4,9 @@ import java.io.*;
 
 public class ChunkServerReportsFileFix implements Event {
 
-  public byte type;
-  public int identifier;
-  public String filename;
+  private final byte type;
+  private final int identifier;
+  private final String filename;
 
   public ChunkServerReportsFileFix(int identifier, String filename) {
     this.type = Protocol.CHUNK_SERVER_REPORTS_FILE_FIX;
@@ -53,5 +53,23 @@ public class ChunkServerReportsFileFix implements Event {
   @Override
   public byte getType() {
     return type;
+  }
+
+  /**
+   * Getter for identifier.
+   *
+   * @return identifier
+   */
+  public int getIdentifier() {
+    return identifier;
+  }
+
+  /**
+   * Getter for filename.
+   *
+   * @return filename
+   */
+  public String getFilename() {
+    return filename;
   }
 }

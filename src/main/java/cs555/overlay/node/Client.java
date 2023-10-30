@@ -20,7 +20,7 @@ public class Client implements Node {
   private final int storageType;
   private TCPConnection controllerConnection;
   private final TCPConnectionCache connectionCache;
-  private ConcurrentMap<String, ClientWriter> writers;
+  private final ConcurrentMap<String, ClientWriter> writers;
   //private Map<String, ClientReader> readers;
   private Path workingDirectory;
 
@@ -613,7 +613,7 @@ public class Client implements Node {
         break;
 
       case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
-        stopWriterAndRequestDelete( event );
+        stopWriterAndRequestDelete( (( GeneralMessage ) event).getMessage() );
         break;
 
       default:
@@ -622,13 +622,17 @@ public class Client implements Node {
     }
   }
 
-  private void stopWriterAndRequestDelete(Event event) {
-    String filename = (( GeneralMessage ) event).getMessage();
+  /**
+   * Stops the ClientWriter writing the file with name 'filename', and sends a
+   * delete request to the Controller for that particular file.
+   *
+   * @param filename filename to stop the writer for and request delete of
+   */
+  private synchronized void stopWriterAndRequestDelete(String filename) {
     System.out.println( "stopWriterAndRequestDelete" );
     ClientWriter writer = writers.get( filename );
     if ( writer != null ) {
-      // Want to somehow stop the writer here...
-      // Might need to learn to use the executor service to do this...
+      writer.setServersAndUnlock( null );
     }
     GeneralMessage requestDelete =
         new GeneralMessage( Protocol.CLIENT_REQUESTS_FILE_DELETE, filename );
@@ -641,6 +645,13 @@ public class Client implements Node {
     }
   }
 
+  /**
+   * Will be called when a message containing addresses of ChunkServers has been
+   * received by the Client. It sets the 'servers' member inside the relevant
+   * ClientWriter, and unlocks it so it may send the chunk to those servers.
+   *
+   * @param event message being handled
+   */
   private void notifyOfServers(Event event) {
     ControllerReservesServers message = ( ControllerReservesServers ) event;
     System.out.println( "notifyOfServers" );
@@ -691,6 +702,10 @@ public class Client implements Node {
           requestFileDelete( splitCommand );
           break;
 
+        case "stop":
+          stopHelper( splitCommand );
+          break;
+
         case "writers":
           showWriters();
           break;
@@ -721,6 +736,21 @@ public class Client implements Node {
   }
 
   /**
+   * Attempts to unlock the writer (assuming it is frozen) after it has set its
+   * 'servers' member to null (which instructs the writer to return
+   * immediately).
+   *
+   * @param command user input split by whitespace
+   */
+  private void stopHelper(String[] command) {
+    if ( command.length > 1 ) {
+      stopWriterAndRequestDelete( command[1] );
+    } else {
+      System.err.println( "stop: No filename given. Use 'help' for usage." );
+    }
+  }
+
+  /**
    * Send a request to the Controller to delete a file.
    *
    * @param command user input split by whitespace
@@ -747,7 +777,8 @@ public class Client implements Node {
    */
   private void showWriters() {
     writers.forEach(
-        (k, v) -> System.out.printf( "%3s%-4d%s%n", "", v.getProgress(), k ) );
+        (k, v) -> System.out.printf( "%3s%3d%-2s%s%n", "", v.getProgress(), "%",
+            k ) );
   }
 
   /**
@@ -836,6 +867,12 @@ public class Client implements Node {
       return;
     }
     Path pathToFile = parsePath( command[1] );
+    if ( writers.get( pathToFile.toString() ) != null ) {
+      System.err.println( "That file already has an active writer. If the "+
+                          "writer is frozen, interrupt it first, and try "+
+                          "again." );
+      return;
+    }
     ClientWriter writer = new ClientWriter( this, pathToFile );
     writers.put( pathToFile.getFileName().toString(), writer );
     (new Thread( writer )).start();
@@ -856,6 +893,8 @@ public class Client implements Node {
         "store a local file on the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "delete filename",
         "request that a file be deleted from the DFS" );
+    System.out.printf( "%3s%-19s : %s%n", "", "stop filename",
+        "stops writer for 'filename' and sends delete request" );
     System.out.printf( "%3s%-19s : %s%n", "", "writers",
         "display list files in the process of being stored" );
     System.out.printf( "%3s%-19s : %s%n", "", "list",

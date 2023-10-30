@@ -12,12 +12,12 @@ import java.util.ArrayList;
  */
 public class ChunkServerSendsHeartbeat implements Event {
 
-  public byte type;
-  public int identifier;
-  public int beatType; // 1 is major, 0 is minor
-  public int totalChunks;
-  public long freeSpace;
-  public ArrayList<FileMetadata> files;
+  private final byte type;
+  private final int identifier;
+  private final int beatType; // 1 is major, 0 is minor
+  private final int totalChunks;
+  private final long freeSpace;
+  private final ArrayList<FileMetadata> files;
 
   public ChunkServerSendsHeartbeat(int identifier, int beatType,
       int totalChunks, long freeSpace, ArrayList<FileMetadata> files) {
@@ -97,5 +97,25 @@ public class ChunkServerSendsHeartbeat implements Event {
   @Override
   public byte getType() {
     return type;
+  }
+
+  public int getIdentifier() {
+    return identifier;
+  }
+
+  public int getBeatType() {
+    return beatType;
+  }
+
+  public int getTotalChunks() {
+    return totalChunks;
+  }
+
+  public long getFreeSpace() {
+    return freeSpace;
+  }
+
+  public ArrayList<FileMetadata> getFiles() {
+    return files;
   }
 }

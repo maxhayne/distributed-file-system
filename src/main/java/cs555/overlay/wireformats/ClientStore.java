@@ -7,8 +7,8 @@ public class ClientStore implements Event {
   private final String filename;
   private int sequence;
 
-  public ClientStore(byte type, String filename, int sequence) {
-    this.type = type;
+  public ClientStore(String filename, int sequence) {
+    this.type = Protocol.CLIENT_STORE;
     this.filename = filename;
     this.sequence = sequence;
   }

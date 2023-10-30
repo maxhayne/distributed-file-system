@@ -1,6 +1,6 @@
 package cs555.overlay.files;
 
-import cs555.overlay.util.FileSynchronizer;
+import cs555.overlay.util.FilenameUtilities;
 
 /**
  * Creates FileWriter objects based on the name of the file being written. This
@@ -28,9 +28,9 @@ public class FileWriterFactory {
    * type
    */
   public FileWriter createFileWriter(String filename, byte[] content) {
-    if ( FileSynchronizer.checkChunkFilename( filename ) ) {
+    if ( FilenameUtilities.checkChunkFilename( filename ) ) {
       return new ChunkWriter( filename, content );
-    } else if ( FileSynchronizer.checkShardFilename( filename ) ) {
+    } else if ( FilenameUtilities.checkShardFilename( filename ) ) {
       return new ShardWriter( filename, content );
     } else {
       System.err.println(
@@ -40,9 +40,9 @@ public class FileWriterFactory {
   }
 
   public FileWriter createFileWriter(FileReader reader) {
-    if ( FileSynchronizer.checkChunkFilename( reader.getFilename() ) ) {
+    if ( FilenameUtilities.checkChunkFilename( reader.getFilename() ) ) {
       return new ChunkWriter( reader );
-    } else if ( FileSynchronizer.checkShardFilename(
+    } else if ( FilenameUtilities.checkShardFilename(
         reader.getFilename() ) ) {
       return new ShardWriter( reader );
     } else {

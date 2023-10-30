@@ -35,23 +35,6 @@ public class FileSynchronizer {
     Files.createDirectories( directory );
   }
 
-  public static double getFileSize(String filename) {
-    return (new File( filename )).length();
-  }
-
-  public static boolean checkChunkFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk(0|[1-9][0-9]*)*$" );
-    String[] split = filename.split( "_chunk" );
-    return matches && split.length == 2;
-  }
-
-  public static boolean checkShardFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk(0|[1-9][0-9]*)_shard[0-8]$" );
-    String[] split1 = filename.split( "_chunk" );
-    String[] split2 = filename.split( "_shard" );
-    return matches && split1.length == 2 && split2.length == 2;
-  }
-
   // Function for generating hash
   public static byte[] SHA1FromBytes(byte[] data)
       throws NoSuchAlgorithmException {
@@ -163,10 +146,10 @@ public class FileSynchronizer {
    */
   public static byte[] readyFileForStorage(String filename, byte[] data) {
     byte[] fileBytes;
-    if ( checkChunkFilename( filename ) ) {
+    if ( FilenameUtilities.checkChunkFilename( filename ) ) {
       int sequence = Integer.parseInt( filename.split( "_chunk" )[1] );
       fileBytes = readyChunkForStorage( sequence, 0, data );
-    } else if ( checkShardFilename( filename ) ) {
+    } else if ( FilenameUtilities.checkShardFilename( filename ) ) {
       String[] split = filename.split( "_shard" );
       int fragment = Integer.parseInt( split[1] );
       int sequence = Integer.parseInt( split[0].split( "_chunk" )[1] );
@@ -411,8 +394,8 @@ public class FileSynchronizer {
           stream.filter( file -> !Files.isDirectory( file ) )
                 .map( Path::getFileName )
                 .map( Path::toString )
-                .filter( file -> checkChunkFilename( file ) ||
-                                 checkShardFilename( file ) )
+                .filter( file -> FilenameUtilities.checkChunkFilename( file ) ||
+                                 FilenameUtilities.checkShardFilename( file ) )
                 .toList();
       String[] filenameArray = new String[filenames.size()];
       for ( int i = 0; i < filenames.size(); ++i ) {
@@ -501,7 +484,8 @@ public class FileSynchronizer {
       while ( buffer.hasRemaining() ) {
         int bytesWritten = channel.write( buffer );
         System.out.println(
-            "overwriteFile: "+bytesWritten+" bytes "+"written to '"+filename );
+            "overwriteFile: "+bytesWritten+" bytes "+"written to '"+filename+
+            "'" );
       }
       return true;
     } catch ( IOException ioe ) {
@@ -511,7 +495,8 @@ public class FileSynchronizer {
 
   public synchronized void deleteFile(String filename) throws IOException {
     // if filename is a specific chunk or shard, try to delete it
-    if ( checkChunkFilename( filename ) || checkShardFilename( filename ) ) {
+    if ( FilenameUtilities.checkChunkFilename( filename ) ||
+         FilenameUtilities.checkShardFilename( filename ) ) {
       Files.deleteIfExists( getPath( filename ) );
       return;
     }

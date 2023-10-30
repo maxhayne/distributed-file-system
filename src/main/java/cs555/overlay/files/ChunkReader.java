@@ -1,16 +1,16 @@
 package cs555.overlay.files;
 
 import cs555.overlay.util.ArrayUtilities;
-import cs555.overlay.util.FileSynchronizer;
 import cs555.overlay.util.FileMetadata;
+import cs555.overlay.util.FileSynchronizer;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 
 /**
- * Class used to simplify the reading of Chunks off of the disk. Instead of
- * doing everything manually, an instance of this class can be instantiated with
- * the desired filename, and the reading and error-checking can be performed
+ * Class used to simplify the reading of Chunks from the disk. Instead of doing
+ * everything manually, an instance of this class can be instantiated with the
+ * desired filename, and the reading and error-checking can be performed
  * automatically.
  *
  * @author hayne
@@ -47,6 +47,10 @@ public class ChunkReader implements FileReader {
     if ( !corrupt ) {
       chunkBytes = FileSynchronizer.removeHashesFromChunk( chunkBytes );
       chunkBytes = FileSynchronizer.getDataFromChunk( chunkBytes );
+    } else {
+      for ( int corruptSlice : corruptSlices ) {
+        System.out.println( corruptSlice );
+      }
     }
   }
 
@@ -60,6 +64,7 @@ public class ChunkReader implements FileReader {
         FileSynchronizer.checkChunkForCorruption( chunkBytes );
     if ( corruptions.isEmpty() ) {
       corrupt = false;
+      System.out.println( "There are no corruptions!" );
     } else {
       corrupt = true;
       corruptSlices = ArrayUtilities.arrayListToArray( corruptions );
@@ -73,9 +78,8 @@ public class ChunkReader implements FileReader {
    */
   private void populateSlices() {
     slices = new byte[8][20+8195];
-    ByteBuffer chunkBuffer = ByteBuffer.wrap( chunkBytes );
     for ( int i = 0; i < 8; ++i ) {
-      chunkBuffer.get( i*(20+8195), slices[i] );
+      System.arraycopy( chunkBytes, i*(20+8195), slices[i], 0, 20+8195 );
     }
   }
 
