@@ -27,7 +27,7 @@ public class RepairShard implements Event {
     this.filename = filename.split( "_shard" )[0];
     this.servers = servers;
     for ( int i = 0; i < servers.length; ++i ) {
-      if ( servers[i].equals( destination ) ) {
+      if ( java.util.Objects.equals( servers[i], destination ) ) {
         this.destination = i;
         this.position = i;
         break;
@@ -111,10 +111,10 @@ public class RepairShard implements Event {
 
   /**
    * The member 'position' only gets changed when 'nextPosition()' is called,
-   * but if we've collected Constants.DATA_SHARDS fragments (6) already, we
-   * can go straight to the destination, so we need a way to move the
-   * 'position' to match 'destination', so the filename is correct when
-   * called at the destination server.
+   * but if we've collected Constants.DATA_SHARDS fragments (6) already, we can
+   * go straight to the destination, so we need a way to move the 'position' to
+   * match 'destination', so the filename is correct when called at the
+   * destination server.
    */
   public void setPositionToDestination() {
     position = destination;

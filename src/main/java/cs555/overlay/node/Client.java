@@ -613,6 +613,7 @@ public class Client implements Node {
         break;
 
       case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
+        System.out.println( "The Controller has denied a storage request." );
         stopWriterAndRequestDelete( (( GeneralMessage ) event).getMessage() );
         break;
 
@@ -629,10 +630,9 @@ public class Client implements Node {
    * @param filename filename to stop the writer for and request delete of
    */
   private synchronized void stopWriterAndRequestDelete(String filename) {
-    System.out.println( "stopWriterAndRequestDelete" );
     ClientWriter writer = writers.get( filename );
     if ( writer != null ) {
-      writer.setServersAndUnlock( null );
+      writer.setServersAndNotify( null );
     }
     GeneralMessage requestDelete =
         new GeneralMessage( Protocol.CLIENT_REQUESTS_FILE_DELETE, filename );
@@ -654,15 +654,10 @@ public class Client implements Node {
    */
   private void notifyOfServers(Event event) {
     ControllerReservesServers message = ( ControllerReservesServers ) event;
-    System.out.println( "notifyOfServers" );
-    for ( String server : message.getServers() ) {
-      System.out.println( server );
-    }
     ClientWriter writer = writers.get( message.getFilename() );
     if ( writer != null ) {
-      writer.setServersAndUnlock( message.getServers() );
+      writer.setServersAndNotify( message.getServers() );
     }
-    System.out.println( "notifyOfServers end" );
   }
 
   /**

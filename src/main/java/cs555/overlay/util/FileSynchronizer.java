@@ -53,7 +53,7 @@ public class FileSynchronizer {
   public static byte[][] makeShardsFromContent(int length, byte[] content) {
     int storedSize = Constants.BYTES_IN_INT+Constants.CHUNK_DATA_LENGTH;
     int shardSize = (storedSize+8)/Constants.DATA_SHARDS;
-    System.out.println( shardSize );
+    //System.out.println( shardSize );
     int bufferSize = shardSize*Constants.DATA_SHARDS;
     byte[] allBytes = new byte[bufferSize];
     ByteBuffer allBytesBuffer = ByteBuffer.wrap( allBytes );

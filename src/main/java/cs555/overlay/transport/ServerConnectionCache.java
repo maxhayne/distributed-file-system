@@ -467,7 +467,7 @@ public class ServerConnectionCache {
                                        .sendData( relocateMessage.getBytes() );
     } catch ( IOException ioe ) {
       System.err.println(
-          "sendReplacementMessage: There was an error sending"+" a message to "+
+          "sendReplacementMessage: There was an error sending a message to "+
           addressToContact+" to replace '"+appendedFilename+"' at "+destination+
           ". "+ioe.getMessage() );
       return false;

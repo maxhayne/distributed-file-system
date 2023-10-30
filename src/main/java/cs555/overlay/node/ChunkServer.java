@@ -430,7 +430,7 @@ public class ChunkServer implements Node {
 
     // Try to write the file to disk
     FileWriterFactory factory = FileWriterFactory.getInstance();
-    // WRITER MIGHT BE NULL IF FILENAME INCORRECT
+    // WRITER WILL BE NULL IF FILENAME INCORRECT
     FileWriter writer =
         factory.createFileWriter( message.getFilename(), message.getContent() );
     boolean writtenSuccessfully = false;

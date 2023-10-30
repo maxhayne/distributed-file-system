@@ -3,6 +3,7 @@ package cs555.overlay.util;
 import cs555.overlay.node.Client;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.ClientStore;
+import cs555.overlay.wireformats.Event;
 import cs555.overlay.wireformats.SendsFileForStorage;
 
 import java.io.IOException;
@@ -26,93 +27,109 @@ public class ClientWriter implements Runnable {
   private final AtomicInteger chunksSent;
   private final AtomicInteger totalChunks;
   private final TCPConnectionCache connectionCache;
-  private final Object lock;
   private String[] servers;
 
+  /**
+   * Constructor. Creates a new ClientWriter which will be ready to be passed to
+   * a new thread to read the file stored at the location specified by
+   * 'pathToFile'.
+   *
+   * @param client Client on which the ClientWriter will be executing
+   * @param pathToFile full path of file to be stored on the DFS
+   */
   public ClientWriter(Client client, Path pathToFile) {
     this.client = client;
     this.pathToFile = pathToFile;
     this.chunksSent = new AtomicInteger( 0 );
     this.totalChunks = new AtomicInteger( 1 );
     this.connectionCache = new TCPConnectionCache();
-    this.lock = new Object();
   }
 
-  public void setServersAndUnlock(String[] servers) {
-    System.out.println( "setServersAndUnlock" );
+  /**
+   * Sets 'servers' member, and notifies the waiting thread (in the run method)
+   * that it should try to send the next chunk to the provided servers.
+   *
+   * @param servers String[] of host:port addresses to servers provided by the
+   * Controller.
+   */
+  public synchronized void setServersAndNotify(String[] servers) {
     this.servers = servers;
-    unlock();
-    System.out.println( "setServersAndUnlock end" );
+    this.notify();
   }
 
-  private void unlock() {
-    synchronized( lock ) {
-      lock.notify();
-      System.out.println( "notified" );
-    }
-  }
-
+  /**
+   * The ClientWriter's working method. Opens the file pointed to by the path
+   * given in the constructor and reads one chunk at a time,
+   */
   @Override
-  public void run() {
+  public synchronized void run() {
     try ( RandomAccessFile file = new RandomAccessFile( pathToFile.toString(),
         "r" ); FileChannel channel = file.getChannel();
           FileLock fileLock = channel.lock( 0, file.length(), true ) ) {
-      System.out.println( "The file has been accessed!" );
-      totalChunks.set( getTotalChunks( file.length() ) );
-      int counter = totalChunks.get();
-      byte[] chunk = new byte[65536];
-      ClientStore requestMessage =
-          new ClientStore( pathToFile.getFileName().toString(), 0 );
-      long before = System.currentTimeMillis();
-      for ( int i = 0; i < counter; ++i ) {
-        Arrays.fill( chunk, ( byte ) 0 );
-        int bytesRead = file.read( chunk ); // doesn't read fully
-        byte[] content = chunk;
-        if ( bytesRead == -1 ) {
-          break;
-        } else if ( bytesRead > 0 && bytesRead < 65536 ) {
-          content = Arrays.copyOfRange( chunk, 0, bytesRead );
-        }
-        // Send Controller a request to store a chunk
-        try {
-          client.getControllerConnection()
-                .getSender()
-                .sendData( requestMessage.getBytes() );
-        } catch ( IOException ioe ) {
-          System.err.println( "Couldn't send request to Controller, halting." );
-          break;
-        }
-        // Wait for Controller to send us servers and unlock us
-        synchronized( lock ) {
-          lock.wait();
-          // If servers == null, we've been stopped by the user
-          if ( servers == null ) {
-            return;
-          }
-        }
-        // servers have been set at this point
-        boolean sent =
-            sendChunkToServers( requestMessage.getSequence(), content );
-        if ( !sent ) {
-          System.err.println( "ClientWriter::run: Storage message couldn't "+
-                              "be sent to the first ChunkServer. " );
-          break;
+      byte[] chunk = new byte[65536]; // byte[] for file's data
+      ClientStore requestMessage = createNewStoreMessage();
+      int chunksToRead = setTotalChunks( file.length() );
+      for ( int i = 0; i < chunksToRead; ++i ) { // read chunks from file
+        byte[] chunkContent = readAndResize( file, chunk );
+        if ( chunkContent != null &&
+             sendToController( requestMessage.getBytes() ) ) {
+          this.wait();
         } else {
-          chunksSent.incrementAndGet();
-          System.out.println( "ClientWriter::run: Storage message sent. " );
+          break;
         }
-        // increment sequence for next message to controller
-        requestMessage.incrementSequence();
+        if ( servers == null ||
+             !sendChunkToServers( requestMessage.getSequence(),
+                 chunkContent ) ) { // stopped by user, or chunk not sent out
+          break;
+        }
+        chunksSent.incrementAndGet();
+        requestMessage.incrementSequence(); // set sequence for next chunk
       }
-      System.out.println( (System.currentTimeMillis()-before)+"ms to read "+
-                          file.length()/(1024*1024)+"MB" );
     } catch ( IOException|InterruptedException ioe ) {
-      System.err.println( "ClientWriter::run: File couldn't be read." );
+      System.err.println( "ClientWriter: Exception thrown while writing '"+
+                          pathToFile.toString()+"' to the DFS. "+
+                          ioe.getMessage() );
     } finally {
-      // When we are done, remove self from writers map?
-      client.removeWriter( pathToFile.getFileName().toString() );
+      client.removeWriter( pathToFile.getFileName().toString() ); // remove self
       // Should clear the TCPConnectionCache
-      System.out.println( pathToFile+" has finished writing." );
+      System.out.println( "'"+pathToFile+"' has finished writing." );
+    }
+  }
+
+  /**
+   * Reads a file's contents (from the current position) into a byte[], and
+   * returns a resized array if fewer bytes than the size of the array were
+   * read.
+   *
+   * @param file file to be read
+   * @param chunk byte[] to fill with file's bytes
+   * @return null if the read failed, byte[] of data otherwise
+   * @throws IOException if an exception is thrown while reading the file
+   */
+  private byte[] readAndResize(RandomAccessFile file, byte[] chunk)
+      throws IOException {
+    Arrays.fill( chunk, ( byte ) 0 );
+    int bytesRead = file.read( chunk ); // doesn't read fully
+    if ( bytesRead == -1 ) {
+      return null;
+    }
+    return bytesRead > 0 && bytesRead < 65536 ?
+               Arrays.copyOfRange( chunk, 0, bytesRead ) : chunk;
+  }
+
+  /**
+   * Sends a message to the Controller.
+   *
+   * @param marshalledBytes of message to send
+   * @return true if sent, false if not
+   */
+  private boolean sendToController(byte[] marshalledBytes) {
+    try {
+      client.getControllerConnection().getSender().sendData( marshalledBytes );
+      return true;
+    } catch ( IOException ioe ) {
+      System.err.println( "Couldn't send message to Controller." );
+      return false;
     }
   }
 
@@ -129,17 +146,32 @@ public class ClientWriter implements Runnable {
     SendsFileForStorage sendMessage =
         new SendsFileForStorage( createFilename( sequence ), contentToSend,
             servers );
-    // Should try sending to the other servers if sending to the first server
-    // fails. Will have to reorder 'servers' though...
+    for ( String server : servers ) {
+      if ( !sendToChunkServer( sendMessage, server ) ) {
+        sendMessage.nextPosition();
+        continue;
+      }
+      return true; // sent message
+    }
+    return false; // made it through servers without success
+  }
+
+  /**
+   * Attempts to send a message to a server with address 'address'.
+   *
+   * @param event message to be sent
+   * @param address of server to send message to
+   * @return true if sent, false if not
+   */
+  private boolean sendToChunkServer(Event event, String address) {
     try {
-      connectionCache.getConnection( client, servers[0], false )
+      connectionCache.getConnection( client, address, false )
                      .getSender()
-                     .sendData( sendMessage.getBytes() );
+                     .sendData( event.getBytes() );
       return true;
     } catch ( IOException ioe ) {
       System.err.println(
-          "sendToChunkServers: Couldn't send file to first ChunkServer. "+
-          ioe.getMessage() );
+          "sendToChunkServers: Couldn't send file to '"+address+"'. " );
       return false;
     }
   }
@@ -183,15 +215,23 @@ public class ClientWriter implements Runnable {
 
   /**
    * Calculates the number of chunks to read based on the size of the file in
-   * bytes.
+   * bytes, and sets member 'totalChunks' to that value.
    *
    * @param fileSize in bytes
    * @return number of chunks to read
    */
-  private int getTotalChunks(long fileSize) {
-    return ( int ) Math.ceil( ( double ) fileSize/( double ) 65536 );
+  private int setTotalChunks(long fileSize) {
+    int total = ( int ) Math.ceil( ( double ) fileSize/( double ) 65536 );
+    totalChunks.set( total );
+    return total;
   }
 
+  /**
+   * Returns a number between 0 and 100 representing the progress in storing the
+   * chunks of the file being written to the DFS.
+   *
+   * @return percentage of file written to DFS
+   */
   public int getProgress() {
     return ( int ) ((( double ) chunksSent.get()/( double ) totalChunks.get())*
                     100.0);
@@ -231,5 +271,4 @@ public class ClientWriter implements Runnable {
     }
     return filename;
   }
-
 }
