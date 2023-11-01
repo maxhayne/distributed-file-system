@@ -17,6 +17,13 @@ import java.util.Timer;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * ChunkServer node in the DFS. It is responsible for storing chunks/shards,
+ * sending heartbeats to the Controller, serving files, and relaying messages
+ * associated with repairing corrupt files.
+ *
+ * @author hayne
+ */
 public class ChunkServer implements Node {
 
   private final String host;
@@ -127,8 +134,7 @@ public class ChunkServer implements Node {
         storeAndRelay( event, connection );
         break;
 
-      case Protocol.REQUESTS_SHARD:
-      case Protocol.REQUESTS_CHUNK:
+      case Protocol.REQUEST_FILE:
         serveFile( event, connection );
         break;
 
@@ -190,6 +196,7 @@ public class ChunkServer implements Node {
         System.err.println(
             "repairShardHelper: Message couldn't be forwarded. "+
             ioe.getMessage() );
+        connectionCache.removeConnection( nextServer );
       }
     }
   }
@@ -274,6 +281,7 @@ public class ChunkServer implements Node {
         System.err.println(
             "repairChunkHelper: Message couldn't be forwarded. "+
             ioe.getMessage() );
+        connectionCache.removeConnection( nextServer );
       }
     }
 
@@ -312,8 +320,8 @@ public class ChunkServer implements Node {
   private boolean repairAndWriteChunk(RepairChunk repairMessage,
       ChunkReader chunkReader) {
     ChunkWriter chunkWriter = new ChunkWriter( chunkReader );
-    for ( int i : repairMessage.getRepairedIndices() ) {
-      System.out.print( i+"," );
+    if ( repairMessage.getRepairedIndices() == null ) {
+      System.out.println( "repairAndWriteChunk: repaired indices is null." );
     }
     chunkWriter.setReplacementSlices( repairMessage.getRepairedIndices(),
         repairMessage.getReplacedSlices() );
@@ -345,14 +353,14 @@ public class ChunkServer implements Node {
       try {
         connection.getSender().sendData( ack.getBytes() );
       } catch ( IOException ioe ) {
-        System.out.println( "acknowledgeHeartbeat: Unable to send "+
-                            "response to Controller's heartbeat. "+
-                            ioe.getMessage() );
+        System.out.println(
+            "acknowledgeHeartbeat: Unable to send response to Controller's "+
+            "heartbeat. "+ioe.getMessage() );
       }
     } else {
-      System.out.println( "acknowledgeHeartbeat: Received a heartbeat, "+
-                          "but it wasn't from the Controller. "+
-                          "Ignoring it." );
+      System.out.println(
+          "acknowledgeHeartbeat: Received a heartbeat, but it wasn't from the"+
+          " Controller. Ignoring it." );
     }
   }
 
@@ -419,6 +427,7 @@ public class ChunkServer implements Node {
 
     // Send acknowledgement that we received the file?
     // MAY REMOVE LATER...
+    /*
     try {
       sendGeneralMessage( Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FOR_STORAGE,
           message.getFilename(), connection );
@@ -427,6 +436,7 @@ public class ChunkServer implements Node {
           "storeAndRelay: Unable to send acknowledgement to sender of '"+
           message.getFilename()+"'. "+ioe.getMessage() );
     }
+     */
 
     // Try to write the file to disk
     FileWriterFactory factory = FileWriterFactory.getInstance();
@@ -446,16 +456,18 @@ public class ChunkServer implements Node {
     System.out.println(
         "storeAndRelay: '"+message.getFilename()+"' was "+not+"stored." );
 
-    // Relay file to next ChunkServer in list
-    if ( message.nextPosition() ) {
+    // While there are still servers to forward to, tries to pass on the message
+    while ( message.nextPosition() ) {
       try {
         connectionCache.getConnection( this, message.getServer(), true )
                        .getSender()
                        .sendData( message.getBytes() );
+        break;
       } catch ( IOException ioe ) {
         System.err.println(
             "storeAndRelay: Unable to relay message to next ChunkServer. "+
             ioe.getMessage() );
+        connectionCache.removeConnection( message.getServer() );
       }
     }
 
@@ -605,7 +617,7 @@ public class ChunkServer implements Node {
           info();
           break;
 
-        case "list":
+        case "files":
           listFiles();
           break;
 
@@ -675,7 +687,7 @@ public class ChunkServer implements Node {
   private void showHelp() {
     System.out.printf( "%3s%-5s : %s%n", "", "info",
         "print host:port server address of this ChunkServer" );
-    System.out.printf( "%3s%-5s : %s%n", "", "list",
+    System.out.printf( "%3s%-5s : %s%n", "", "files",
         "print a list of files stored at this ChunkServer" );
     System.out.printf( "%3s%-5s : %s%n", "", "exit",
         "attempt to deregister and shutdown the ChunkServer" );

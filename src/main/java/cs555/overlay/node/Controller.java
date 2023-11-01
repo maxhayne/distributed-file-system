@@ -167,6 +167,8 @@ public class Controller implements Node {
     }
   }
 
+  // Might not be needed anymore...
+
   /**
    * Respond to a request for the file size of a particular file stored on the
    * DFS (how many chunks it contains).
@@ -195,9 +197,8 @@ public class Controller implements Node {
   }
 
   /**
-   * Gather information about where a particular file is stored on the DFS,
-   * whether that is a chunk, or an entire file, and send those storage details
-   * back to the Client.
+   * Gather information about where a particular file is stored on the DFS, and
+   * send those storage details back to the Client.
    *
    * @param event message being handled
    * @param connection that produced the event
@@ -205,12 +206,18 @@ public class Controller implements Node {
   private synchronized void clientRead(Event event, TCPConnection connection) {
     String filename = (( GeneralMessage ) event).getMessage();
 
-    String baseFilename = FilenameUtilities.getBaseFilename( filename );
-    int sequence = FilenameUtilities.getSequence( filename );
-
-    // Get servers for that particular chunk, which, if it doesn't exist,
-    // will be null...
-    String[] servers = connectionCache.getServers( baseFilename, sequence );
+    // Get servers for all the file's chunks
+    String[][] servers = null;
+    if ( connectionCache.getFileTable().containsKey( filename ) ) {
+      TreeMap<Integer, String[]> chunks =
+          connectionCache.getFileTable().get( filename );
+      servers = new String[chunks.size()][];
+      int index = 0;
+      for ( String[] chunkServers : chunks.values() ) {
+        servers[index] = chunkServers;
+        index++;
+      }
+    }
 
     ControllerSendsStorageList response =
         new ControllerSendsStorageList( filename, servers );
@@ -451,17 +458,20 @@ public class Controller implements Node {
   private synchronized void storeChunk(Event event, TCPConnection connection) {
     ClientStore request = ( ClientStore ) event;
 
-    // Attempt to allocate servers for the chunk
-    String[] servers = connectionCache.allocateServers( request.getFilename(),
+    // Check if we've already allocated that particular filename/sequence combo
+    String[] servers = connectionCache.getServers( request.getFilename(),
         request.getSequence() );
 
-    // Add the filename sequence combination to the 'storedChunks' maps of
-    // all servers that have been allocated the file
-    if ( servers != null ) {
-      for ( String address : servers ) {
-        connectionCache.getConnection( address )
-                       .addChunk( request.getFilename(),
-                           request.getSequence() );
+    // If it wasn't previously allocated, try to allocate it
+    if ( servers == null ) {
+      servers = connectionCache.allocateServers( request.getFilename(),
+          request.getSequence() );
+      if ( servers != null ) {
+        for ( String address : servers ) {
+          connectionCache.getConnection( address )
+                         .addChunk( request.getFilename(),
+                             request.getSequence() );
+        }
       }
     }
 

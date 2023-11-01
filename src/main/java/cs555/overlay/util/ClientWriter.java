@@ -59,7 +59,12 @@ public class ClientWriter implements Runnable {
 
   /**
    * The ClientWriter's working method. Opens the file pointed to by the path
-   * given in the constructor and reads one chunk at a time,
+   * given in the constructor and reads one chunk at a time. After reading a new
+   * chunk, it asks the Controller for a list of servers to store the chunk and
+   * waits for a response. Upon receiving a response, it attempts to send the
+   * chunk to one of the servers in the list. This process is repeated for the
+   * entire file, unless a problems occurs, in which case the storage operation
+   * is cancelled.
    */
   @Override
   public synchronized void run() {
@@ -71,8 +76,7 @@ public class ClientWriter implements Runnable {
       int chunksToRead = setTotalChunks( file.length() );
       for ( int i = 0; i < chunksToRead; ++i ) { // read chunks from file
         byte[] chunkContent = readAndResize( file, chunk );
-        if ( chunkContent != null &&
-             sendToController( requestMessage.getBytes() ) ) {
+        if ( chunkContent != null && sendToController( requestMessage ) ) {
           this.wait();
         } else {
           break;
@@ -89,11 +93,23 @@ public class ClientWriter implements Runnable {
       System.err.println( "ClientWriter: Exception thrown while writing '"+
                           pathToFile.toString()+"' to the DFS. "+
                           ioe.getMessage() );
-    } finally {
-      client.removeWriter( pathToFile.getFileName().toString() ); // remove self
-      // Should clear the TCPConnectionCache
-      System.out.println( "'"+pathToFile+"' has finished writing." );
     }
+    try {
+      cleanup();
+    } catch ( InterruptedException ie ) {
+      System.err.println( pathToFile.getFileName()+" cleanup() interrupted." );
+    }
+  }
+
+  /**
+   * Cleans up this ClientReader.
+   */
+  private void cleanup() throws InterruptedException {
+    client.removeWriter( pathToFile.getFileName().toString() ); // remove self
+    Thread.sleep( 1000 );
+    connectionCache.closeConnections(); // shutdown connections
+    System.out.println(
+        "The ClientWriter for '"+pathToFile.getFileName()+"' has closed." );
   }
 
   /**
@@ -120,12 +136,12 @@ public class ClientWriter implements Runnable {
   /**
    * Sends a message to the Controller.
    *
-   * @param marshalledBytes of message to send
+   * @param event message to send
    * @return true if sent, false if not
    */
-  private boolean sendToController(byte[] marshalledBytes) {
+  private boolean sendToController(Event event) {
     try {
-      client.getControllerConnection().getSender().sendData( marshalledBytes );
+      client.getControllerConnection().getSender().sendData( event.getBytes() );
       return true;
     } catch ( IOException ioe ) {
       System.err.println( "Couldn't send message to Controller." );
@@ -134,26 +150,24 @@ public class ClientWriter implements Runnable {
   }
 
   /**
-   * Attempts to send the chunk to the first server in the 'servers' member
-   * (which has been sent by the Controller).
+   * Attempts to send the chunk to one of the servers in the 'servers' array. If
+   * sending to one of them fails, tries to send to the others.
    *
    * @param sequence of the chunk being sent
    * @param content of the chunk being sent
-   * @return true if sent, false not
+   * @return true if sent to one of the servers, false if the chunk couldn't be
+   * sent
    */
   private boolean sendChunkToServers(int sequence, byte[] content) {
     byte[][] contentToSend = createContentToSend( content );
     SendsFileForStorage sendMessage =
         new SendsFileForStorage( createFilename( sequence ), contentToSend,
             servers );
-    for ( String server : servers ) {
-      if ( !sendToChunkServer( sendMessage, server ) ) {
-        sendMessage.nextPosition();
-        continue;
-      }
-      return true; // sent message
-    }
-    return false; // made it through servers without success
+    boolean sent;
+    do {
+      sent = sendToChunkServer( sendMessage, sendMessage.getServer() );
+    } while ( !sent && sendMessage.nextPosition() );
+    return sent;
   }
 
   /**
@@ -171,7 +185,7 @@ public class ClientWriter implements Runnable {
       return true;
     } catch ( IOException ioe ) {
       System.err.println(
-          "sendToChunkServers: Couldn't send file to '"+address+"'. " );
+          "sendToChunkServer: Couldn't send file to '"+address+"'. " );
       return false;
     }
   }

@@ -1,7 +1,13 @@
 package cs555.overlay.util;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 
+/**
+ * Stores some useful helpful functions for working with arrays.
+ *
+ * @author hayne
+ */
 public class ArrayUtilities {
 
   /**
@@ -19,7 +25,7 @@ public class ArrayUtilities {
     int count = 0;
     for ( String string : array ) {
       if ( java.util.Objects.equals( string, toRemove ) ) {
-        count++;
+        ++count;
       }
     }
     String[] newArray = new String[array.length-count];
@@ -27,7 +33,7 @@ public class ArrayUtilities {
     for ( String string : array ) {
       if ( !java.util.Objects.equals( string, toRemove ) ) {
         newArray[index] = string;
-        index++;
+        ++index;
       }
     }
     return newArray;
@@ -114,6 +120,25 @@ public class ArrayUtilities {
       }
     }
     return -1;
+  }
+
+  /**
+   * Counts the number of null pointers unset pointers in a byte[][].
+   *
+   * @param array to check
+   * @return number of nulls in array
+   */
+  public static int countNulls(byte[][] array) {
+    if ( array == null ) {
+      return 0;
+    }
+    int count = 0;
+    for ( byte[] b : array ) {
+      if ( Arrays.equals( b, null ) ) {
+        ++count;
+      }
+    }
+    return count;
   }
 
 }

@@ -45,8 +45,7 @@ public class EventFactory {
       case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
       case Protocol.CLIENT_REQUESTS_FILE_SIZE:
       case Protocol.CLIENT_REQUESTS_FILE_DELETE:
-      case Protocol.REQUESTS_CHUNK:
-      case Protocol.REQUESTS_SHARD:
+      case Protocol.REQUEST_FILE:
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE:
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FOR_STORAGE:
       case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS:
@@ -54,6 +53,9 @@ public class EventFactory {
       case Protocol.CONTROLLER_REQUESTS_FILE_DELETE:
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE:
         return new GeneralMessage( marshalledBytes );
+
+      case Protocol.CONTROLLER_SENDS_STORAGE_LIST:
+        return new ControllerSendsStorageList( marshalledBytes );
 
       case Protocol.CONTROLLER_SENDS_FILE_LIST:
         return new ControllerSendsFileList( marshalledBytes );

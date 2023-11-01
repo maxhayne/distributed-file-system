@@ -4,9 +4,9 @@ import java.io.*;
 
 public class ControllerReportsFileSize implements Event {
 
-  public byte type;
-  public String filename;
-  public int totalChunks;
+  private final byte type;
+  private final String filename;
+  private final int totalChunks;
 
   public ControllerReportsFileSize(String filename, int totalChunks) {
     this.type = Protocol.CONTROLLER_REPORTS_FILE_SIZE;
@@ -53,5 +53,13 @@ public class ControllerReportsFileSize implements Event {
   @Override
   public byte getType() {
     return type;
+  }
+
+  public String getFilename() {
+    return filename;
+  }
+
+  public int getTotalChunks() {
+    return totalChunks;
   }
 }

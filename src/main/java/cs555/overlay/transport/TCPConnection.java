@@ -18,6 +18,7 @@ public class TCPConnection {
   private final Socket socket;
   private final TCPSender sender;
   private final TCPReceiverThread receiver;
+  private boolean started;
 
   /**
    * Default constructor.
@@ -30,15 +31,19 @@ public class TCPConnection {
     this.socket = socket;
     this.sender = new TCPSender( socket );
     this.receiver = new TCPReceiverThread( node, socket, this );
+    this.started = false;
   }
 
   /**
    * The TCPReceiverThread object has been created, but a thread to encapsulate
    * it hasn't been. This creates and starts that thread to start receiving
-   * messages concurrently.
+   * messages concurrently (if that hasn't happened already).
    */
-  public void start() {
-    (new Thread( receiver )).start();
+  public synchronized void start() {
+    if ( !started ) {
+      (new Thread( receiver )).start();
+      started = true;
+    }
   }
 
   /**

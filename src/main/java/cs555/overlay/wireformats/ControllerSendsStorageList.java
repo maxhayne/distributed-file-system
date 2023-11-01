@@ -6,9 +6,9 @@ public class ControllerSendsStorageList implements Event {
 
   private final byte type;
   private final String filename;
-  private final String[] servers;
+  private final String[][] servers;
 
-  public ControllerSendsStorageList(String filename, String[] servers) {
+  public ControllerSendsStorageList(String filename, String[][] servers) {
     this.type = Protocol.CONTROLLER_SENDS_STORAGE_LIST;
     this.filename = filename;
     this.servers = servers;
@@ -25,14 +25,22 @@ public class ControllerSendsStorageList implements Event {
     din.readFully( array );
     filename = new String( array );
 
-    int serverCount = din.readInt();
-    if ( serverCount != 0 ) {
-      servers = new String[serverCount];
-      for ( int i = 0; i < serverCount; ++i ) {
-        len = din.readInt();
-        array = new byte[len];
-        din.readFully( array );
-        servers[i] = new String( array );
+    int chunkCount = din.readInt();
+    if ( chunkCount != 0 ) {
+      servers = new String[chunkCount][];
+      for ( int i = 0; i < chunkCount; ++i ) {
+        int serverCount = din.readInt();
+        servers[i] = new String[serverCount];
+        for ( int j = 0; j < serverCount; ++j ) {
+          len = din.readInt();
+          if ( len == 0 ) {
+            servers[i][j] = null;
+          } else {
+            array = new byte[len];
+            din.readFully( array );
+            servers[i][j] = new String( array );
+          }
+        }
       }
     } else {
       servers = null;
@@ -54,12 +62,19 @@ public class ControllerSendsStorageList implements Event {
     dout.write( array );
 
     // Write list of servers
-    int serverCount = servers != null ? servers.length : 0;
-    dout.writeInt( serverCount );
-    for ( int i = 0; i < serverCount; ++i ) {
-      array = servers[i].getBytes();
-      dout.writeInt( array.length );
-      dout.write( array );
+    int chunkCount = servers != null ? servers.length : 0;
+    dout.writeInt( chunkCount );
+    for ( int i = 0; i < chunkCount; ++i ) {
+      dout.writeInt( servers[i].length );
+      for ( int j = 0; j < servers[i].length; ++j ) {
+        if ( servers[i][j] == null ) {
+          dout.writeInt( 0 );
+        } else {
+          array = servers[i][j].getBytes();
+          dout.writeInt( array.length );
+          dout.write( array );
+        }
+      }
     }
 
     byte[] returnable = bout.toByteArray();
@@ -71,5 +86,13 @@ public class ControllerSendsStorageList implements Event {
   @Override
   public byte getType() {
     return type;
+  }
+
+  public String getFilename() {
+    return filename;
+  }
+
+  public String[][] getServers() {
+    return servers;
   }
 }

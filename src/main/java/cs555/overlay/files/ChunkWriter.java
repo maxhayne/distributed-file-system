@@ -5,6 +5,13 @@ import cs555.overlay.util.FileSynchronizer;
 import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
 
+/**
+ * Class used to simplify the preparing and writing of a chunk to disk. Can
+ * either write a new chunk to disk based on a byte[] of content, or use a
+ * combination of previously-read and newly added slices to fashion a new chunk.
+ *
+ * @author hayne
+ */
 public class ChunkWriter implements FileWriter {
   private final String filename;
   private byte[] content;

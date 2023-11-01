@@ -162,3 +162,9 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - When a ChunkServer registers, and registers successfully, there should be a routine that runs at the Controller to check to see if there are any chunks that don't have a proper replication factor, and to task the new registrant with storing that replica/shard.
 
 - The correct slices are getting to the destination server, but they'r e not getting copied correctly to the slices array before getting written to the disk.
+
+- There is an issue with synchronization of the ChunkServer. The HeartbeatService gets a list of files in that it is storing, but if a delete request comes in after the list has been created but before all the files have been dealt with, the HeartbeatService interprets a deleted file as being corrupt, and sends a corruption message to the Controller. This can be solved with synchronization, much like how it was solved in the Controller, by forcing the HeartbeatService to lock the ChunkServer's intrinsic lock. For this to work, the ChunkServer's methods will need to be examined, and the 'synchronized' keyword will have to be added to some of them.
+
+- Files stored by the ClientReader seem to be missing some bytes at the end. Is are the chunks getting cutoff at the very end by the getContentFromShards() function?
+
+- Don't forget: This should be basic, but sending sockets must give receiving sockets time to read what was sent before shutting down. The ClientWriter was shutting down directly after all chunks had been sent out, preventing receiving sockets at the servers from reading those chunks before the socket was closed.

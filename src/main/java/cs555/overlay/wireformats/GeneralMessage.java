@@ -11,7 +11,7 @@ import java.io.*;
 public class GeneralMessage implements Event {
 
   private final byte type;
-  private final String message;
+  private String message;
 
   /**
    * Constructor with empty message.
@@ -58,6 +58,20 @@ public class GeneralMessage implements Event {
     bin.close();
   }
 
+  /**
+   * Sets a new message.
+   *
+   * @param message that 'message' will be set to
+   */
+  public void setMessage(String message) {
+    this.message = message;
+  }
+
+  /**
+   * Getter for message.
+   *
+   * @return String message
+   */
   public String getMessage() {
     return message;
   }

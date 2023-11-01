@@ -9,7 +9,6 @@ public class SendsFileForStorage implements Event {
   private final byte[][] content;
   private String[] servers;
   private int position;
-  private final int visited;
 
   /**
    * Constructor. If the file to be stored is being stored using the replication
@@ -28,7 +27,6 @@ public class SendsFileForStorage implements Event {
     this.content = content;
     this.servers = servers;
     this.position = 0;
-    this.visited = 0;
   }
 
   public SendsFileForStorage(byte[] marshalledBytes) throws IOException {
@@ -62,8 +60,6 @@ public class SendsFileForStorage implements Event {
     }
 
     position = din.readInt();
-
-    visited = din.readInt()+1; // increment visited on arrival
 
     din.close();
     bin.close();
@@ -99,8 +95,6 @@ public class SendsFileForStorage implements Event {
 
     dout.writeInt( position );
 
-    dout.writeInt( visited );
-
     byte[] marshalledBytes = bout.toByteArray();
     dout.close();
     bout.close();
@@ -134,8 +128,8 @@ public class SendsFileForStorage implements Event {
    * @return true if there is another server to relay to, false if not
    */
   public boolean nextPosition() {
-    if ( visited < servers.length ) {
-      position = (position+1)%servers.length;
+    if ( position < servers.length-1 ) {
+      position++;
       return true;
     }
     return false;

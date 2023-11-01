@@ -23,7 +23,7 @@ function new_tab() {
     osascript \
         -e "tell application \"Terminal\"" \
         -e "tell application \"System Events\" to keystroke \"t\" using {command down}" \
-        -e "delay 1" \
+        -e "delay 0.5" \
         -e "do script \"$SCRIPT $1;\" in front window" \
         -e "end tell" > /dev/null
 }

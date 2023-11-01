@@ -57,6 +57,7 @@ public class FileSynchronizer {
     int bufferSize = shardSize*Constants.DATA_SHARDS;
     byte[] allBytes = new byte[bufferSize];
     ByteBuffer allBytesBuffer = ByteBuffer.wrap( allBytes );
+    System.out.println( "makeShardsFromContent length: "+length );
     allBytesBuffer.putInt( length );
     allBytesBuffer.put( content );
     byte[][] shards = new byte[Constants.TOTAL_SHARDS][shardSize];
@@ -97,15 +98,16 @@ public class FileSynchronizer {
     return shards;
   }
 
-  public static byte[] getChunkFromShards(byte[][] shards) {
+  public static byte[] getContentFromShards(byte[][] shards) {
     int shardSize = shards[0].length;
     byte[] decodedChunk = new byte[shardSize*Constants.DATA_SHARDS];
     for ( int i = 0; i < Constants.DATA_SHARDS; i++ ) {
       System.arraycopy( shards[i], 0, decodedChunk, shardSize*i, shardSize );
     }
-    return Arrays.copyOfRange( decodedChunk, 4,
-        65724 ); // Will then have to removeHashesFromChunk
-    // (correctedDecode) and getDataFromChunk()
+    // first four bytes contains the length (hopefully)
+    int length = ByteBuffer.wrap( decodedChunk ).getInt();
+    return Arrays.copyOfRange( decodedChunk, 4, 4+length );
+    //return Arrays.copyOfRange( decodedChunk, 4, 65724 );
   }
 
   public static synchronized byte[] getNextChunkFromFile(String filename,
