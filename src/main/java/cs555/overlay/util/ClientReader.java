@@ -37,6 +37,14 @@ public class ClientReader implements Runnable {
 
   private CountDownLatch writeLatch; // prevents writing to disk until ready
 
+  /**
+   * Constructor. Creates a new ClientReader which will be ready to be passed to
+   * a new thread to assemble chunks stored on the DFS into a file 'filename' to
+   * write to disk.
+   *
+   * @param client Client on which the ClientReader will be executing
+   * @param filename filename of file to read from the DFS and write to disk
+   */
   public ClientReader(Client client, String filename) {
     this.client = client;
     this.filename = filename;
@@ -46,6 +54,14 @@ public class ClientReader implements Runnable {
     this.readDirectory = Paths.get( System.getProperty( "user.dir" ), "reads" );
   }
 
+  /**
+   * The ClientReader's working method. Opens and acquires an exclusive lock on
+   * the file to be written to, contacts the Controller for information about
+   * which servers in the DFS the chunks of the file are stored on, and proceeds
+   * to contact those servers requesting the relevant chunks. Waits until the
+   * necessary files are gathered, combines them, and writes them to disk under
+   * the name 'filename'.
+   */
   @Override
   public synchronized void run() {
     if ( createReadDirectory() ) {
@@ -90,7 +106,8 @@ public class ClientReader implements Runnable {
   }
 
   /**
-   * Creates a new byte[][][] receivedFiles based on the length of the
+   * Creates a new byte[][][] receivedFiles based on the length of the servers
+   * array.
    */
   private void initializeReceivedFiles() {
     receivedFiles =
