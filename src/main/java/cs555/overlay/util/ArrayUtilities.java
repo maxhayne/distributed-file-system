@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 /**
- * Stores some useful helpful functions for working with arrays.
+ * Stores some useful functions for working with arrays.
  *
  * @author hayne
  */

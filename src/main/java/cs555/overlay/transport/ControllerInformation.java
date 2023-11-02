@@ -10,7 +10,14 @@ import cs555.overlay.wireformats.RepairShard;
 import java.io.IOException;
 import java.util.*;
 
-public class ServerConnectionCache {
+/**
+ * Class to hold important information for the Controller. Contains a map of
+ * registered ChunkServers, and a map (fileTable) containing information about
+ * where files of a particular sequence number are stored on the DFS.
+ *
+ * @author hayne
+ */
+public class ControllerInformation {
 
   private final ArrayList<Integer> availableIdentifiers;
   private final Map<Integer, ServerConnection> registeredServers;
@@ -30,7 +37,7 @@ public class ServerConnectionCache {
    * Constructor. Creates a list of available identifiers, and HashMaps for both
    * the files and the connections to the ChunkServers.
    */
-  public ServerConnectionCache() {
+  public ControllerInformation() {
     this.registeredServers = new HashMap<Integer, ServerConnection>();
     this.availableIdentifiers = new ArrayList<Integer>();
     for ( int i = 1; i <= 32; ++i ) {
@@ -276,7 +283,7 @@ public class ServerConnectionCache {
   // functions inside the Controller, and to synchronize the message case
   // that calls this function too. This means that the HeartbeatMonitor must
   // call the Controller.deregister function, not the deregister function
-  // located in the ServerConnectionCache
+  // located in the ControllerInformation
 
   // doesn't need local synchronization, will only be called via synchronized
   // methods in the Controller (register and deregister will also be
@@ -362,7 +369,7 @@ public class ServerConnectionCache {
 
   /**
    * Removes the ChunkServer with a particular identifier from the
-   * ServerConnectionCache. Since this ChunkServer may be storing essential
+   * ControllerInformation. Since this ChunkServer may be storing essential
    * files for the operation of the distributed file system, files stored on the
    * ChunkServer must be relocated to other available ChunkServers. This
    * function should only be called if the caller holds an intrinsic lock on the

@@ -1,7 +1,7 @@
 package cs555.overlay.node;
 
+import cs555.overlay.transport.ControllerInformation;
 import cs555.overlay.transport.ServerConnection;
-import cs555.overlay.transport.ServerConnectionCache;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPServerThread;
 import cs555.overlay.util.ApplicationProperties;
@@ -28,18 +28,18 @@ public class Controller implements Node {
 
   private final String host;
   private final int port;
-  private final ServerConnectionCache connectionCache;
+  private final ControllerInformation information;
 
   public Controller(String host, int port) {
     this.host = host;
     this.port = port;
-    this.connectionCache = new ServerConnectionCache();
+    this.information = new ControllerInformation();
   }
 
   /**
    * Entry point for the Controller. Creates a ServerSocket at the port
    * specified in the 'application.properties' file, creates a
-   * ServerConnectionCache (which starts the HeartbeatMonitor), starts looping
+   * ControllerInformation (which starts the HeartbeatMonitor), starts looping
    * for user commands.
    *
    * @param args ignored
@@ -60,7 +60,7 @@ public class Controller implements Node {
 
       // Start the HeartbeatMonitor
       HeartbeatMonitor heartbeatMonitor =
-          new HeartbeatMonitor( controller, controller.connectionCache );
+          new HeartbeatMonitor( controller, controller.information );
       Timer heartbeatTimer = new Timer();
       heartbeatTimer.scheduleAtFixedRate( heartbeatMonitor, 0,
           Constants.HEARTRATE );
@@ -153,7 +153,7 @@ public class Controller implements Node {
    */
   private synchronized void fileListRequest(TCPConnection connection) {
     String[] fileList =
-        connectionCache.getFileTable().keySet().toArray( new String[0] );
+        information.getFileTable().keySet().toArray( new String[0] );
     if ( fileList.length == 0 ) {
       fileList = null;
     }
@@ -181,7 +181,7 @@ public class Controller implements Node {
     String filename = (( GeneralMessage ) event).getMessage();
 
     TreeMap<Integer, String[]> sequences =
-        connectionCache.getFileTable().get( filename );
+        information.getFileTable().get( filename );
 
     int totalChunks = sequences == null ? 0 : sequences.size();
 
@@ -208,9 +208,9 @@ public class Controller implements Node {
 
     // Get servers for all the file's chunks
     String[][] servers = null;
-    if ( connectionCache.getFileTable().containsKey( filename ) ) {
+    if ( information.getFileTable().containsKey( filename ) ) {
       TreeMap<Integer, String[]> chunks =
-          connectionCache.getFileTable().get( filename );
+          information.getFileTable().get( filename );
       servers = new String[chunks.size()][];
       int index = 0;
       for ( String[] chunkServers : chunks.values() ) {
@@ -284,11 +284,10 @@ public class Controller implements Node {
     String baseFilename =
         FilenameUtilities.getBaseFilename( message.getFilename() );
     int identifier =
-        connectionCache.getChunkServerIdentifier( message.getAddress() );
+        information.getChunkServerIdentifier( message.getAddress() );
     int sequence = FilenameUtilities.getSequence( message.getFilename() );
     if ( identifier != -1 ) {
-      connectionCache.removeServer( baseFilename, sequence,
-          message.getAddress() );
+      information.removeServer( baseFilename, sequence, message.getAddress() );
     }
     // Just remove the file for now. Can try to repair the file system
     // during heartbeats for chunks that aren't replicated 3 times.
@@ -319,8 +318,8 @@ public class Controller implements Node {
     int sequence = FilenameUtilities.getSequence( report.getFilename() );
 
     String destination =
-        connectionCache.getChunkServerAddress( report.getIdentifier() );
-    String[] servers = connectionCache.getServers( baseFilename, sequence );
+        information.getChunkServerAddress( report.getIdentifier() );
+    String[] servers = information.getServers( baseFilename, sequence );
 
     // If no servers hold this chunk, there is nothing to be done
     if ( servers == null ) {
@@ -350,10 +349,10 @@ public class Controller implements Node {
     }
 
     try {
-      connectionCache.getConnection( sendTo )
-                     .getConnection()
-                     .getSender()
-                     .sendData( repairMessage.getBytes() );
+      information.getConnection( sendTo )
+                 .getConnection()
+                 .getSender()
+                 .sendData( repairMessage.getBytes() );
     } catch ( IOException ioe ) {
       System.err.println( "corruptionHelper: Failed to send repair message to"+
                           " its first hop." );
@@ -370,7 +369,7 @@ public class Controller implements Node {
     ChunkServerRespondsToHeartbeat response =
         ( ChunkServerRespondsToHeartbeat ) event;
     ServerConnection connection =
-        connectionCache.getConnection( response.getIdentifier() );
+        information.getConnection( response.getIdentifier() );
     if ( connection == null ) {
       System.err.println( "pokeHelper: there is no registered ChunkServer"+
                           " with an identifier of "+response.getIdentifier()+
@@ -393,7 +392,7 @@ public class Controller implements Node {
     // to be written to update the heartbeat information all in one go?
     // It should be done with one function call.
     ServerConnection connection =
-        connectionCache.getConnection( heartbeat.getIdentifier() );
+        information.getConnection( heartbeat.getIdentifier() );
     if ( connection == null ) {
       System.err.println( "heartbeatHelper: there is no registered ChunkServer"+
                           "with an identifier of "+heartbeat.getIdentifier()+
@@ -415,12 +414,12 @@ public class Controller implements Node {
     String filename = (( GeneralMessage ) event).getMessage();
 
     // Delete the file from the fileTable
-    connectionCache.deleteFile( filename );
+    information.deleteFile( filename );
 
     // Delete the file from the 'storedChunks' map of all servers in
     // registeredServers
     Map<Integer, ServerConnection> registeredServers =
-        connectionCache.getRegisteredServers();
+        information.getRegisteredServers();
     for ( ServerConnection server : registeredServers.values() ) {
       server.deleteFile( filename );
     }
@@ -430,7 +429,7 @@ public class Controller implements Node {
         new GeneralMessage( Protocol.CONTROLLER_REQUESTS_FILE_DELETE,
             filename );
     try {
-      connectionCache.broadcast( deleteRequest.getBytes() );
+      information.broadcast( deleteRequest.getBytes() );
     } catch ( IOException ioe ) {
       System.err.println(
           "deleteFile: Error while sending file delete request to all "+
@@ -459,18 +458,17 @@ public class Controller implements Node {
     ClientStore request = ( ClientStore ) event;
 
     // Check if we've already allocated that particular filename/sequence combo
-    String[] servers = connectionCache.getServers( request.getFilename(),
-        request.getSequence() );
+    String[] servers =
+        information.getServers( request.getFilename(), request.getSequence() );
 
     // If it wasn't previously allocated, try to allocate it
     if ( servers == null ) {
-      servers = connectionCache.allocateServers( request.getFilename(),
+      servers = information.allocateServers( request.getFilename(),
           request.getSequence() );
       if ( servers != null ) {
         for ( String address : servers ) {
-          connectionCache.getConnection( address )
-                         .addChunk( request.getFilename(),
-                             request.getSequence() );
+          information.getConnection( address )
+                     .addChunk( request.getFilename(), request.getSequence() );
         }
       }
     }
@@ -503,7 +501,7 @@ public class Controller implements Node {
     GeneralMessage request = ( GeneralMessage ) event;
     if ( type ) { // attempt to register
       String address = request.getMessage();
-      int registrationStatus = connectionCache.register( address, connection );
+      int registrationStatus = information.register( address, connection );
 
       // Respond to ChunkServer
       GeneralMessage message = new GeneralMessage(
@@ -516,11 +514,11 @@ public class Controller implements Node {
             "Failed to notify ChunkServer of registration status. "+
             "Deregistering. "+ioe.getMessage() );
         if ( registrationStatus != -1 ) {
-          connectionCache.deregister( registrationStatus );
+          information.deregister( registrationStatus );
         }
       }
     } else { // deregister
-      connectionCache.deregister( Integer.parseInt( request.getMessage() ) );
+      information.deregister( Integer.parseInt( request.getMessage() ) );
     }
   }
 
@@ -533,7 +531,7 @@ public class Controller implements Node {
    */
   public synchronized void deregister(int identifier) {
     System.out.println( "deregister called "+identifier );
-    connectionCache.deregister( identifier );
+    information.deregister( identifier );
   }
 
   /**
@@ -572,7 +570,7 @@ public class Controller implements Node {
    */
   private synchronized void listAllocatedFiles() {
     String[] fileList =
-        connectionCache.getFileTable().keySet().toArray( new String[0] );
+        information.getFileTable().keySet().toArray( new String[0] );
     for ( String filename : fileList ) {
       System.out.printf( "%3s%s%n", "", filename );
     }
@@ -582,7 +580,7 @@ public class Controller implements Node {
    * Prints a list of registered ChunkServers.
    */
   private synchronized void listRegisteredChunkServers() {
-    String[] servers = connectionCache.getAllServerAddresses();
+    String[] servers = information.getAllServerAddresses();
     for ( String server : servers ) {
       System.out.printf( "%3s%s%n", "", server );
     }

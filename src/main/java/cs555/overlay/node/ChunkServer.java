@@ -28,11 +28,11 @@ public class ChunkServer implements Node {
 
   private final String host;
   private final int port;
+  private TCPConnection controllerConnection;
   private final TCPConnectionCache connectionCache;
 
-  // members that are set upon successful registration with Controller
+  // Members that are set after successful registration with Controller
   private final AtomicBoolean isRegistered;
-  private TCPConnection controllerConnection;
   private int identifier;
   private FileSynchronizer synchronizer;
   private Timer heartbeatTimer;
@@ -61,7 +61,7 @@ public class ChunkServer implements Node {
 
     // If an argument is provided by the user, interpret it as a custom
     // port for the TCPServerThread to run on, and try to use it. Will
-    // throw an Exception if the argument is not an integer, but
+    // throw an Exception if the argument is not an integer.
     int serverPort = args.length > 0 ? Integer.parseInt( args[0] ) : 0;
 
     try ( ServerSocket serverSocket = new ServerSocket( serverPort );
@@ -637,6 +637,7 @@ public class ChunkServer implements Node {
     // Should try to gracefully shut down here
     // Close all TCPConnections
     // Cancel the heartbeat timer
+    connectionCache.closeConnections();
     heartbeatTimer.cancel();
     System.exit( 0 );
   }

@@ -10,6 +10,11 @@ import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
+/**
+ * Class to be encapsulated in a TimerTask to be called by the ChunkServer.
+ *
+ * @author hayne
+ */
 public class HeartbeatService extends TimerTask {
 
   private final ChunkServer chunkServer;
@@ -19,30 +24,9 @@ public class HeartbeatService extends TimerTask {
 
   public HeartbeatService(ChunkServer chunkServer) {
     this.chunkServer = chunkServer;
-    this.majorFiles = new HashMap<String, FileMetadata>();
-    this.minorFiles = new HashMap<String, FileMetadata>();
+    this.majorFiles = new HashMap<>();
+    this.minorFiles = new HashMap<>();
     this.heartbeatNumber = 1;
-  }
-
-  /**
-   * Takes byte string that has been read from file with name 'filename', and a
-   * length, and resizes the file and byte string if the byte string is longer
-   * than the length parameter.
-   *
-   * @param filename name of file fileBytes has been read from
-   * @param fileBytes byte content of file filename
-   * @param length to truncate file and fileBytes to
-   * @return truncated fileBytes
-   */
-  private byte[] truncateIfNecessary(String filename, byte[] fileBytes,
-      int length) {
-    if ( fileBytes.length > length ) {
-      chunkServer.getFileSynchronizer().truncateFile( filename, length );
-      byte[] truncatedBytes = new byte[length];
-      System.arraycopy( fileBytes, 0, truncatedBytes, 0, length );
-      fileBytes = truncatedBytes;
-    }
-    return fileBytes;
   }
 
   /**
@@ -115,7 +99,6 @@ public class HeartbeatService extends TimerTask {
       // return null if message bytes can't be constructed
       return null;
     }
-
   }
 
   /**

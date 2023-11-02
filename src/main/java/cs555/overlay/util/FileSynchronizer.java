@@ -19,27 +19,46 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
+/**
+ * Class used by the ChunkServer to synchronize file accesses across threads.
+ * Also contains some utility functions for working with chunks/shards.
+ *
+ * @author hayne
+ */
 public class FileSynchronizer {
 
   public static int CHUNK_DATA_LENGTH = 65536;
-  public static int SHA1_LENGTH = 20;
   public static int CHUNK_FILE_LENGTH = 65720;
   public static int SHARD_FILE_LENGTH =
       10924+20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG;
 
-  private final Path directory;
+  private final Path directory; // directory the server is storing files into
 
+  /**
+   * Constructor. Takes the identifier of the ChunkServer using the
+   * FileSynchronizer, and creates a (hopefully) unique folder in the /tmp
+   * directory for the ChunkServer to use.
+   *
+   * @param identifier of ChunkServer using the FileSynchronizer
+   * @throws IOException if the can't be created
+   */
   public FileSynchronizer(int identifier) throws IOException {
     this.directory =
         Paths.get( File.separator, "tmp", "ChunkServer"+"-"+identifier );
     Files.createDirectories( directory );
   }
 
-  // Function for generating hash
-  public static byte[] SHA1FromBytes(byte[] data)
+  /**
+   * Generates a 20 byte hash of a byte array using SHA1.
+   *
+   * @param array byte[] to generate hash of
+   * @return 20 byte hash of array
+   * @throws NoSuchAlgorithmException if SHA1 isn't available
+   */
+  public static byte[] SHA1FromBytes(byte[] array)
       throws NoSuchAlgorithmException {
     MessageDigest digest = MessageDigest.getInstance( "SHA1" );
-    return digest.digest( data );
+    return digest.digest( array );
   }
 
   /**
@@ -57,7 +76,7 @@ public class FileSynchronizer {
     int bufferSize = shardSize*Constants.DATA_SHARDS;
     byte[] allBytes = new byte[bufferSize];
     ByteBuffer allBytesBuffer = ByteBuffer.wrap( allBytes );
-    System.out.println( "makeShardsFromContent length: "+length );
+    //System.out.println( "makeShardsFromContent length: "+length );
     allBytesBuffer.putInt( length );
     allBytesBuffer.put( content );
     byte[][] shards = new byte[Constants.TOTAL_SHARDS][shardSize];
@@ -70,6 +89,14 @@ public class FileSynchronizer {
     return shards;
   }
 
+  /**
+   * Takes a byte[][] of shards, any of which could be null, and attempts to
+   * decode them into the chunk they were made from.
+   *
+   * @param shards byte[][] shards to be decoded
+   * @return the byte[] that was originally encoded into shards, null if the
+   * data couldn't be reconstructed
+   */
   public static byte[][] decodeMissingShards(byte[][] shards) {
     if ( shards.length != Constants.TOTAL_SHARDS ) {
       return null;
@@ -98,6 +125,15 @@ public class FileSynchronizer {
     return shards;
   }
 
+  /**
+   * Once shards have been decoded, the first Constants.DATA_SHARDS shards
+   * contain the data of the encoded chunk, prepended with a four byte integer
+   * of the chunk's length. A new byte[] of that length is created, filled with
+   * the chunk's data, and returned.
+   *
+   * @param shards decoded shards
+   * @return byte[] of chunk's data
+   */
   public static byte[] getContentFromShards(byte[][] shards) {
     int shardSize = shards[0].length;
     byte[] decodedChunk = new byte[shardSize*Constants.DATA_SHARDS];
@@ -110,66 +146,18 @@ public class FileSynchronizer {
     //return Arrays.copyOfRange( decodedChunk, 4, 65724 );
   }
 
-  public static synchronized byte[] getNextChunkFromFile(String filename,
-      int sequence) {
-    File tryFile = new File( filename );
-    if ( !tryFile.isFile() ) {
-      return null;
-    }
-    int position = sequence*65536;
-    try ( RandomAccessFile file = new RandomAccessFile( tryFile, "r" );
-          FileChannel channel = file.getChannel();
-          FileLock lock = channel.lock( position, 65536, true ) ) {
-      if ( position > channel.size() ) {
-        return null;
-      }
-      byte[] data = (channel.size()-position) < 65536 ?
-                        new byte[( int ) channel.size()-position] :
-                        new byte[65536];
-      ByteBuffer buffer = ByteBuffer.wrap( data );
-      int read = 1;
-      while ( buffer.hasRemaining() && read > 0 ) {
-        read = channel.read( buffer, position );
-        position += read;
-      }
-      return data;
-    } catch ( IOException ioe ) {
-      return null;
-    }
-  }
-
   /**
-   * Takes a filename and data, and creates a byte[] which is ready to be
-   * written to disk as a file.
+   * Takes the sequence and version numbers of a chunk, along with its content,
+   * and transforms it into a byte[] that is ready to be written to disk.
    *
-   * @param filename of file to be stored
-   * @param data byte[] of chunk or shard
-   * @return byte[] of file data, null if unsuccessful
+   * @param sequence sequence number of chunk
+   * @param version version number of chunk
+   * @param content byte[] of chunk's content
+   * @return byte[] of chunk, ready to be written to disk
    */
-  public static byte[] readyFileForStorage(String filename, byte[] data) {
-    byte[] fileBytes;
-    if ( FilenameUtilities.checkChunkFilename( filename ) ) {
-      int sequence = Integer.parseInt( filename.split( "_chunk" )[1] );
-      fileBytes = readyChunkForStorage( sequence, 0, data );
-    } else if ( FilenameUtilities.checkShardFilename( filename ) ) {
-      String[] split = filename.split( "_shard" );
-      int fragment = Integer.parseInt( split[1] );
-      int sequence = Integer.parseInt( split[0].split( "_chunk" )[1] );
-      fileBytes = readyShardForStorage( sequence, fragment, 0, data );
-    } else {
-      System.out.println( "readyFileForStorage: '"+filename+
-                          "' is neither a chunk nor a shard. It cannot be "+
-                          "converted into a byte[] for storage." );
-      return null;
-    }
-    return fileBytes;
-  }
-
-  // Takes chunk data, combines with metadata and hashes, basically
-  // prepares it for writing to a file.
   public static byte[] readyChunkForStorage(int sequence, int version,
-      byte[] chunkArray) {
-    int chunkArrayRemaining = chunkArray.length;
+      byte[] content) {
+    int contentRemaining = content.length;
     byte[] chunkToFileArray = new byte[65720]; // total size of stored chunk
     byte[] sliceArray = new byte[8195];
     ByteBuffer chunkToFileBuffer = ByteBuffer.wrap( chunkToFileArray );
@@ -177,16 +165,16 @@ public class FileSynchronizer {
     sliceBuffer.putInt( 0 ); // padding
     sliceBuffer.putInt( sequence );
     sliceBuffer.putInt( version );
-    sliceBuffer.putInt( chunkArrayRemaining );
+    sliceBuffer.putInt( contentRemaining );
     sliceBuffer.putLong( System.currentTimeMillis() );
     int position = 0;
-    if ( chunkArrayRemaining >= 8195-24 ) {
-      sliceBuffer.put( chunkArray, position, 8195-24 );
-      chunkArrayRemaining -= (8195-24);
+    if ( contentRemaining >= 8195-24 ) {
+      sliceBuffer.put( content, position, 8195-24 );
+      contentRemaining -= (8195-24);
       position += (8195-24);
     } else {
-      sliceBuffer.put( chunkArray, 0, chunkArrayRemaining );
-      chunkArrayRemaining = 0;
+      sliceBuffer.put( content, 0, contentRemaining );
+      contentRemaining = 0;
     }
     try {
       byte[] hash = SHA1FromBytes( sliceArray );
@@ -195,15 +183,15 @@ public class FileSynchronizer {
       sliceBuffer.clear();
       Arrays.fill( sliceArray, ( byte ) 0 );
       for ( int i = 0; i < 7; i++ ) {
-        if ( chunkArrayRemaining == 0 ) {
+        if ( contentRemaining == 0 ) {
           hash = SHA1FromBytes( sliceArray );
-        } else if ( chunkArrayRemaining < 8195 ) {
-          sliceBuffer.put( chunkArray, position, chunkArrayRemaining );
-          chunkArrayRemaining = 0;
+        } else if ( contentRemaining < 8195 ) {
+          sliceBuffer.put( content, position, contentRemaining );
+          contentRemaining = 0;
           hash = SHA1FromBytes( sliceArray );
         } else {
-          sliceBuffer.put( chunkArray, position, 8195 );
-          chunkArrayRemaining -= 8195;
+          sliceBuffer.put( content, position, 8195 );
+          contentRemaining -= 8195;
           position += 8195;
           hash = SHA1FromBytes( sliceArray );
         }
@@ -220,12 +208,22 @@ public class FileSynchronizer {
     return chunkToFileArray;
   }
 
+  /**
+   * Combines the sequence, fragment, and version numbers of a shard, along with
+   * its byte[] content into a new byte[] that is ready to be written to disk.
+   *
+   * @param sequence number of chunk that has been encoded into shards
+   * @param fragment fragment number of shard (0-8)
+   * @param version version number of file
+   * @param content byte[] of encoded shard
+   * @return byte[] of shard, ready to be written to disk
+   */
   public static byte[] readyShardForStorage(int sequence, int fragment,
-      int version, byte[] shardArray) {
+      int version, byte[] content) {
     byte[] shardToFileArray =
         new byte[20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+
                  10924]; // Hash+Sequence
-    // +Fragment+Version+Timestamp+Data, 10994 bytes in total
+    // +Fragment+Version+Timestamp+Data, 10964 bytes in total
     byte[] shardWithMetaData =
         new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10924];
     ByteBuffer shardMetaWrap = ByteBuffer.wrap( shardWithMetaData );
@@ -233,10 +231,9 @@ public class FileSynchronizer {
     shardMetaWrap.putInt( fragment );
     shardMetaWrap.putInt( version );
     shardMetaWrap.putLong( System.currentTimeMillis() );
-    shardMetaWrap.put( shardArray );
-    byte[] hash;
+    shardMetaWrap.put( content );
     try {
-      hash = SHA1FromBytes( shardWithMetaData );
+      byte[] hash = SHA1FromBytes( shardWithMetaData );
       ByteBuffer shardFileArrayWrap = ByteBuffer.wrap( shardToFileArray );
       shardFileArrayWrap.put( hash );
       shardFileArrayWrap.put( shardWithMetaData );
@@ -248,7 +245,13 @@ public class FileSynchronizer {
     }
   }
 
-  // Check chunk for errors and return integer array containing slice numbers
+  /**
+   * Checks the byte[] of a chunk read from the disk, and returns an int[]
+   * containing the indices of the slices that are corrupt.
+   *
+   * @param chunkBytes byte[] of chunk read from disk
+   * @return int[] of slice indices that are corrupt for this chunk
+   */
   public static ArrayList<Integer> checkChunkForCorruption(byte[] chunkBytes) {
     ArrayList<Integer> corrupt = new ArrayList<>();
     for ( int i = 0; i < 8; ++i ) {
@@ -286,6 +289,12 @@ public class FileSynchronizer {
     return corrupt;
   }
 
+  /**
+   * Checks if a shard is corrupt.
+   *
+   * @param shardBytes byte[] of shard read from disk
+   * @return true if corrupt, false if not
+   */
   public static boolean checkShardForCorruption(byte[] shardBytes) {
     if ( shardBytes == null ) {
       return true;
@@ -310,7 +319,13 @@ public class FileSynchronizer {
     return true;
   }
 
-  // Removes hashes from chunk
+  /**
+   * Removes the hashes from a chunk that has been read from the disk. The
+   * hashes are spliced into the file at regular intervals.
+   *
+   * @param chunkArray byte[] to be cleaned
+   * @return a new byte[] with hashes removed
+   */
   public static byte[] removeHashesFromChunk(byte[] chunkArray) {
     ByteBuffer chunk = ByteBuffer.wrap( chunkArray );
     byte[] cleanedChunk = new byte[65560];
@@ -327,7 +342,12 @@ public class FileSynchronizer {
     // Timestamp (long)
   }
 
-  // Removes hash from shard
+  /**
+   * Removes the hash from the shard (the first 20 bytes).
+   *
+   * @param shardArray byte[] to be cleaned
+   * @return a new byte[] with hash removed
+   */
   public static byte[] removeHashFromShard(byte[] shardArray) {
     ByteBuffer shard = ByteBuffer.wrap( shardArray );
     byte[] cleanedShard =
@@ -343,7 +363,13 @@ public class FileSynchronizer {
     // Data
   }
 
-  // Removes metadata, and strips padding from end of array
+  /**
+   * Removes metadata from chunk, and returns only its content. Assumes hashes
+   * have already been removed.
+   *
+   * @param chunkArray byte[] to be cleaned of metadata
+   * @return a new byte[] with metadata removed
+   */
   public static byte[] getDataFromChunk(byte[] chunkArray) {
     ByteBuffer chunk = ByteBuffer.wrap( chunkArray );
     int chunkLength = chunk.getInt( 12 );
@@ -353,7 +379,12 @@ public class FileSynchronizer {
     return data;
   }
 
-  // Removes metadata from shard
+  /**
+   * Removes metadata from a shard that has already has its hash removed.
+   *
+   * @param shardArray byte[] to be cleaned of metadata
+   * @return a new byte[] with metadata removed
+   */
   public static byte[] getDataFromShard(byte[] shardArray) {
     ByteBuffer shard = ByteBuffer.wrap( shardArray );
     shard.position( 20 );
@@ -362,34 +393,34 @@ public class FileSynchronizer {
     return data;
   }
 
-  // Create file if it doesn't exist, append file with data
-  public static synchronized boolean appendFile(String filename, byte[] data) {
-    File tryFile = new File( filename );
-    if ( !tryFile.isFile() ) {
-      return false;
-    }
-    try ( RandomAccessFile file = new RandomAccessFile( tryFile, "rw" );
-          FileChannel channel = file.getChannel();
-          FileLock lock = channel.lock() ) {
-      channel.position( channel.size() );
-      ByteBuffer buffer = ByteBuffer.wrap( data );
-      while ( buffer.hasRemaining() ) {
-        channel.write( buffer );
-      }
-      return true;
-    } catch ( IOException ioe ) {
-      return false;
-    }
-  }
-
+  /**
+   * Generates a path to a filename that will be stored at the ChunkServer this
+   * FileSynchronizer instance is resident on.
+   *
+   * @param filename filename of file
+   * @return path to filename
+   */
   public Path getPath(String filename) {
     return directory.resolve( filename );
   }
 
+  /**
+   * Returns usable space at the directory this ChunkServer is using.
+   *
+   * @return usable space in bytes
+   */
   public long getUsableSpace() {
     return (new File( directory.toString() )).getUsableSpace();
   }
 
+  /**
+   * Returns an array of filename strings that are either chunks or shards that
+   * are stored in the folder pointed to by the 'directory' member.
+   *
+   * @return String[] of filenames in 'directory'
+   * @throws IOException if the directory that Files.list() is to be run on
+   * doesn't exist
+   */
   public String[] listFiles() throws IOException {
     try ( Stream<Path> stream = Files.list( directory ) ) {
       List<String> filenames =
@@ -419,19 +450,6 @@ public class FileSynchronizer {
     }
   }
 
-  // Read any file and return a byte[] of the data
-  public synchronized byte[] readBytesFromFile(String filename) {
-    byte[] fileBytes;
-    try {
-      fileBytes = Files.readAllBytes( getPath( filename ) );
-    } catch ( IOException ioe ) {
-      System.out.println( "readBytesFromFile: Unable to read '"+filename+"'."+
-                          ioe.getMessage() );
-      return null;
-    }
-    return fileBytes;
-  }
-
   /**
    * Reads up to the first N bytes of a file.
    *
@@ -455,46 +473,38 @@ public class FileSynchronizer {
     return fileBytes;
   }
 
-  // Create file if it doesn't exist, if it does exist, return false
-  public synchronized boolean writeNewFile(String filename, byte[] data) {
-    File tryFile = new File( filename );
-    if ( tryFile.isFile() ) {
-      return false;
-    }
-    try ( RandomAccessFile file = new RandomAccessFile( tryFile, "rw" );
-          FileChannel channel = file.getChannel();
-          FileLock lock = channel.lock() ) {
-      ByteBuffer buffer = ByteBuffer.wrap( data );
-      while ( buffer.hasRemaining() ) {
-        channel.write( buffer );
-      }
-      return true;
-    } catch ( IOException ioe ) {
-      return false;
-    }
-  }
-
-  // Write new file, replace if it already exists.
-  public synchronized boolean overwriteFile(String filename, byte[] data) {
+  /**
+   * Writes a new file, or replaces one if it already exists.
+   *
+   * @param filename the name of the file to write
+   * @param content to be written
+   * @return true if write succeeded, false if it didn't
+   */
+  public synchronized boolean overwriteFile(String filename, byte[] content) {
     String filenameWithPath = directory.resolve( filename ).toString();
     try (
         RandomAccessFile file = new RandomAccessFile( filenameWithPath, "rw" );
         FileChannel channel = file.getChannel();
         FileLock lock = channel.lock() ) {
       channel.truncate( 0 );
-      ByteBuffer buffer = ByteBuffer.wrap( data );
-      while ( buffer.hasRemaining() ) {
-        int bytesWritten = channel.write( buffer );
-        System.out.println(
-            "overwriteFile: "+bytesWritten+" bytes "+"written to '"+filename+
-            "'" );
-      }
+      file.write( content );
+      System.out.println(
+          "overwriteFile: "+content.length+" bytes "+"written to '"+filename+
+          "'" );
       return true;
     } catch ( IOException ioe ) {
       return false;
     }
   }
 
+  /**
+   * Deletes a file from the server of a particular name. If the name is neither
+   * a specific chunk nor specific shard, looks for files with that basename,
+   * and deletes those.
+   *
+   * @param filename String filename to be deleted
+   * @throws IOException if the deletion or listFiles() operation fails
+   */
   public synchronized void deleteFile(String filename) throws IOException {
     // if filename is a specific chunk or shard, try to delete it
     if ( FilenameUtilities.checkChunkFilename( filename ) ||
@@ -502,7 +512,6 @@ public class FileSynchronizer {
       Files.deleteIfExists( getPath( filename ) );
       return;
     }
-
     // if filename is a base (what would come before "_chunk" or
     // "_shard"), then delete all chunks or shards with that base
     String[] files = listFiles();
@@ -511,40 +520,5 @@ public class FileSynchronizer {
         Files.deleteIfExists( getPath( file ) );
       }
     }
-  }
-
-  // Replace slices with new slices
-  public synchronized boolean replaceSlices(String filename, int[] slices,
-      byte[][] sliceData) {
-    File tryFile = new File( filename );
-    if ( !tryFile.isFile() ) {
-      return false; // can't replace slices for file that doesn't exist
-    }
-    try ( RandomAccessFile file = new RandomAccessFile( tryFile, "rw" );
-          FileChannel channel = file.getChannel();
-          FileLock lock = channel.lock() ) {
-      int numSlices = slices.length;
-      for ( int i = 0; i < numSlices; i++ ) {
-        int position = 8215*slices[i]; // includes the hashes
-        ByteBuffer newSlice = ByteBuffer.wrap( sliceData[i] );
-        while ( newSlice.hasRemaining() ) {
-          position += channel.write( newSlice, position );
-        }
-      }
-      return true;
-    } catch ( IOException ioe ) {
-      return false;
-    }
-  }
-
-  // Replace slices with new slices
-  public byte[][] getSlices(byte[] chunkArray, int[] slices) {
-    int numSlices = slices.length;
-    byte[][] sliceData = new byte[numSlices][8195];
-    for ( int i = 0; i < numSlices; i++ ) {
-      ByteBuffer buffer = ByteBuffer.wrap( sliceData[i] );
-      buffer.put( chunkArray, (20*(slices[i]+1))+slices[i]*8195, 8195 );
-    }
-    return sliceData;
   }
 }

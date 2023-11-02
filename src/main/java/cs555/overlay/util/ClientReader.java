@@ -17,6 +17,12 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Helper class used by the Client to read the chunks of a file from the DFS and
+ * write it to disk locally.
+ *
+ * @author hayne
+ */
 public class ClientReader implements Runnable {
 
   private final Client client;
@@ -92,6 +98,14 @@ public class ClientReader implements Runnable {
             new byte[servers.length][Constants.TOTAL_SHARDS][];
   }
 
+  /**
+   * Adds a byte[] to the receivedFiles[][][] array. Will be called through the
+   * Client's onEvent method by TCPReceiverThreads that have received messages
+   * from ChunkServers.
+   *
+   * @param filename contains "_chunk#" (and "_shard#" if erasure coding)
+   * @param content byte[] of chunk/shard's content
+   */
   public void addFile(String filename, byte[] content) {
     int sequence = FilenameUtilities.getSequence( filename );
     int fragment = client.getStorageType() == 1 ?
@@ -99,7 +113,7 @@ public class ClientReader implements Runnable {
     synchronized( receivedFiles[sequence] ) {
       if ( client.getStorageType() == 0 ) { // replication
         receivedFiles[sequence][0] = content;
-        writeLatch.countDown();
+        writeLatch.countDown(); // full chunk received, countdown the latch
         chunksReceived.incrementAndGet();
       } else { // erasure
         receivedFiles[sequence][fragment] = content;
@@ -111,6 +125,14 @@ public class ClientReader implements Runnable {
     }
   }
 
+  /**
+   * Writes all the chunks present in the receivedFiles array to disk
+   * sequentially. If erasure coding, the chunk is decoded from the fragments
+   * first, of course.
+   *
+   * @param file file opened in the run method
+   * @throws IOException if error encountered while writing
+   */
   private void writeChunksToDisk(RandomAccessFile file) throws IOException {
     for ( int i = 0; i < receivedFiles.length; ++i ) {
       synchronized( receivedFiles[i] ) {

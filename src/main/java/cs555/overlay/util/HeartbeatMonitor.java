@@ -2,7 +2,7 @@ package cs555.overlay.util;
 
 import cs555.overlay.node.Controller;
 import cs555.overlay.transport.ServerConnection;
-import cs555.overlay.transport.ServerConnectionCache;
+import cs555.overlay.transport.ControllerInformation;
 
 import java.util.ArrayList;
 import java.util.Map;
@@ -11,10 +11,10 @@ import java.util.TimerTask;
 public class HeartbeatMonitor extends TimerTask {
 
   private final Controller controller;
-  private final ServerConnectionCache connectionCache;
+  private final ControllerInformation connectionCache;
 
   public HeartbeatMonitor(Controller controller,
-      ServerConnectionCache connectionCache) {
+      ControllerInformation connectionCache) {
     this.controller = controller;
     this.connectionCache = connectionCache;
   }

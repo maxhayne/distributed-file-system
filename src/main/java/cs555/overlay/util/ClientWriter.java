@@ -71,24 +71,7 @@ public class ClientWriter implements Runnable {
     try ( RandomAccessFile file = new RandomAccessFile( pathToFile.toString(),
         "r" ); FileChannel channel = file.getChannel();
           FileLock fileLock = channel.lock( 0, file.length(), true ) ) {
-      byte[] chunk = new byte[65536]; // byte[] for file's data
-      ClientStore requestMessage = createNewStoreMessage();
-      int chunksToRead = setTotalChunks( file.length() );
-      for ( int i = 0; i < chunksToRead; ++i ) { // read chunks from file
-        byte[] chunkContent = readAndResize( file, chunk );
-        if ( chunkContent != null && sendToController( requestMessage ) ) {
-          this.wait();
-        } else {
-          break;
-        }
-        if ( servers == null ||
-             !sendChunkToServers( requestMessage.getSequence(),
-                 chunkContent ) ) { // stopped by user, or chunk not sent out
-          break;
-        }
-        chunksSent.incrementAndGet();
-        requestMessage.incrementSequence(); // set sequence for next chunk
-      }
+      chunkizeFileAndStore( file, setTotalChunks( file.length() ) );
     } catch ( IOException|InterruptedException ioe ) {
       System.err.println( "ClientWriter: Exception thrown while writing '"+
                           pathToFile.toString()+"' to the DFS. "+
@@ -98,6 +81,40 @@ public class ClientWriter implements Runnable {
       cleanup();
     } catch ( InterruptedException ie ) {
       System.err.println( pathToFile.getFileName()+" cleanup() interrupted." );
+    }
+  }
+
+  /**
+   * Attempts to read the file into chunks, request servers to store those
+   * chunks from the Controller, and send those chunks to those servers.
+   *
+   * @param file RandomAccessFile that has been opened for the file being
+   * read (assuming an exclusive lock has already been acquired)
+   * @param totalChunks the total number of chunks that should be read from
+   * the file
+   * @throws IOException if the function encounters a problem while reading
+   * the file
+   * @throws InterruptedException if the function is interrupted while
+   * waiting for servers from the Controller
+   */
+  private void chunkizeFileAndStore(RandomAccessFile file, int totalChunks)
+      throws IOException, InterruptedException {
+    ClientStore requestMessage = createNewStoreMessage(); // reusable
+    byte[] chunk = new byte[FileSynchronizer.CHUNK_DATA_LENGTH]; // reusable
+    for ( int i = 0; i < totalChunks; ++i ) {
+      byte[] chunkContent = readAndResize( file, chunk );
+      if ( chunkContent != null && sendToController( requestMessage ) ) {
+        this.wait(); // wait for Controller to send allocated servers
+        if ( servers == null ||
+             !sendChunkToServers( requestMessage.getSequence(),
+                 chunkContent ) ) { // stopped by user, or chunk not sent out
+          break;
+        }
+      } else {
+        break;
+      }
+      chunksSent.incrementAndGet();
+      requestMessage.incrementSequence(); // set sequence for next chunk
     }
   }
 
