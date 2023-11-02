@@ -1,9 +1,6 @@
 package cs555.overlay.util;
 
-import cs555.overlay.files.FileReader;
-import cs555.overlay.files.FileReaderFactory;
 import cs555.overlay.node.ChunkServer;
-import cs555.overlay.wireformats.ChunkServerReportsFileCorruption;
 import cs555.overlay.wireformats.ChunkServerSendsHeartbeat;
 
 import java.io.IOException;
@@ -56,27 +53,8 @@ public class HeartbeatService extends TimerTask {
       if ( beatType == 0 && majorFiles.containsKey( filename ) ) {
         continue;
       }
-
-      FileReaderFactory factory = FileReaderFactory.getInstance();
-      FileReader fileReader = factory.createFileReader( filename );
-      fileReader.readAndProcess( chunkServer.getFileSynchronizer() );
-
-      if ( fileReader.isCorrupt() ) {
-        ChunkServerReportsFileCorruption report =
-            new ChunkServerReportsFileCorruption( chunkServer.getIdentifier(),
-                filename, fileReader.getCorruption() );
-        try {
-          chunkServer.getControllerConnection()
-                     .getSender()
-                     .sendData( report.getBytes() );
-        } catch ( IOException ioe ) {
-          System.out.println(
-              "heartbeat: Couldn't notify the Controller of corruption. "+
-              ioe.getMessage() );
-        }
-      } else {
-        fileMap.put( filename, fileReader.getMetadata() );
-      }
+      // Temporary until I figure out what to do next...
+      fileMap.put( filename, new FileMetadata( filename, 0, 0 ) );
     }
 
     // if minor heartbeat, put all files that were new, and added to

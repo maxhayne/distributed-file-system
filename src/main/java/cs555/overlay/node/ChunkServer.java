@@ -12,6 +12,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.NoSuchAlgorithmException;
+import java.sql.Array;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Scanner;
 import java.util.Timer;
@@ -32,7 +34,7 @@ public class ChunkServer implements Node {
   private TCPConnection controllerConnection;
   private final TCPConnectionCache connectionCache;
 
-  // Members that are set after successful registration with Controller
+  // These are set in the registrationSetup() method:
   private final AtomicBoolean isRegistered;
   private int identifier;
   private FileSynchronizer synchronizer;
@@ -285,7 +287,6 @@ public class ChunkServer implements Node {
         connectionCache.removeConnection( nextServer );
       }
     }
-
   }
 
   /**
@@ -572,9 +573,7 @@ public class ChunkServer implements Node {
           "registrationInterpreter: There was a problem setting up "+
           "the ChunkServer for operation after it had been registered. "+
           e.getMessage() );
-      if ( synchronizer != null ) {
-        synchronizer = null;
-      }
+      synchronizer = null;
       if ( heartbeatTimer != null ) {
         heartbeatTimer.cancel();
         heartbeatTimer = null;
