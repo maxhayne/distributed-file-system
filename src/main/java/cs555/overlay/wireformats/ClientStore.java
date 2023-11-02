@@ -2,21 +2,18 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
-public class ChunkServerNoStoreFile implements Event {
-
+public class ClientStore implements Event {
   private final byte type;
-  private final String address;
-  // Controller performs lookup to find the identifier of server that
-  // failed to store the file
   private final String filename;
+  private int sequence;
 
-  public ChunkServerNoStoreFile(String address, String filename) {
-    this.type = Protocol.CHUNK_SERVER_NO_STORE_FILE;
-    this.address = address;
+  public ClientStore(String filename, int sequence) {
+    this.type = Protocol.CLIENT_STORE;
     this.filename = filename;
+    this.sequence = sequence;
   }
 
-  public ChunkServerNoStoreFile(byte[] marshalledBytes) throws IOException {
+  public ClientStore(byte[] marshalledBytes) throws IOException {
     ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
     DataInputStream din = new DataInputStream( bin );
 
@@ -25,12 +22,9 @@ public class ChunkServerNoStoreFile implements Event {
     int len = din.readInt();
     byte[] array = new byte[len];
     din.readFully( array );
-    address = new String( array );
-
-    len = din.readInt();
-    array = new byte[len];
-    din.readFully( array );
     filename = new String( array );
+
+    sequence = din.readInt();
 
     din.close();
     bin.close();
@@ -41,19 +35,17 @@ public class ChunkServerNoStoreFile implements Event {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
     DataOutputStream dout = new DataOutputStream( bout );
 
-    dout.write( type );
+    dout.writeByte( type );
 
-    byte[] array = address.getBytes();
+    byte[] array = filename.getBytes();
     dout.writeInt( array.length );
     dout.write( array );
 
-    array = filename.getBytes();
-    dout.writeInt( array.length );
-    dout.write( array );
+    dout.writeInt( sequence );
 
     byte[] marshalledBytes = bout.toByteArray();
-    dout.close();
     bout.close();
+    dout.close();
     return marshalledBytes;
   }
 
@@ -62,21 +54,15 @@ public class ChunkServerNoStoreFile implements Event {
     return type;
   }
 
-  /**
-   * Getter for filename.
-   *
-   * @return filename
-   */
   public String getFilename() {
     return filename;
   }
 
-  /**
-   * Getter for address.
-   *
-   * @return host:port address
-   */
-  public String getAddress() {
-    return address;
+  public int getSequence() {
+    return sequence;
+  }
+
+  public void incrementSequence() {
+    sequence++;
   }
 }

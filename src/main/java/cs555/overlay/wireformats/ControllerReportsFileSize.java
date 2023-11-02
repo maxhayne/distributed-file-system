@@ -1,53 +1,65 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ControllerReportsFileSize implements Event {
 
-	public String filename;
-	public int totalchunks;
+  private final byte type;
+  private final String filename;
+  private final int totalChunks;
 
-	public ControllerReportsFileSize(String filename, int totalchunks) {
-		this.filename = filename;
-		this.totalchunks = totalchunks;
-	}
+  public ControllerReportsFileSize(String filename, int totalChunks) {
+    this.type = Protocol.CONTROLLER_REPORTS_FILE_SIZE;
+    this.filename = filename;
+    this.totalChunks = totalChunks;
+  }
 
-	public ControllerReportsFileSize(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int fileLength = buffer.getInt();
-		byte[] filearray = new byte[fileLength];
-		buffer.get(filearray);
-		this.filename = new String(filearray);
-		this.totalchunks = buffer.getInt();
-	}
+  public ControllerReportsFileSize(byte[] marshalledBytes) throws IOException {
+    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+    DataInputStream din = new DataInputStream( bin );
 
-	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
+    type = din.readByte();
 
-		dout.writeByte(Protocol.CONTROLLER_REPORTS_FILE_SIZE);
-		byte[] array = filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
-		dout.writeInt(totalchunks);
+    int len = din.readInt();
+    byte[] array = new byte[len];
+    din.readFully( array );
+    filename = new String( array );
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
+    totalChunks = din.readInt();
 
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		array = null;
-		return marshalledBytes;
-	}
+    din.close();
+    bin.close();
+  }
 
-	public byte getType() throws IOException {
-		return Protocol.CONTROLLER_REPORTS_FILE_SIZE;
-	}
+  @Override
+  public byte[] getBytes() throws IOException {
+    ByteArrayOutputStream bout = new ByteArrayOutputStream();
+    DataOutputStream dout = new DataOutputStream( bout );
+
+    dout.write( type );
+
+    byte[] array = filename.getBytes();
+    dout.writeInt( array.length );
+    dout.write( array );
+
+    dout.writeInt( totalChunks );
+
+    byte[] returnable = bout.toByteArray();
+    dout.close();
+    bout.close();
+    return returnable;
+  }
+
+  @Override
+  public byte getType() {
+    return type;
+  }
+
+  public String getFilename() {
+    return filename;
+  }
+
+  public int getTotalChunks() {
+    return totalChunks;
+  }
 }

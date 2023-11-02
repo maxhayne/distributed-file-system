@@ -8,7 +8,7 @@
 # Originally written by Jason Stock, Graduate Student at CSU in Computer Science
 # I've taken the base file and modified it so that it works with my code
 
-MULTI="1 2 3 4 5 6 7 8 9"
+MULTI="1 2 3 4 5 6 7 8 9 10 11"
 
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 JAR_PATH="$DIR/conf/:$DIR/build/libs/distributed-file-system.jar"
@@ -23,7 +23,7 @@ function new_tab() {
     osascript \
         -e "tell application \"Terminal\"" \
         -e "tell application \"System Events\" to keystroke \"t\" using {command down}" \
-        -e "delay 1" \
+        -e "delay 0.5" \
         -e "do script \"$SCRIPT $1;\" in front window" \
         -e "end tell" > /dev/null
 }
@@ -43,11 +43,9 @@ then
 else
     if [[ -n "$MULTI" ]]
     then
-        mkdir -p "$DIR/servers"
         for tab in `echo $MULTI`
         do
-            mkdir "$DIR/servers/server$tab"
-            new_tab "$DIR/servers/server$tab"
+            new_tab
         done
     fi
 fi

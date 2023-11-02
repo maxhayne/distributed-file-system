@@ -1,55 +1,78 @@
 package cs555.overlay.wireformats;
-import java.io.ByteArrayOutputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.nio.ByteBuffer;
+
+import java.io.*;
 
 public class ChunkServerServesFile implements Event {
 
-	public String filename;
-	public byte[] filedata;
+  private final byte type;
+  private final String filename;
+  private final byte[] content;
 
-	public ChunkServerServesFile(String filename, byte[] filedata) {
-		this.filename = filename;
-		this.filedata = filedata;
-	}
+  public ChunkServerServesFile(String filename, byte[] content) {
+    this.type = Protocol.CHUNK_SERVER_SERVES_FILE;
+    this.filename = filename;
+    this.content = content;
+  }
 
-	public ChunkServerServesFile(byte[] msg) {
-		ByteBuffer buffer = ByteBuffer.wrap(msg);
-		buffer.position(1);
-		int filelength = buffer.getInt();
-		byte[] array = new byte[filelength];
-		buffer.get(array);
-		this.filename = new String(array);
-		int datalength = buffer.getInt();
-		byte[] dataarray = new byte[datalength];
-		buffer.get(dataarray);
-		this.filedata = dataarray;
-	}
+  public ChunkServerServesFile(byte[] marshalledBytes) throws IOException {
+    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
+    DataInputStream din = new DataInputStream( bin );
 
-	public byte[] getBytes() throws IOException {
-		byte[] marshalledBytes = null;
-		ByteArrayOutputStream baOutputStream = new ByteArrayOutputStream();
-		DataOutputStream dout = new DataOutputStream(new BufferedOutputStream(baOutputStream));
-		dout.writeByte(Protocol.CHUNK_SERVER_SERVES_FILE);
+    type = din.readByte();
 
-		byte[] array = filename.getBytes();
-		dout.writeInt(array.length);
-		dout.write(array);
-		dout.writeInt(filedata.length);
-		dout.write(filedata);
+    int len = din.readInt();
+    byte[] array = new byte[len];
+    din.readFully( array );
+    filename = new String( array );
 
-		dout.flush();
-		marshalledBytes = baOutputStream.toByteArray();
-		baOutputStream.close();
-		dout.close();
-		baOutputStream = null;
-		dout = null;
-		return marshalledBytes;
-	}
+    len = din.readInt();
+    content = new byte[len];
+    din.readFully( content );
 
-	public byte getType() throws IOException {
-		return Protocol.CHUNK_SERVER_SERVES_FILE;
-	}
+    din.close();
+    bin.close();
+  }
+
+  @Override
+  public byte[] getBytes() throws IOException {
+    ByteArrayOutputStream bout = new ByteArrayOutputStream();
+    DataOutputStream dout = new DataOutputStream( bout );
+
+    dout.write( type );
+
+    byte[] array = filename.getBytes();
+    dout.writeInt( array.length );
+    dout.write( array );
+
+    dout.writeInt( content.length );
+    dout.write( content );
+
+    byte[] marshalledBytes = bout.toByteArray();
+    dout.close();
+    bout.close();
+    return marshalledBytes;
+  }
+
+  @Override
+  public byte getType() {
+    return type;
+  }
+
+  /**
+   * Getter for filename.
+   *
+   * @return filename
+   */
+  public String getFilename() {
+    return filename;
+  }
+
+  /**
+   * Getter for content.
+   *
+   * @return byte[] content of served file
+   */
+  public byte[] getContent() {
+    return content;
+  }
 }

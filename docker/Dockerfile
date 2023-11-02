@@ -35,7 +35,7 @@ WORKDIR /app
 COPY --from=build /app/build/libs/*.jar /app/dfs.jar
 COPY config /app/config
 
-ENTRYPOINT ["java", "-cp", "./dfs.jar", "cs555.overlay.node.ChunkServer", "/tmp"]
+ENTRYPOINT ["java", "-cp", "./dfs.jar", "cs555.overlay.node.ChunkServer"]
 
 
 ### Client run stage

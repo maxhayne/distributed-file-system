@@ -1,267 +1,222 @@
 package cs555.overlay.util;
-import cs555.overlay.wireformats.ControllerRequestsFileAcquire;
-import cs555.overlay.wireformats.ControllerRequestsFileDelete;
-import cs555.overlay.transport.ChunkServerConnectionCache;
-import cs555.overlay.transport.ChunkServerConnection;
-import cs555.overlay.transport.TCPSender;
-import cs555.overlay.node.ChunkServer;
-import java.net.UnknownHostException;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.TimerTask;
-import java.util.TreeMap;
-import java.util.Vector;
-import java.net.Socket;
+
+import cs555.overlay.node.Controller;
+import cs555.overlay.transport.ServerConnection;
+import cs555.overlay.transport.ControllerInformation;
+
+import java.util.ArrayList;
 import java.util.Map;
+import java.util.TimerTask;
 
 public class HeartbeatMonitor extends TimerTask {
 
-	private ChunkServerConnectionCache connectionCache;
-	private Map<Integer,ChunkServerConnection> chunkCache;
-	private DistributedFileCache idealState;
-	private DistributedFileCache reportedState;
+  private final Controller controller;
+  private final ControllerInformation connectionCache;
 
-	public HeartbeatMonitor(ChunkServerConnectionCache connectionCache, 
-			Map<Integer,ChunkServerConnection> chunkCache, DistributedFileCache idealState, 
-			DistributedFileCache reportedState) {
-		this.connectionCache = connectionCache;
-		this.chunkCache = chunkCache;
-		this.idealState = idealState;
-		this.reportedState = reportedState;
-	}
+  public HeartbeatMonitor(Controller controller,
+      ControllerInformation connectionCache) {
+    this.controller = controller;
+    this.connectionCache = connectionCache;
+  }
 
-	private boolean checkChunkFilename(String filename) {
-		boolean matches = filename.matches(".*_chunk[0-9]*$");
-		String[] split = filename.split("_chunk");
-		if (matches && split.length == 2) {
-			return true;
-		}
-		return false;
-	}
+  private String[] splitFilename(String filename) {
+    return filename.split( "_chunk|_shard" );
+  }
 
-	private boolean checkShardFilename(String filename) {
-		boolean matches = filename.matches(".*_chunk[0-9]*_shard[0-8]$");
-		String[] split1 = filename.split("_chunk");
-		String[] split2 = filename.split("_shard");
-		if (matches && split1.length == 2 && split2.length == 2) {
-			return true;
-		}
-		return false;
-	}
+  private String createStringOfFiles(ArrayList<FileMetadata> files) {
+    if ( !files.isEmpty() ) {
+      StringBuilder sb = new StringBuilder();
+      for ( FileMetadata newFile : files ) {
+        sb.append( newFile.filename ).append( ", " );
+      }
+      sb.delete( sb.length()-2, sb.length() );
+      return "[ "+sb+" ]";
+    }
+    return "";
+  }
 
-	// If the version is -1, it is a shard, not a chunk!
-	// Next step will be to determine if the the latest heartbeat is valid,
-	// meaning it has the right type, and the timestamp is within 15 seconds of 
-	// the heartbeat.
+  private long getTimeSinceLastHeartbeat(long now, HeartbeatInformation info) {
+    return Math.min( now-info.getLastMajorHeartbeat(),
+        now-info.getLastMinorHeartbeat() );
+  }
 
-	public synchronized void run() {
-		Vector<Integer> toRemove = new Vector<Integer>();
-		
-		synchronized(chunkCache) { // lock the chunkCache
-			if (chunkCache == null || chunkCache.size() == 0) { return; } // no information to report
-			
-			System.out.println("\nHEARBEAT INFORMATION:");
-			long now = System.currentTimeMillis();
-			for (Map.Entry<Integer,ChunkServerConnection> entry : this.chunkCache.entrySet()) {
-				ChunkServerConnection connection = entry.getValue();
-				System.out.print(connection.print());
-				byte[] temp = connection.retrieveHeartbeatInfo();
-				ByteBuffer data = ByteBuffer.wrap(temp);
-				long lastMajorHeartbeat = data.getLong();
-				long lastMinorHeartbeat = data.getLong();
-				Vector<String> newFiles = new Vector<String>();
-				int newchunks = data.getInt();
-				if (newchunks != 0) {
-					String newnames = "";
-					for (int i = 0; i < newchunks; i++) {
-						int namelength = data.getInt();
-						byte[] array = new byte[namelength];
-						data.get(array);
-						String name = new String(array);
-						newFiles.add(name);
-						name = name.split(",")[0];
-						newnames += name + ", ";
-					}
-					newnames = newnames.substring(0,newnames.length()-2);
-					System.out.print("[ " + newnames + " ]\n");
-				}
+  private int getLastHeartbeatType(long now, HeartbeatInformation info) {
+    return now-info.getLastMajorHeartbeat() < now-info.getLastMinorHeartbeat() ?
+               0 : 1;
+  }
 
-				long lastHeartbeat;
-				int beatType;
-				if (now-lastMajorHeartbeat < now-lastMinorHeartbeat) {
-					lastHeartbeat = now-lastMajorHeartbeat;
-					beatType = 1;
-				} else {
-					lastHeartbeat = now-lastMinorHeartbeat;
-					beatType = 0;
-				}
+  private int calculateUnhealthyScore(long now, long connectionStartTime,
+      HeartbeatInformation info) {
+    int unhealthyScore = 0;
+    // ChunkServer has missed a major heartbeat
+    if ( info.getLastMajorHeartbeat() != -1 &&
+         now-info.getLastMajorHeartbeat() > (Constants.HEARTRATE*11) ) {
+      unhealthyScore += 1;
+    }
+    // ChunkServer has missed a minor heartbeat
+    if ( info.getLastMinorHeartbeat() != -1 &&
+         now-info.getLastMinorHeartbeat() > (Constants.HEARTRATE*2) ) {
+      unhealthyScore += 1+( int ) (
+          (now-info.getLastMinorHeartbeat()-(Constants.HEARTRATE*2))/
+          Constants.HEARTRATE); // extra unhealthy for more
+    }
+    // Hasn't even sent a minor heartbeat
+    if ( now-connectionStartTime > (Constants.HEARTRATE*2) &&
+         info.getLastMinorHeartbeat() == -1 ) {
+      unhealthyScore += 1;
+    } // Hasn't even sent a major heartbeat
+    if ( now-connectionStartTime > Constants.HEARTRATE &&
+         info.getLastMajorHeartbeat() == -1 ) {
+      unhealthyScore += 1;
+    }
+    return unhealthyScore;
+  }
 
-				// Do some logic on the reportedState DistributedFileCache, assuming this is a healthy heartbeat
-				if (lastHeartbeat < Constants.HEARTRATE) {
-					Vector<Chunk> newChunks = new Vector<Chunk>();
-					Vector<Shard> newShards = new Vector<Shard>();
-					for (String name : newFiles) {
-						//System.out.println(name);
-						String[] split = name.split(",");
-						int version = Integer.valueOf(split[1]);
-						if (version == -1) { // shard
-							if (!checkShardFilename(split[0])) { continue; }
-							String[] chunkSplit = split[0].split("_chunk");
-							// chunkSplit[0] is the filename
-							String[] shardSplit = split[0].split("_shard");
-							int sequence = Integer.valueOf(chunkSplit[1].split("_shard")[0]);
-							int shardnumber = Integer.valueOf(shardSplit[1]);
-							Shard newShard = new Shard(chunkSplit[0],sequence,shardnumber,connection.getIdentifier(),false);
-							newShards.add(newShard);
-						} else { // chunk
-							if (!checkChunkFilename(split[0])) { continue; }
-							String[] chunkSplit = split[0].split("_chunk");
-							int sequence = Integer.valueOf(chunkSplit[1]);
-							Chunk newChunk = new Chunk(chunkSplit[0],sequence,version,connection.getIdentifier(),false);
-							newChunks.add(newChunk);
-						}
-					}
-					if (beatType == 0) {
-						// Add all the new files...
-						for (Chunk chunk : newChunks)
-							reportedState.addChunk(chunk);
-						for (Shard shard : newShards)
-							reportedState.addShard(shard);
-						newChunks.clear();
-						newShards.clear();
-					} else {
-						// Remove all of this node's old files from the filecache
-						reportedState.removeAllFilesAtServer(connection.getIdentifier());
-						// and add all the new files...
-						for (Chunk chunk : newChunks)
-							reportedState.addChunk(chunk);
-						for (Shard shard : newShards)
-							reportedState.addShard(shard);
-						newChunks.clear();
-						newShards.clear();
-					}
-				}
+  private void adjustConnectionHealth(int unhealthyScore,
+      ServerConnection connection) {
+    if ( unhealthyScore >= 2 ) {
+      connection.incrementUnhealthy();
+    } else {
+      connection.decrementUnhealthy();
+    }
+  }
 
-				// Now need to handle some logic having to do with whether a chunkserver is alive
-				int unhealthy = 0;
-				if (lastMajorHeartbeat != -1 && now-lastMajorHeartbeat > (Constants.HEARTRATE*11))
-					unhealthy += 1;
-				if (lastMinorHeartbeat != -1 && now-lastMinorHeartbeat > (Constants.HEARTRATE*2))
-					unhealthy += 1 + (int)((now-lastMinorHeartbeat-(Constants.HEARTRATE*2))/Constants.HEARTRATE); // extra unhealthy for more missed minor heartbeats
-				if (now-connection.getStartTime() > (Constants.HEARTRATE*2) && lastMinorHeartbeat == -1)
-					unhealthy += 1;
-				if (now-connection.getStartTime() > Constants.HEARTRATE && lastMajorHeartbeat == -1)
-					unhealthy += 1;
+  public synchronized void run() {
+    ArrayList<Integer> toDeregister = new ArrayList<>();
 
-				// Add a 'poke' message to send to the ChunkServer, and on the next heartbeat, add to 'unhealthy'
-				// the descrepancy between the 'pokes' and the 'poke replies'.
+    // THIS SHOULD NOW SYNCHRONIZE ON THE CONTROLLER ITSELF, SO THAT WE CAN
+    // PREVENT CHUNKS FROM BEING ADDED OR SUBTRACTED, OR SERVERS FROM
+    // REGISTERING OR DEREGISTERING WHILE WE ARE CONDUCTING ANALYSIS ON THE
+    // HEARTBEATS
+    synchronized( controller ) { // lock the Controller
+      Map<Integer, ServerConnection> registeredServers =
+          connectionCache.getRegisteredServers();
+      if ( registeredServers.isEmpty() ) {
+        return; // no information to report
+      }
 
-				// Can have total of 4 strikes the server, 2 or more should be considered unhealthy
-				if (unhealthy >= 2) { connection.incrementUnhealthy(); }
-				else { connection.decrementUnhealthy(); }
+      StringBuilder sb = new StringBuilder();
+      sb.append( "\nHeartbeat Monitor:" );
 
-				// If this node has failed 3 times in a row, remove it from the cache of chunkservers
-				if (connection.getUnhealthy() > 3) { toRemove.add(connection.getIdentifier()); }
-			}
+      long now = System.currentTimeMillis();
+      for ( ServerConnection connection : registeredServers.values() ) {
 
-			// Prune these data structures to remove stragglers
-			idealState.prune();
-			reportedState.prune();
-			
-			// Can use this to try to replace files that have somehow vanished from their correct nodes.
-			try {
-				//System.out.println("Files in 'idealState' that aren't in 'reportedState':");
-				Vector<String> diffs1 = idealState.differences(reportedState);
-				for (String diff : diffs1) {
-					// filetype,basename,sequence,version,serveridentifier,createdTime
-					String[] parts = diff.split(",");
-					// Need to send to this server information about the filename of what it should acquire, along with the list of servers
-					if (System.currentTimeMillis()-Long.valueOf(parts[5]) < Constants.HEARTRATE) continue; // If the chunk is new, might just not have been stored yet.
-					String serverInfo = connectionCache.getChunkServerServerAddress(Integer.valueOf(parts[4]));
-					if (serverInfo.equals("")) continue;
-					String filename;
-					String storageInfo = connectionCache.getChunkStorageInfo(parts[1],Integer.valueOf(parts[2]));
-					String[] servers;
-					if (parts[0].equals("chunk")) { // It is a chunk
-						filename = parts[1] + "_chunk" + parts[2];
-						servers = storageInfo.split("\\|",-1)[0].split(",");
-						// Remove from servers the ChunkServer we are sending this request to
-						String[] serversWithoutSelf;
-						int total = 0;
-						for (String server : servers) {
-							if (!server.equals(serverInfo))
-								total++;
-						}
-						if (total == 0) continue;
-						serversWithoutSelf = new String[total];
-						int index = 0;
-						for (String server : servers) {
-							if (!server.equals(serverInfo)) {
-								serversWithoutSelf[index] = server;
-								index++;
-							}
-						}
-						servers = serversWithoutSelf;
-					} else { // It is a shard
-						filename = parts[1] + "_chunk" + parts[2] + "_shard" + parts[3];
-						servers = storageInfo.split("\\|",-1)[1].split(",");
-						if (servers.length == 1 && servers[0].equals("")) continue;
-					}
-					ControllerRequestsFileAcquire acquire = new ControllerRequestsFileAcquire(filename,servers);
-					connectionCache.sendToChunkServer(Integer.valueOf(parts[4]),acquire.getBytes());
-				}
-			} catch (Exception e) {} // All of this is best effort, so don't let anything derail the HeartbeatMonitor 
+        sb.append( "\n" ).append( connection.toString() );
 
-			/*
-			// Try to delete files from Chunk Servers that shouldn't be there.
-			try {
-				// Can use this one to delete files that should no longer be where they are.
-				//System.out.println("Files in 'reportedState' that aren't in 'idealState':");
-				Vector<String> diffs2 = reportedState.differences(idealState);
-				for (String diff : diffs2) {
-					// filetype,basename,sequence,shardnumber,serveridentifier,createdTime
-					//System.out.println(diff);
-					String[] parts = diff.split(",");
-					ControllerRequestsFileDelete msg;
-					if (parts[0].equals("shard")) {
-						String filename = parts[1] + "_chunk" + parts[2] + "_shard" + parts[3];
-						msg = new ControllerRequestsFileDelete(filename);
-					} else {
-						String filename = parts[1] + "_chunk" + parts[2];
-						msg = new ControllerRequestsFileDelete(filename);
-					}
-					int identifier = Integer.valueOf(parts[4]);
-					try {
-						String address = connectionCache.getChunkServerServerAddress(identifier);
-						if (address.equals("")) continue;
-						String hostname = address.split(":")[0];
-						int port = Integer.valueOf(address.split(":")[1]);
-						Socket connection = new Socket(hostname,port);
-						TCPSender sender = new TCPSender(connection);
-						sender.sendData(msg.getBytes());
-						connection.close();
-						sender = null;
-						// Remove the file from reportedState
-						if (parts[0].equals("shard")) {
-							reportedState.removeShard(new Shard(parts[1],Integer.valueOf(parts[2]),Integer.valueOf(parts[3]),Integer.valueOf(parts[4]),false));
-						} else {
-							reportedState.removeChunk(new Chunk(parts[1],Integer.valueOf(parts[2]),Integer.valueOf(parts[3]),Integer.valueOf(parts[4]),false));
-						}
-					} catch (Exception e) {
-						// This is best effort.
-					}
-				}
-			} catch (Exception e) {
-				// All of this is best effort, so don't let anything derail the HeartbeatMonitor
-			}
-			*/
+        HeartbeatInformation heartbeatInformation =
+            connection.getHeartbeatInfo().copy();
 
-			System.out.println();
-		}
-		for (Integer i : toRemove) {
-			connectionCache.deregister(i);
-		}
-		toRemove.clear();
-		toRemove = null;
-	}
+        // Append list of new files to print later
+        sb.append( "\n" )
+          .append( createStringOfFiles( heartbeatInformation.getFiles() ) );
+
+        long timeSinceLastHeartbeat =
+            getTimeSinceLastHeartbeat( now, heartbeatInformation );
+        int lastBeatType = getLastHeartbeatType( now, heartbeatInformation );
+
+        // Give the connection between the Controller and this ChunkServer a
+        // score measuring how unhealthy it is.
+        int unhealthyScore =
+            calculateUnhealthyScore( now, connection.getStartTime(),
+                heartbeatInformation );
+
+        // Add a 'poke' message to send to the ChunkServer, and on
+        // the next heartbeat, add to 'unhealthy' the discrepancy
+        // between the 'pokes' and the 'poke replies'.
+
+        // If unhealthyScore >= 2, increment connection's 'unhealthy' counter
+        adjustConnectionHealth( unhealthyScore, connection );
+
+        // If this node has failed 3 heartbeats in a row, deregister it
+        if ( connection.getUnhealthy() > 3 ) {
+          toDeregister.add( connection.getIdentifier() );
+        }
+      }
+
+      // Print the contents of all heartbeats for registered ChunkServers
+      System.out.println( sb.toString() );
+
+      // For major heartbeats, the Controller check that there are no chunks
+      // that should be held by the ChunkServer but aren't. It should then
+      // try to replace those missing files by sending out repair messages.
+
+      // Try to replace files missing from ChunkServers
+      //ArrayList<String> missingFiles = idealState.differences(
+      // reportedState );
+      //System.out.println( missingFiles.size() );
+      //      for ( String file : missingFiles )
+      //        System.out.print( file + " ");
+      /*
+      for ( String missingFile : missingFiles ) {
+        // missingFile structure: "timestamp,baseFilename,sequence,
+        // serverIdentifier, (optional) fragment"
+        String[] missingFileSplit = missingFile.split( "," );
+
+        // Decode what was returned
+        long timestamp = Long.parseLong( missingFileSplit[0] );
+        String baseFilename = missingFileSplit[1];
+        int sequence = Integer.parseInt( missingFileSplit[2] );
+        int serverIdentifier = Integer.parseInt( missingFileSplit[3] );
+        int fragment = missingFileSplit.length == 5 ?
+                           Integer.parseInt( missingFileSplit[4] ) : -1;
+
+        // if chunk is newly created,
+        if ( now-timestamp < Constants.HEARTRATE ) {
+          continue; // If the chunk is new, might just not have been stored
+          // yet.
+        }
+
+        String serverAddress =
+            connectionCache.getChunkServerAddress( serverIdentifier );
+        if ( serverAddress.isEmpty() ) {
+          continue;
+        }
+
+        String storageInfo =
+            connectionCache.getChunkStorageInfo( baseFilename, sequence );
+
+        Event repairMessage;
+        String addressToContact;
+        String filename;
+        if ( missingFileSplit.length == 4 ) { // It is a chunk
+          filename = baseFilename+"_chunk"+sequence;
+          String[] servers = storageInfo.split( "\\|", -1 )[0].split( "," );
+          // Remove destination server from list of servers
+          servers = ArrayUtilities.removeFromArray( servers, serverAddress );
+          RepairChunk repairChunk = new RepairChunk( filename, serverAddress,
+              new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 }, servers );
+          addressToContact = repairChunk.getAddress();
+          repairMessage = repairChunk;
+        } else { // It is a shard
+          filename = baseFilename+"_chunk"+sequence+"_shard"+fragment;
+          String[] servers = storageInfo.split( "\\|", -1 )[1].split( "," );
+          if ( servers.length == 1 && servers[0].isEmpty() ) {
+            continue;
+          }
+          // Replace "-1" with null in shard server array
+          ArrayUtilities.replaceArrayItem( servers, "-1", null );
+          RepairShard repairShard =
+              new RepairShard( filename, serverAddress, servers );
+          addressToContact = repairShard.getAddress();
+          repairMessage = repairShard;
+        }
+
+        try {
+          connectionCache.getConnection( addressToContact )
+                         .getConnection()
+                         .getSender()
+                         .sendData( repairMessage.getBytes() );
+        } catch ( Exception e ) {
+          System.err.println( "HearbeatMonitor::run: There was a problem "+
+                              "sending the repair request to "+addressToContact+
+                              " to replace '"+filename+"' at "+serverAddress+
+                              "."+e.getMessage() );
+        }
+      }
+      */
+    }
+    for ( Integer i : toDeregister ) {
+      controller.deregister( i );
+    }
+  }
 }

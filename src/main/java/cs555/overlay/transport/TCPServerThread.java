@@ -1,63 +1,49 @@
 package cs555.overlay.transport;
-import cs555.overlay.util.FileDistributionService;
-import java.net.ServerSocket;
+
+import cs555.overlay.node.Node;
+
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.net.Socket;
 
-public class TCPServerThread extends Thread {
-	
-	private ServerSocket server;
-	private boolean controller;
+/**
+ * Class to encapsulate a server socket, which will be available to connect to
+ * at every node instance in the system.
+ *
+ * @author hayne
+ */
+public class TCPServerThread implements Runnable {
 
-	private ChunkServerConnectionCache connectionCache; // used at Controller
-	private FileDistributionService fileService; // used at ChunkServer
+  private final Node node;
+  private final ServerSocket serverSocket;
 
-	// Constructor for Controller
-	public TCPServerThread(ServerSocket socket, ChunkServerConnectionCache connectionCache) {
-		this.server = socket;
-		this.connectionCache = connectionCache;
-		this.controller = true;
-	}
+  /**
+   * Default constructor.
+   *
+   * @param node node the server is being run on
+   * @param serverSocket ServerSocket the thread will be looping
+   */
+  public TCPServerThread(Node node, ServerSocket serverSocket) {
+    this.node = node;
+    this.serverSocket = serverSocket;
+  }
 
-	// Constructor for ChunkServer
-	public TCPServerThread(ServerSocket socket, FileDistributionService fileService) {
-		this.server = socket;
-		this.fileService = fileService;
-		this.controller = false;
-	}
+  /**
+   * Loops over ServerSocket while it is non-null. Accepts connections when
+   * available, and creates new TCPConnections with active TCPReceiverThreads
+   * for those new connections.
+   */
+  @Override
+  public void run() {
+    while ( serverSocket != null ) {
+      try {
+        Socket newSocket = serverSocket.accept();
+        (new TCPConnection( node, newSocket )).start();
+      } catch ( IOException ioe ) {
+        System.err.println( "ServerSocket has stopped. "+ioe.getMessage() );
+        break;
+      }
 
-	public int getLocalPort() {
-		return server.getLocalPort();
-	}
-
-	public void close() {
-		try {
-			if (server != null) server.close();
-		} catch (IOException ioe) {}
-	}
-
-	@Override
-	public void run() {
-		try {
-			while(true) {
-				Socket incomingConnectionSocket = server.accept(); // accept new connections
-				// Ternary operator for creating a new receiver, is the receiver at the controller or not?
-				Thread receiverThread = this.controller 
-					? new Thread(new TCPReceiverThread(incomingConnectionSocket,this,this.connectionCache)) 
-					: new Thread(new TCPReceiverThread(incomingConnectionSocket,this,this.fileService));
-				receiverThread.start();
-			}
-		} catch (IOException ioe) {
-			//System.err.println("TCPServerThread run IOException: " + ioe);
-		} finally {
-			try {
-				if (server != null)
-					server.close();
-			} catch (IOException ioe) {
-				//System.err.println("TCPServerThread run IOException: " + ioe);
-			}
-		}
-		this.close();
-		System.out.println("Server has stopped.");
-	}
+    }
+  }
 }

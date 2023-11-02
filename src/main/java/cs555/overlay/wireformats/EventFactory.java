@@ -1,96 +1,95 @@
 package cs555.overlay.wireformats;
 
+import java.io.IOException;
+
+/**
+ * Factory to create the type of event which is received in a TCPReceiverThread.
+ * Implemented as singleton. To, in theory, save space.
+ *
+ * @author hayne
+ */
 public class EventFactory {
-	public static Event getEvent(byte eventType, byte[] msg) {
-		switch(eventType) {
-			case Protocol.CHUNK_SERVER_SENDS_REGISTRATION: {
-				return new ChunkServerSendsRegistration(msg);
-			}
 
-			case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS: {
-				return new ControllerReportsChunkServerRegistrationStatus(msg);
-			}
+  private static final EventFactory eventFactory = new EventFactory();
 
-			case Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION: {
-				return new ChunkServerSendsDeregistration(msg);
-			}
+  /**
+   * Private Constructor.
+   */
+  private EventFactory() {}
 
-			case Protocol.CLIENT_REQUESTS_STORE_CHUNK: {
-				return new ClientRequestsStoreChunk(msg);
-			}
+  /**
+   * Gets instance of singleton EventFactory.
+   *
+   * @return eventFactory singleton
+   */
+  public static EventFactory getInstance() {
+    return eventFactory;
+  }
 
-			case Protocol.CONTROLLER_SENDS_CLIENT_VALID_CHUNK_SERVERS: {
-				return new ControllerSendsClientValidChunkServers(msg);
-			}
+  /**
+   * Create new event by inspecting the message type in the first location of
+   * the byte message.
+   *
+   * @param marshalledBytes of received message
+   * @return event created by unmarshalling bytes
+   */
+  public Event createEvent(byte[] marshalledBytes) throws IOException {
+    switch ( marshalledBytes[0] ) {
+      case Protocol.CHUNK_SERVER_SENDS_REGISTRATION:
+      case Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION:
+      case Protocol.CHUNK_SERVER_REQUESTS_FILE:
+      case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
+      case Protocol.CONTROLLER_SENDS_HEARTBEAT:
+      case Protocol.CLIENT_REQUESTS_FILE_LIST:
+      case Protocol.CONTROLLER_APPROVES_FILE_DELETE:
+      case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
+      case Protocol.CLIENT_REQUESTS_FILE_SIZE:
+      case Protocol.CLIENT_REQUESTS_FILE_DELETE:
+      case Protocol.REQUEST_FILE:
+      case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE:
+      case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FOR_STORAGE:
+      case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS:
+      case Protocol.CHUNK_SERVER_DENIES_REQUEST:
+      case Protocol.CONTROLLER_REQUESTS_FILE_DELETE:
+      case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE:
+        return new GeneralMessage( marshalledBytes );
 
-			case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST: {
-				return new ControllerDeniesStorageRequest();
-			}
+      case Protocol.CONTROLLER_SENDS_STORAGE_LIST:
+        return new ControllerSendsStorageList( marshalledBytes );
 
-			case Protocol.CLIENT_REQUESTS_STORE_SHARDS: {
-				return new ClientRequestsStoreShards(msg);
-			}
+      case Protocol.CONTROLLER_SENDS_FILE_LIST:
+        return new ControllerSendsFileList( marshalledBytes );
 
-			case Protocol.CONTROLLER_SENDS_CLIENT_VALID_SHARD_SERVERS: {
-				return new ControllerSendsClientValidShardServers(msg);
-			}
+      case Protocol.CONTROLLER_RESERVES_SERVERS:
+        return new ControllerReservesServers( marshalledBytes );
 
-			case Protocol.CLIENT_REQUESTS_FILE_DELETE: {
-				return new ClientRequestsFileDelete(msg);
-			}
+      case Protocol.CLIENT_STORE:
+        return new ClientStore( marshalledBytes );
 
-			case Protocol.CONTROLLER_APPROVES_FILE_DELETE: {
-				return new ControllerApprovesFileDelete();
-			}
+      case Protocol.REPAIR_CHUNK:
+        return new RepairChunk( marshalledBytes );
 
-			case Protocol.CONTROLLER_REQUESTS_FILE_DELETE: {
-				return new ControllerRequestsFileDelete(msg);
-			}
+      case Protocol.REPAIR_SHARD:
+        return new RepairShard( marshalledBytes );
 
-			case Protocol.SENDS_FILE_FOR_STORAGE: {
-				return new SendsFileForStorage(msg);
-			}
+      case Protocol.SENDS_FILE_FOR_STORAGE:
+        return new SendsFileForStorage( marshalledBytes );
 
-			case Protocol.REQUESTS_CHUNK: {
-				return new RequestsChunk(msg);
-			}
+      case Protocol.CHUNK_SERVER_SERVES_FILE:
+        return new ChunkServerServesFile( marshalledBytes );
 
-			case Protocol.REQUESTS_SHARD: {
-				return new RequestsShard(msg);
-			}
+      case Protocol.CHUNK_SERVER_SENDS_HEARTBEAT:
+        return new ChunkServerSendsHeartbeat( marshalledBytes );
 
-			case Protocol.CHUNK_SERVER_DENIES_REQUEST: {
-				return new ChunkServerDeniesRequest(msg);
-			}
+      case Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT:
+        return new ChunkServerRespondsToHeartbeat( marshalledBytes );
 
-			case Protocol.CHUNK_SERVER_SERVES_FILE: {
-				return new ChunkServerServesFile(msg);
-			}
+      case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION:
+        return new ChunkServerReportsFileCorruption( marshalledBytes );
 
-			case Protocol.CHUNK_SERVER_SENDS_HEARTBEAT: {
-				return new ChunkServerSendsHeartbeat(msg);
-			}
-
-			case Protocol.CONTROLLER_SENDS_HEARTBEAT: {
-				return new ControllerSendsHeartbeat();
-			}
-
-			case Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT: {
-				return new ChunkServerRespondsToHeartbeat();
-			}
-
-			case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION: {
-				return new ChunkServerReportsFileCorruption(msg);
-			}
-
-			case Protocol.CONTROLLER_SENDS_STORAGE_LIST: {
-				return new ControllerSendsStorageList(msg);
-			}
-
-			case Protocol.CONTROLLER_REQUESTS_FILE_ACQUIRE: {
-				return new ControllerRequestsFileAcquire(msg);
-			}
-		}
-		return null;
-	}
+      default:
+        System.err.println( "Event couldn't be created. "+marshalledBytes[0] );
+        return null;
+    }
+  }
 }
