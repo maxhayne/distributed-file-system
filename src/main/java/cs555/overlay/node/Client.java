@@ -17,9 +17,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * Client node in the DFS. It is responsible for parsing commands from the
- * user to store or retrieve files (mostly). It can parse various other
- * commands too.
+ * Client node in the DFS. It is responsible for parsing commands from the user
+ * to store or retrieve files (mostly). It can parse various other commands
+ * too.
  *
  * @author hayne
  */
@@ -135,6 +135,12 @@ public class Client implements Node {
     }
   }
 
+  /**
+   * Directs a file received from a ChunkServer to the ClientReader waiting for
+   * chunks/shards to arrive.
+   *
+   * @param event message being handled
+   */
   private void directFileToReader(Event event) {
     ChunkServerServesFile serveMessage = ( ChunkServerServesFile ) event;
     String baseFilename =

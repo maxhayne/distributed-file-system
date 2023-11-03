@@ -187,17 +187,17 @@ public class ClientReader implements Runnable {
   private void wrangleChunks() throws InterruptedException {
     int requests;
     do {
-      System.out.println( "wrangling" );
+      //System.out.println( "wrangling" );
       requests = requestUnaskedServers( true );
       if ( requests == 0 ) {
-        System.out.println( "requests == 0" );
+        //System.out.println( "requests == 0" );
         break; // stop the process if no other servers can be contacted
       } else {
         requestUnaskedServers( false );
       }
     } while ( !writeLatch.await( 10000+(10L*requests),
         TimeUnit.MILLISECONDS ) );
-    System.out.println( writeLatch.getCount() );
+    //System.out.println( writeLatch.getCount() );
   }
 
   /**
@@ -279,7 +279,7 @@ public class ClientReader implements Runnable {
     client.removeReader( filename ); // remove self
     Thread.sleep( 1000 );
     connectionCache.closeConnections(); // shutdown connections
-    System.out.println( "The ClientReader for '"+filename+"' has closed." );
+    System.out.println( "The ClientReader for '"+filename+"' has cleaned up." );
   }
 
   /**

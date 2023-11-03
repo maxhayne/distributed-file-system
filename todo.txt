@@ -172,3 +172,24 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - ChunkServers should try to reinitialize their connection to the Controller if it becomes broken. It'll have to be done with synchronization, as the controllerConnection might be accessed by mulitple threads reading corrupt files, or the HeartbeatService.
 
 - During slow downloads to the Client, the ChunkServers appear to be blocked, preventing Heartbeats from being sent. How can this be solved?
+
+- To make the ChunkServers keep track of the FileMetadata's they should be storing, all storage, deletion, and repair operations will need to be synchronized on the data structure storing the file metadata. Otherwise, the FileMetadata could be changed by thread one, then changed by thread two, then written to disk by thread one. That sort of interleaving would not leave the data structure consistent with what is stored on disk, which is undesirable. Here are the instructions for how to use the FileMetadata structure (probably a map) in its different use-cases:
+    - SendsFileForStorage:
+        - Check if there is a file with that name already
+        - If there is update the version and timestamp, if there isn't create a new entry
+        - Write the file to disk
+        - Even if the write fails, don't remove the FileMetadata just added to the map
+    - RepairShard:
+        - If you are the destination, check to see if you have metadata for the file
+        - If you do, update the version number and timestamp, and set the shardreader's FileMetadata to the one you just updated
+        - If you don't create a new FileMetadata for the shard, add it to the map, and then set the shardreader's FileMetadata to it
+        - The ShardWriter will have to be modified to always use the FileMetadata in the shardreader for writing a shard to disk
+        - Write the shard to disk using the updated FileMetadata
+    - RepairChunk:
+        - Same as the steps for RepairShard
+    - DeleteRequest:
+        - Synchronize on the map of file metadatas
+        - Delete all file metadatas that have that particular basename
+        - Then try to delete from disk all files that have that basename
+    - HeartbeatService:
+        - The service must now synchronize on the FileMetadata map so that no changes are made while the heartbeat is assembled

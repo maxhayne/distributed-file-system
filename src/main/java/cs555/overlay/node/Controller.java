@@ -116,24 +116,8 @@ public class Controller implements Node {
         corruptionHelper( event );
         break;
 
-      // Might not need, would be received by ChunkServer processing a
-      // SendsFileForStorage request
-      case Protocol.CHUNK_SERVER_NO_STORE_FILE:
-        missingFileHelper( event );
-        break;
-
-      // Might not need this anymore, fix will be picked up in heartbeat?
-      case Protocol.CHUNK_SERVER_REPORTS_FILE_FIX:
-        //markFileFixed( event );
-        break;
-
-      // Better to combine this case and next into one?
       case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
         clientRead( event, connection );
-        break;
-
-      case Protocol.CLIENT_REQUESTS_FILE_SIZE:
-        fileSizeRequest( event, connection );
         break;
 
       case Protocol.CLIENT_REQUESTS_FILE_LIST:
@@ -164,35 +148,6 @@ public class Controller implements Node {
     } catch ( IOException ioe ) {
       System.err.println( "fileListRequest: Unable to send response"+
                           " to Client containing list of files." );
-    }
-  }
-
-  // Might not be needed anymore...
-
-  /**
-   * Respond to a request for the file size of a particular file stored on the
-   * DFS (how many chunks it contains).
-   *
-   * @param event message being handled
-   * @param connection that produced the event
-   */
-  private synchronized void fileSizeRequest(Event event,
-      TCPConnection connection) {
-    String filename = (( GeneralMessage ) event).getMessage();
-
-    TreeMap<Integer, String[]> sequences =
-        information.getFileTable().get( filename );
-
-    int totalChunks = sequences == null ? 0 : sequences.size();
-
-    ControllerReportsFileSize response =
-        new ControllerReportsFileSize( filename, totalChunks );
-
-    try {
-      connection.getSender().sendData( response.getBytes() );
-    } catch ( IOException ioe ) {
-      System.err.println( "fileSizeRequest: Unable to send response"+
-                          " to Client with size of '"+filename+"'." );
     }
   }
 
@@ -228,69 +183,6 @@ public class Controller implements Node {
                           " containing storage information about "+filename+
                           "." );
     }
-  }
-
-  //  /**
-  //   * Mark the chunk/shard healthy (not corrupt) in the reportedState
-  //   * DistributedFileCache. This action will allow the Controller to tell
-  //   future
-  //   * Clients or ChunkServers that this particular file at this particular
-  //   server
-  //   * is available to be requested.
-  //   *
-  //   * @param event message being handled
-  //   */
-  //  private synchronized void markFileFixed(Event event) {
-  //    ChunkServerReportsFileFix report = ( ChunkServerReportsFileFix ) event;
-  //
-  //    // Mark the specified chunk/shard as healthy, so we can use this
-  //    // ChunkServer as a source for future file requests.
-  //    String baseFilename =
-  //        FilenameUtilities.getBaseFilename( report.getFilename() );
-  //    int sequence = FilenameUtilities.getSequence( report.getFilename() );
-  //    if ( FileSynchronizer.checkChunkFilename( report.filename ) ) { // chunk
-  //      connectionCache.getReportedState()
-  //                     .markChunkHealthy( baseFilename, sequence,
-  //                         report.getIdentifier() ); // Mark healthy
-  //    } else if ( FileSynchronizer.checkShardFilename(
-  //        report.getFilename() ) ) { // shard
-  //      int fragment = FilenameUtilities.getFragment( report.getFilename() );
-  //      connectionCache.getReportedState()
-  //                     .markShardHealthy( baseFilename, sequence, fragment,
-  //                         report.getIdentifier() ); // Mark healthy
-  //    } else {
-  //      System.err.println( "markFileFixed: '"+report.getFilename()+"' is
-  //      not"+
-  //                          " a valid name for either a chunk or a shard"+"
-  //                          ." );
-  //    }
-  //  }
-
-  // This isn't actually used at the moment -- the ChunkServer will never
-  // send this message.
-
-  /**
-   * Change the address in the String[] of servers in the fileTable for this
-   * particular filename and sequence number to null.
-   *
-   * @param event message being handled
-   */
-  private synchronized void missingFileHelper(Event event) {
-    ChunkServerNoStoreFile message = ( ChunkServerNoStoreFile ) event;
-    // We need to remove the Chunk with those properties from the
-    // idealState, and find a new server that can store the file.
-
-    // Remove missing Chunk from idealState
-    String baseFilename =
-        FilenameUtilities.getBaseFilename( message.getFilename() );
-    int identifier =
-        information.getChunkServerIdentifier( message.getAddress() );
-    int sequence = FilenameUtilities.getSequence( message.getFilename() );
-    if ( identifier != -1 ) {
-      information.removeServer( baseFilename, sequence, message.getAddress() );
-    }
-    // Just remove the file for now. Can try to repair the file system
-    // during heartbeats for chunks that aren't replicated 3 times.
   }
 
   // I've begun to think that the only reason an entry in the String[] server

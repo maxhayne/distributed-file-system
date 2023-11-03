@@ -126,7 +126,7 @@ public class ClientWriter implements Runnable {
     Thread.sleep( 1000 );
     connectionCache.closeConnections(); // shutdown connections
     System.out.println(
-        "The ClientWriter for '"+pathToFile.getFileName()+"' has closed." );
+        "The ClientWriter for '"+pathToFile.getFileName()+"' has cleaned up." );
   }
 
   /**

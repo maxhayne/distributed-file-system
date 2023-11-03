@@ -64,7 +64,6 @@ public class ChunkReader implements FileReader {
         FileSynchronizer.checkChunkForCorruption( chunkBytes );
     if ( corruptions.isEmpty() ) {
       corrupt = false;
-      System.out.println( "There are no corruptions!" );
     } else {
       corrupt = true;
       corruptSlices = ArrayUtilities.arrayListToArray( corruptions );
