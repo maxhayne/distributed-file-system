@@ -193,3 +193,7 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
         - Then try to delete from disk all files that have that basename
     - HeartbeatService:
         - The service must now synchronize on the FileMetadata map so that no changes are made while the heartbeat is assembled
+
+- Implement a proper logger with correct log levels. Then add another property in the application.properties file to specify the logging level.
+
+- As it is currently programmed, the Controller never figures out that a chunk is no longer able to be repaired.
