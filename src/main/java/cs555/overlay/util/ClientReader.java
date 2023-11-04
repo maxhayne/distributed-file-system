@@ -251,7 +251,7 @@ public class ClientReader implements Runnable {
       return true; // message sent
     } catch ( IOException ioe ) {
       System.err.println( "requestFileFromServer: "+specificFilename+" "+
-                          "could not be requested from "+address+". "+
+                          "could not be requested from "+address+
                           ioe.getMessage() );
       return false; // message not sent
     }

@@ -30,6 +30,7 @@ public class ChunkServer implements Node {
   private final int port;
   private TCPConnection controllerConnection;
   private final TCPConnectionCache connectionCache;
+  private final FileMap files; // map of files stored by server
 
   // These are set in the registrationSetup() method:
   private final AtomicBoolean isRegistered;
@@ -41,6 +42,7 @@ public class ChunkServer implements Node {
     this.host = host;
     this.port = port;
     this.connectionCache = new TCPConnectionCache();
+    this.files = new FileMap();
     this.isRegistered = new AtomicBoolean( false );
   }
 
@@ -131,7 +133,7 @@ public class ChunkServer implements Node {
         break;
 
       case Protocol.SENDS_FILE_FOR_STORAGE:
-        storeAndRelay( event, connection );
+        storeAndRelay( event );
         break;
 
       case Protocol.REQUEST_FILE:
@@ -171,11 +173,15 @@ public class ChunkServer implements Node {
     // If we are the target in the repair
     if ( repairMessage.getDestination().equals( host+":"+port ) ) {
       if ( shardReader.isCorrupt() ) { // And if the shard is corrupt
-        boolean repaired = repairAndWriteShard( repairMessage, shardReader );
-        String succeeded = repaired ? "" : "NOT";
+        boolean repaired;
+        synchronized( files ) {
+          FileMetadata meta = files.addOrUpdate( repairMessage.getFilename() );
+          repaired = repairAndWriteShard( repairMessage, meta );
+        }
+        String succeeded = repaired ? "" : "NOT ";
         System.out.println(
             "repairShardHelper: '"+repairMessage.getFilename()+"' was "+
-            succeeded+" repaired." );
+            succeeded+"repaired." );
       }
     } else { // try to add our uncorrupted shard
       contributeToShardRepair( repairMessage, shardReader );
@@ -223,12 +229,12 @@ public class ChunkServer implements Node {
    * local corrupt fragment, and write it to disk.
    *
    * @param repairMessage received from another ChunkServer
-   * @param shardReader that was used to read the local fragment
+   * @param metadata associated with the shard
    * @return true if repaired fragment was written to disk, false otherwise
    */
   private boolean repairAndWriteShard(RepairShard repairMessage,
-      ShardReader shardReader) {
-    ShardWriter shardWriter = new ShardWriter( shardReader );
+      FileMetadata metadata) {
+    ShardWriter shardWriter = new ShardWriter( metadata );
     shardWriter.setReconstructionShards( repairMessage.getFragments() );
     try {
       shardWriter.prepare();
@@ -257,11 +263,15 @@ public class ChunkServer implements Node {
     // If we are the target for the repair
     if ( repairMessage.getDestination().equals( host+":"+port ) ) {
       if ( chunkReader.isCorrupt() ) { // And if the chunk is corrupt
-        boolean repaired = repairAndWriteChunk( repairMessage, chunkReader );
-        String succeeded = repaired ? "" : "NOT";
+        boolean repaired;
+        synchronized( files ) {
+          FileMetadata meta = files.addOrUpdate( repairMessage.getFilename() );
+          repaired = repairAndWriteChunk( repairMessage, chunkReader, meta );
+        }
+        String succeeded = repaired ? "" : "NOT ";
         System.out.println(
             "repairChunkHelper: '"+repairMessage.getFilename()+"' was "+
-            succeeded+" repaired." );
+            succeeded+"repaired." );
       }
     } else { // Try to attach uncorrupted slices and relay the message
       contributeToChunkRepair( repairMessage, chunkReader );
@@ -302,6 +312,7 @@ public class ChunkServer implements Node {
     for ( int index : slicesNeedingRepair ) {
       // 'contains' function always returns false if localCorruptSlices=null
       if ( !ArrayUtilities.contains( localCorruptSlices, index ) ) {
+        System.out.println( "Adding slice "+index+" to message." );
         repairMessage.attachSlice( index, localSlices[index] );
       }
     }
@@ -317,8 +328,8 @@ public class ChunkServer implements Node {
    * @return true if successfully wrote repaired chunk to disk, false otherwise
    */
   private boolean repairAndWriteChunk(RepairChunk repairMessage,
-      ChunkReader chunkReader) {
-    ChunkWriter chunkWriter = new ChunkWriter( chunkReader );
+      ChunkReader chunkReader, FileMetadata metadata) {
+    ChunkWriter chunkWriter = new ChunkWriter( metadata, chunkReader );
     if ( repairMessage.getRepairedIndices() == null ) {
       System.out.println( "repairAndWriteChunk: repaired indices is null." );
     }
@@ -419,39 +430,28 @@ public class ChunkServer implements Node {
    * ChunkServer.
    *
    * @param event message being processed
-   * @param connection that sent the message
    */
-  private void storeAndRelay(Event event, TCPConnection connection) {
+  private void storeAndRelay(Event event) {
     SendsFileForStorage message = ( SendsFileForStorage ) event;
 
-    // Send acknowledgement that we received the file?
-    // MAY REMOVE LATER...
-    /*
-    try {
-      sendGeneralMessage( Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FOR_STORAGE,
-          message.getFilename(), connection );
-    } catch ( IOException ioe ) {
-      System.err.println(
-          "storeAndRelay: Unable to send acknowledgement to sender of '"+
-          message.getFilename()+"'. "+ioe.getMessage() );
-    }
-     */
-
-    // Try to write the file to disk
-    FileWriterFactory factory = FileWriterFactory.getInstance();
-    // WRITER WILL BE NULL IF FILENAME INCORRECT
-    FileWriter writer =
-        factory.createFileWriter( message.getFilename(), message.getContent() );
-    boolean writtenSuccessfully = false;
-    try {
-      writer.prepare();
-      writtenSuccessfully = writer.write( synchronizer );
-    } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println(
-          "storeAndRelay: SHA1 is not available. "+nsae.getMessage() );
+    boolean success = false;
+    synchronized( files ) { // Add to 'files' and write to disk
+      FileMetadata meta = files.addOrUpdate( message.getFilename() );
+      FileWriterFactory factory = FileWriterFactory.getInstance();
+      // writer will be null if filename isn't formatted correctly
+      FileWriter writer = factory.createFileWriter( meta );
+      writer.setContent( message.getContent() );
+      try {
+        writer.prepare();
+        success = writer.write( synchronizer );
+      } catch ( NoSuchAlgorithmException nsae ) {
+        System.err.println(
+            "storeAndRelay: SHA1 is not available. "+nsae.getMessage() );
+      }
     }
 
-    String not = writtenSuccessfully ? "" : "NOT ";
+    // Print debug message
+    String not = success ? "" : "NOT ";
     System.out.println(
         "storeAndRelay: '"+message.getFilename()+"' was "+not+"stored." );
 
@@ -488,19 +488,22 @@ public class ChunkServer implements Node {
     String filename = (( GeneralMessage ) event).getMessage();
     System.out.println( "deleteRequestHelper: Attempting to delete '"+filename+
                         "' from the ChunkServer." );
-    try {
-      synchronizer.deleteFile( filename );
-    } catch ( IOException ioe ) {
-      System.out.println(
-          "deleteRequestHelper: Could not delete file. "+ioe.getMessage() );
-    }
-    try {
-      sendGeneralMessage( Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE,
-          filename, connection );
-    } catch ( IOException ioe ) {
-      System.err.println(
-          "deleteRequestHelper: Unable to send acknowledgement of "+
-          "deletion to Controller. "+ioe.getMessage() );
+    synchronized( files ) {
+      files.deleteFile( filename );
+      try {
+        synchronizer.deleteFile( filename );
+      } catch ( IOException ioe ) {
+        System.out.println(
+            "deleteRequestHelper: Could not delete file. "+ioe.getMessage() );
+      }
+      try {
+        sendGeneralMessage( Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE,
+            filename, connection );
+      } catch ( IOException ioe ) {
+        System.err.println(
+            "deleteRequestHelper: Unable to send acknowledgement of "+
+            "deletion to Controller. "+ioe.getMessage() );
+      }
     }
   }
 
@@ -660,21 +663,15 @@ public class ChunkServer implements Node {
   }
 
   /**
-   * Prints a list of files stored at this ChunkServer with valid chunk/shard
-   * filenames.
+   * Prints a list of files stored at this ChunkServer. Format is "timestamp
+   * version filename" on each line.
    */
   private void listFiles() {
-    String[] fileList;
-    try {
-      fileList = synchronizer.listFiles();
-    } catch ( IOException ioe ) {
-      System.err.println( "listFiles: There was a problem generating a list "+
-                          "of stored files. "+ioe.getMessage() );
-      return;
-    }
-    if ( fileList != null ) {
-      for ( String filename : fileList ) {
-        System.out.printf( "%3s%s%n", "", filename );
+    // New way to do it
+    synchronized( files ) {
+      for ( FileMetadata metadata : files.getFiles().values() ) {
+        System.out.printf( "%3s%d %d %s%n", "", metadata.getTimestamp(),
+            metadata.getVersion(), metadata.getFilename() );
       }
     }
   }
@@ -709,6 +706,15 @@ public class ChunkServer implements Node {
    */
   public FileSynchronizer getFileSynchronizer() {
     return synchronizer;
+  }
+
+  /**
+   * Returns FileMap of files for this ChunkServer.
+   *
+   * @return files
+   */
+  public FileMap getFiles() {
+    return files;
   }
 
   /**

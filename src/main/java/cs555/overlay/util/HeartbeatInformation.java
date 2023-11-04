@@ -18,8 +18,8 @@ public class HeartbeatInformation {
   private ArrayList<FileMetadata> files;
 
   public HeartbeatInformation() {
-    this.lastMajorHeartbeat = -1;
-    this.lastMinorHeartbeat = -1;
+    this.lastMajorHeartbeat = 0;
+    this.lastMinorHeartbeat = 0;
     this.freeSpace = 0;
     this.totalChunks = 0;
     this.files = new ArrayList<>();

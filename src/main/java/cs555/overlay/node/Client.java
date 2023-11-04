@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.net.Socket;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -30,6 +32,9 @@ public class Client implements Node {
   private final ConcurrentMap<String, ClientWriter> writers;
   private final ConcurrentMap<String, ClientReader> readers;
   private Path workingDirectory;
+  private final SimpleDateFormat format; // for appending to filenames
+  private String[] controllerFileList;
+  private final Object listLock; // for protecting the controllerFileList
 
   /**
    * Default constructor.
@@ -41,6 +46,8 @@ public class Client implements Node {
     this.writers = new ConcurrentHashMap<>();
     this.readers = new ConcurrentHashMap<>();
     this.workingDirectory = Paths.get( System.getProperty( "user.dir" ) );
+    this.format = new SimpleDateFormat( "yyyy-MM-dd-HHmmss" );
+    this.listLock = new Object();
   }
 
   /**
@@ -109,11 +116,11 @@ public class Client implements Node {
 
       case Protocol.CHUNK_SERVER_DENIES_REQUEST:
         String filename = (( GeneralMessage ) event).getMessage();
-        System.err.println( "Request denied for "+filename+"." );
+        System.err.println( "Request denied for "+filename );
         break;
 
       case Protocol.CONTROLLER_SENDS_FILE_LIST:
-        printFileList( event );
+        setFileListAndPrint( event );
         break;
 
       case Protocol.CONTROLLER_RESERVES_SERVERS:
@@ -170,7 +177,7 @@ public class Client implements Node {
       controllerConnection.getSender().sendData( requestDelete.getBytes() );
     } catch ( IOException ioe ) {
       System.err.println( "stopWriterAndRequestDelete: Couldn't send "+
-                          "Controller a request to delete '"+filename+"'."+" "+
+                          "Controller a request to delete '"+filename+"'"+
                           ioe.getMessage() );
     }
   }
@@ -211,13 +218,16 @@ public class Client implements Node {
    *
    * @param event message being processed
    */
-  public void printFileList(Event event) {
+  public void setFileListAndPrint(Event event) {
     ControllerSendsFileList message = ( ControllerSendsFileList ) event;
-    if ( message.getList() == null ) {
-      System.out.printf( "%3s%s%n", "", "Controller: No files stored." );
-    } else {
-      for ( String filename : message.getList() ) {
-        System.out.printf( "%3s%s%n", "", filename );
+    synchronized( listLock ) {
+      controllerFileList = message.getList();
+      if ( controllerFileList == null ) {
+        System.out.printf( "%3s%s%n", "", "Controller: No files stored." );
+      } else {
+        for ( int i = 0; i < controllerFileList.length; ++i ) {
+          System.out.printf( "%3s%-3d%s%n", "", i, controllerFileList[i] );
+        }
       }
     }
   }
@@ -304,21 +314,37 @@ public class Client implements Node {
    * @param command user input split by whitespace
    */
   private void requestFileDelete(String[] command) {
-    if ( command.length > 1 ) {
-      for ( int i = 1; i < command.length; ++i ) {
-        GeneralMessage deleteMessage =
-            new GeneralMessage( Protocol.CLIENT_REQUESTS_FILE_DELETE,
-                command[i] );
-        try {
-          controllerConnection.getSender().sendData( deleteMessage.getBytes() );
-        } catch ( IOException ioe ) {
-          System.err.println(
-              "requestFileDelete: Couldn't send Controller a delete request. "+
-              ioe.getMessage() );
-        }
+    synchronized( listLock ) {
+      if ( controllerFileList == null ) {
+        System.err.println(
+            "delete: The file list hasn't been retrieved from the Controller "+
+            "yet. Use command 'files' to retrieve the list, then use the "+
+            "delete command followed by one or more of the numbers printed to"+
+            " the left of the list of files." );
+        return;
       }
-    } else {
-      System.err.println( "delete: No file given. Use 'help' for usage." );
+      if ( command.length > 1 ) {
+        GeneralMessage deleteMessage =
+            new GeneralMessage( Protocol.CLIENT_REQUESTS_FILE_DELETE );
+        for ( int i = 1; i < command.length; ++i ) {
+          try {
+            int fileNumber = Integer.parseInt( command[i] );
+            if ( fileNumber >= 0 && fileNumber < controllerFileList.length ) {
+              deleteMessage.setMessage( controllerFileList[fileNumber] );
+              controllerConnection.getSender()
+                                  .sendData( deleteMessage.getBytes() );
+            }
+          } catch ( IOException ioe ) {
+            System.err.println(
+                "delete: Couldn't send Controller a delete request. "+
+                ioe.getMessage() );
+          } catch ( NumberFormatException nfe ) {
+            System.err.println( "delete: "+command[i]+" is not an integer." );
+          }
+        }
+      } else {
+        System.err.println( "delete: No number given. Use 'help' for usage." );
+      }
     }
   }
 
@@ -426,28 +452,13 @@ public class Client implements Node {
       return;
     }
     Path pathToFile = parsePath( command[1] );
-    if ( writers.get( pathToFile.toString() ) != null ) {
-      System.err.println(
-          "That file currently has an active writer. If the writer is frozen, "+
-          "interrupt it first, and try again." );
-      return;
-    } else if ( readers.get( command[1] ) != null ) {
-      System.err.println(
-          "That file currently has an active reader. Writing it before "+
-          "the reader has finished will interleave metadata at the "+
-          "Controller." );
-      return;
-    }
-    ClientWriter writer = new ClientWriter( this, pathToFile );
-    writers.put( pathToFile.getFileName().toString(), writer );
+    // Give the file a unique name based on the current time
+    String dateAddedFilename =
+        pathToFile.getFileName().toString()+"_"+format.format( new Date() );
+    ClientWriter writer =
+        new ClientWriter( this, pathToFile, dateAddedFilename );
+    writers.put( dateAddedFilename, writer );
     (new Thread( writer )).start();
-    // Make sure the file is a file
-    // Get exclusive lock on entire file
-    // Read all of file's content into memory, or do it one chunk at a time?
-    // Try to allocate servers by messaging the Controller, use storageType
-    // Need to wait for reply somehow...
-    // controllerConnection will enter onEvent, somehow the message has to
-    // get to the waiting thread...
   }
 
   /**
@@ -456,34 +467,46 @@ public class Client implements Node {
    * @param command String[] of command given by user, split by space
    */
   private void get(String[] command) {
-    if ( command.length < 2 ) {
-      System.err.println( "get: No filename given. Use 'help' for usage. " );
-      return;
-    } else if ( readers.containsKey( command[1] ) ) {
-      System.err.println(
-          "That file currently has an active reader. If the reader is frozen, "+
-          "interrupt it first, and try again." );
-      return;
-    } else if ( writers.containsKey( command[1] ) ) {
-      System.err.println(
-          "That file currently has an active writer. The file shouldn't be "+
-          "read until it has been written." );
-      return;
+    synchronized( listLock ) {
+      if ( controllerFileList == null ) {
+        System.err.println(
+            "get: The file list hasn't been retrieved from the Controller yet"+
+            ". Use command 'files' to retrieve the list, then use the number "+
+            "to the left of the filename in your 'get' command." );
+        return;
+      } else if ( command.length < 2 ) {
+        System.err.println( "get: No number given. Use 'help' command." );
+        return;
+      }
+      for ( int i = 1; i < command.length; ++i ) {
+        int fileNumber;
+        try {
+          fileNumber = Integer.parseInt( command[i] );
+        } catch ( NumberFormatException nfe ) {
+          System.err.println( "get: "+command[i]+" isn't an integer." );
+          continue;
+        }
+        if ( fileNumber >= 0 && fileNumber < controllerFileList.length ) {
+          ClientReader reader =
+              new ClientReader( this, controllerFileList[fileNumber] );
+          readers.put( controllerFileList[fileNumber], reader );
+          (new Thread( reader )).start();
+        } else {
+          System.err.println( "get: "+fileNumber+" is not a valid file." );
+        }
+      }
     }
-    ClientReader reader = new ClientReader( this, command[1] );
-    readers.put( command[1], reader );
-    (new Thread( reader )).start();
   }
 
   /**
    * Prints a list of valid commands.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-19s : %s%n", "", "put path/local_file",
+    System.out.printf( "%3s%-19s : %s%n", "", "put path/filename",
         "store a local file on the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "get filename",
-        "retrieve a file from the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "delete file1 file2",
+    System.out.printf( "%3s%-19s : %s%n", "", "get # #",
+        "retrieve file(s) from the DFS" );
+    System.out.printf( "%3s%-19s : %s%n", "", "delete # #",
         "request that file(s) be deleted from the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "stop filename",
         "stops writer for 'filename' and sends delete request" );

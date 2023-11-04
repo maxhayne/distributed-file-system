@@ -18,8 +18,6 @@ public class ShardReader implements FileReader {
   private final String filename;
   private byte[] shardBytes;
   private boolean corrupt;
-  private FileMetadata metadata;
-
   public ShardReader(String filename) {
     this.filename = filename;
   }
@@ -39,7 +37,6 @@ public class ShardReader implements FileReader {
     checkForCorruption();
     if ( !corrupt ) {
       shardBytes = FileSynchronizer.removeHashFromShard( shardBytes );
-      readMetadata();
       shardBytes = FileSynchronizer.getDataFromShard( shardBytes );
     }
 
@@ -51,12 +48,6 @@ public class ShardReader implements FileReader {
    */
   private void checkForCorruption() {
     corrupt = FileSynchronizer.checkShardForCorruption( shardBytes );
-  }
-
-  private void readMetadata() {
-    ByteBuffer shardBuffer = ByteBuffer.wrap( shardBytes );
-    metadata = new FileMetadata( filename, shardBuffer.getInt( 8 ),
-        shardBuffer.getLong( 12 ) );
   }
 
   @Override
@@ -72,11 +63,6 @@ public class ShardReader implements FileReader {
   @Override
   public int[] getCorruption() {
     return null;
-  }
-
-  @Override
-  public FileMetadata getMetadata() {
-    return metadata;
   }
 
   @Override

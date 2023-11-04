@@ -27,11 +27,10 @@ public class HeartbeatService extends TimerTask {
   }
 
   /**
-   * Performs a heartbeat for the ChunkServer, either major or minor. Loops
-   * through the list of files in the ChunkServer's directory, checks that they
-   * aren't corrupt, extracts metadata from them, and constructs a heartbeat
-   * message from that metadata. Returns a byte string message that is ready to
-   * be sent to the Controller as a heartbeat.
+   * Performs a heartbeat for the ChunkServer, either major or minor. Gets a
+   * list of files in the ChunkServer's directory using listFiles(). Every file
+   * returned by listFiles that is also in the ChunkServer's 'files' FileMap is
+   * added to the list of FileMetadatas
    *
    * @param beatType 1 for major, 0 for minor
    * @return byte string of heartbeat message, or null if couldn't be created
@@ -40,42 +39,43 @@ public class HeartbeatService extends TimerTask {
    */
   private byte[] heartbeat(int beatType)
       throws IOException, NoSuchAlgorithmException {
-    // fileMap will be the map that we are modifying during this heartbeat.
-    // If minorHeartbeat, fileMap = minorFiles, if majorHeartbeat, fileMap =
-    // majorFiles
+    // fileMap is the map that we are modifying in this heartbeat.
+    // minorHeartbeat fileMap = minorFiles, majorHeartbeat fileMap = majorFiles
     Map<String, FileMetadata> fileMap = beatType == 0 ? minorFiles : majorFiles;
     fileMap.clear();
-    String[] files = chunkServer.getFileSynchronizer().listFiles();
-    // loop through list of filenames stored at ChunkServer
-    for ( String filename : files ) {
-      // if this is a minor heartbeat, skip files that have already been
-      // added to majorFiles
-      if ( beatType == 0 && majorFiles.containsKey( filename ) ) {
-        continue;
+    String[] filesInFolder = chunkServer.getFileSynchronizer().listFiles();
+    FileMap files = chunkServer.getFiles();
+    synchronized( files ) {
+      for ( String filename : filesInFolder ) {
+        // skip files that aren't in the fileMap
+        // if a minor heartbeat, skip files already added to majorFiles
+        if ( !files.getFiles().containsKey( filename ) ||
+             (beatType == 0 && majorFiles.containsKey( filename )) ) {
+          continue;
+        }
+        fileMap.put( filename, files.getFiles().get( filename ) );
       }
-      // Temporary until I figure out what to do next...
-      fileMap.put( filename, new FileMetadata( filename, 0, 0 ) );
-    }
 
-    // if minor heartbeat, put all files that were new, and added to
-    // minorFiles (fileMap) into majorFiles
-    if ( beatType == 0 ) {
-      majorFiles.putAll( fileMap );
-    }
+      // if minor heartbeat, put all files that were new, and added to
+      // minorFiles (fileMap) into majorFiles
+      if ( beatType == 0 ) {
+        majorFiles.putAll( fileMap );
+      }
 
-    // create heartbeat message, and return bytes of that message
-    int totalChunks = majorFiles.size();
-    long freeSpace = chunkServer.getFileSynchronizer().getUsableSpace();
-    ChunkServerSendsHeartbeat heartbeat =
-        new ChunkServerSendsHeartbeat( chunkServer.getIdentifier(), beatType,
-            totalChunks, freeSpace, new ArrayList<>( fileMap.values() ) );
-    try {
-      return heartbeat.getBytes();
-    } catch ( IOException ioe ) {
-      System.out.println(
-          "heartbeat: Unable to create heartbeat message. "+ioe.getMessage() );
-      // return null if message bytes can't be constructed
-      return null;
+      // create heartbeat message, and return bytes of that message
+      int totalChunks = majorFiles.size();
+      long freeSpace = chunkServer.getFileSynchronizer().getUsableSpace();
+      ChunkServerSendsHeartbeat heartbeat =
+          new ChunkServerSendsHeartbeat( chunkServer.getIdentifier(), beatType,
+              totalChunks, freeSpace, new ArrayList<>( fileMap.values() ) );
+      try {
+        return heartbeat.getBytes();
+      } catch ( IOException ioe ) {
+        System.out.println( "heartbeat: Unable to create heartbeat message. "+
+                            ioe.getMessage() );
+        // return null if message bytes can't be constructed
+        return null;
+      }
     }
   }
 

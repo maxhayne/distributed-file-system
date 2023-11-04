@@ -156,7 +156,7 @@ public class FileSynchronizer {
    * @return byte[] of chunk, ready to be written to disk
    */
   public static byte[] readyChunkForStorage(int sequence, int version,
-      byte[] content) {
+      long timestamp, byte[] content) {
     int contentRemaining = content.length;
     byte[] chunkToFileArray = new byte[65720]; // total size of stored chunk
     byte[] sliceArray = new byte[8195];
@@ -166,7 +166,7 @@ public class FileSynchronizer {
     sliceBuffer.putInt( sequence );
     sliceBuffer.putInt( version );
     sliceBuffer.putInt( contentRemaining );
-    sliceBuffer.putLong( System.currentTimeMillis() );
+    sliceBuffer.putLong( timestamp );
     int position = 0;
     if ( contentRemaining >= 8195-24 ) {
       sliceBuffer.put( content, position, 8195-24 );
@@ -219,7 +219,7 @@ public class FileSynchronizer {
    * @return byte[] of shard, ready to be written to disk
    */
   public static byte[] readyShardForStorage(int sequence, int fragment,
-      int version, byte[] content) {
+      int version, long timestamp, byte[] content) {
     byte[] shardToFileArray =
         new byte[20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+
                  10924]; // Hash+Sequence
@@ -230,7 +230,7 @@ public class FileSynchronizer {
     shardMetaWrap.putInt( sequence );
     shardMetaWrap.putInt( fragment );
     shardMetaWrap.putInt( version );
-    shardMetaWrap.putLong( System.currentTimeMillis() );
+    shardMetaWrap.putLong( timestamp );
     shardMetaWrap.put( content );
     try {
       byte[] hash = SHA1FromBytes( shardWithMetaData );

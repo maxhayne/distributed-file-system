@@ -2,9 +2,9 @@ package cs555.overlay.util;
 
 public class FileMetadata {
 
-  public String filename; // will include _chunk and/or _shard
-  public int version;
-  public long timestamp;
+  private final String filename; // will include _chunk and/or _shard
+  private int version;
+  private long timestamp;
 
   public FileMetadata(String filename, int version, long timestamp) {
     this.filename = filename;
@@ -12,12 +12,24 @@ public class FileMetadata {
     this.timestamp = timestamp;
   }
 
-  // 0 for chunk, 1 for shard
-  public int getType() {
-    if ( checkShardFilename( filename ) ) {
-      return Constants.SHARD_TYPE;
-    }
-    return Constants.CHUNK_TYPE;
+  public String getFilename() {
+    return filename;
+  }
+
+  public int getVersion() {
+    return version;
+  }
+
+  public long getTimestamp() {
+    return timestamp;
+  }
+
+  public void incrementVersion() {
+    version++;
+  }
+
+  public void updateTimestamp() {
+    timestamp = System.currentTimeMillis();
   }
 
   @Override
@@ -33,12 +45,5 @@ public class FileMetadata {
     // different version number doesn't imply different content.
     return this.filename.equals( fileData.filename ) &&
            this.version == fileData.version;
-  }
-
-  private boolean checkShardFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk(0|[1-9][0-9]*)_shard[0-8]$" );
-    String[] split1 = filename.split( "_chunk" );
-    String[] split2 = filename.split( "_shard" );
-    return matches && split1.length == 2 && split2.length == 2;
   }
 }

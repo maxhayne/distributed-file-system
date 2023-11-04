@@ -1,10 +1,8 @@
 package cs555.overlay.files;
 
 import cs555.overlay.util.ArrayUtilities;
-import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FileSynchronizer;
 
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 
 /**
@@ -20,7 +18,6 @@ public class ChunkReader implements FileReader {
   private final String filename;
   private byte[] chunkBytes;
   private boolean corrupt;
-  private FileMetadata metadata;
   private int[] corruptSlices;
   private byte[][] slices; // slices include SHA1
 
@@ -43,14 +40,9 @@ public class ChunkReader implements FileReader {
         FileSynchronizer.CHUNK_FILE_LENGTH );
     populateSlices();
     checkForCorruption();
-    readMetadata();
     if ( !corrupt ) {
       chunkBytes = FileSynchronizer.removeHashesFromChunk( chunkBytes );
       chunkBytes = FileSynchronizer.getDataFromChunk( chunkBytes );
-    } else {
-      for ( int corruptSlice : corruptSlices ) {
-        System.out.println( corruptSlice );
-      }
     }
   }
 
@@ -83,27 +75,6 @@ public class ChunkReader implements FileReader {
   }
 
   /**
-   * Attempts to read the version and timestamp for the Chunk if the slice
-   * holding that information (first slice) isn't corrupt.
-   */
-  private void readMetadata() {
-    boolean firstSliceCorrupt = false;
-    if ( corruptSlices != null ) {
-      for ( int corruptSlice : corruptSlices ) {
-        if ( corruptSlice == 0 ) {
-          firstSliceCorrupt = true;
-          break;
-        }
-      }
-    }
-    if ( !firstSliceCorrupt ) {
-      ByteBuffer chunkBuffer = ByteBuffer.wrap( slices[0] );
-      metadata = new FileMetadata( filename, chunkBuffer.getInt( 20+8 ),
-          chunkBuffer.getInt( 20+16 ) );
-    }
-  }
-
-  /**
    * Getter for the raw slices read off the disk.
    *
    * @return slices that have been read off the disk
@@ -125,11 +96,6 @@ public class ChunkReader implements FileReader {
   @Override
   public int[] getCorruption() {
     return corruptSlices;
-  }
-
-  @Override
-  public FileMetadata getMetadata() {
-    return metadata;
   }
 
   @Override

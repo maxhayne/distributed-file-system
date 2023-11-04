@@ -1,5 +1,6 @@
 package cs555.overlay.files;
 
+import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FileSynchronizer;
 
 import java.nio.ByteBuffer;
@@ -8,12 +9,13 @@ import java.security.NoSuchAlgorithmException;
 /**
  * Class used to simplify the preparing and writing of a chunk to disk. Can
  * either write a new chunk to disk based on a byte[] of content, or use a
- * combination of previously-read and newly added slices to fashion a new chunk.
+ * combination of previously-read and newly added slices to fashion a new
+ * chunk.
  *
  * @author hayne
  */
 public class ChunkWriter implements FileWriter {
-  private final String filename;
+  private final FileMetadata metadata;
   private byte[] content;
   private ChunkReader reader;
 
@@ -22,14 +24,23 @@ public class ChunkWriter implements FileWriter {
   private int[] slicesToRepair;
   private byte[][] replacementSlices;
 
-  public ChunkWriter(String filename, byte[] content) {
-    this.filename = filename;
-    this.content = content;
+  public ChunkWriter(FileMetadata metadata) {
+    this.metadata = metadata;
   }
 
-  public ChunkWriter(FileReader reader) {
-    this.filename = reader.getFilename();
+  public ChunkWriter(FileMetadata metadata, FileReader reader) {
+    this.metadata = metadata;
     this.reader = ( ChunkReader ) reader;
+  }
+
+  /**
+   * Sets the content of the writer.
+   *
+   * @param content byte[] of file content
+   */
+  @Override
+  public void setContent(byte[] content) {
+    this.content = content;
   }
 
   /**
@@ -52,7 +63,8 @@ public class ChunkWriter implements FileWriter {
   private void prepareNewChunk() {
     int sequence = getSequenceFromFilename();
     preparedChunk =
-        FileSynchronizer.readyChunkForStorage( sequence, 0, content );
+        FileSynchronizer.readyChunkForStorage( sequence, metadata.getVersion(),
+            metadata.getTimestamp(), content );
   }
 
   /**
@@ -66,11 +78,8 @@ public class ChunkWriter implements FileWriter {
     byte[][] slices = replaceSlices();
     updateMetadata( slices[0] );
     preparedChunk = new byte[FileSynchronizer.CHUNK_FILE_LENGTH];
-    //ByteBuffer preparedChunkBuffer = ByteBuffer.wrap( preparedChunk );
     for ( int i = 0; i < 8; ++i ) {
       System.arraycopy( slices[i], 0, preparedChunk, i*(20+8195), 20+8195 );
-      //preparedChunkBuffer.put( slice );
-      //System.out.println( Arrays.toString( slice ) );
     }
   }
 
@@ -116,14 +125,12 @@ public class ChunkWriter implements FileWriter {
   }
 
   /**
-   * Updates the version of the slice if 'reader' is not null.
+   * Updates the version of the slice with the value in FileMetadata.
    *
    * @param firstSliceBuffer ByteBuffer of first slice of chunk
    */
   private void updateVersion(ByteBuffer firstSliceBuffer) {
-    if ( reader.getMetadata() != null ) {
-      firstSliceBuffer.putInt( 28, reader.getMetadata().version+1 );
-    }
+    firstSliceBuffer.putInt( 28, metadata.getVersion() );
   }
 
   /**
@@ -132,7 +139,7 @@ public class ChunkWriter implements FileWriter {
    * @param firstSliceBuffer ByteBuffer of first slice of chunk
    */
   private void updateTimestamp(ByteBuffer firstSliceBuffer) {
-    firstSliceBuffer.putLong( 36, System.currentTimeMillis() );
+    firstSliceBuffer.putLong( 36, metadata.getTimestamp() );
   }
 
   /**
@@ -142,7 +149,7 @@ public class ChunkWriter implements FileWriter {
    * @return sequence number of chunk
    */
   private int getSequenceFromFilename() {
-    return Integer.parseInt( filename.split( "_chunk" )[1] );
+    return Integer.parseInt( metadata.getFilename().split( "_chunk" )[1] );
   }
 
   /**
@@ -168,13 +175,14 @@ public class ChunkWriter implements FileWriter {
   @Override
   public boolean write(FileSynchronizer synchronizer) {
     if ( preparedChunk != null ) {
-      return synchronizer.overwriteFile( filename, preparedChunk );
+      return synchronizer.overwriteFile( metadata.getFilename(),
+          preparedChunk );
     }
     return false;
   }
 
   @Override
   public String getFilename() {
-    return filename;
+    return metadata.getFilename();
   }
 }

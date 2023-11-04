@@ -1,5 +1,6 @@
 package cs555.overlay.files;
 
+import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FilenameUtilities;
 
 /**
@@ -23,33 +24,20 @@ public class FileWriterFactory {
    * Creates the right type of FileWriter based on the name of the file to be
    * written.
    *
-   * @param filename of file to be written
+   * @param metadata of file to be written
    * @return fresh FileWriter object, or null if filename doesn't match a file
    * type
    */
-  public FileWriter createFileWriter(String filename, byte[] content) {
-    if ( FilenameUtilities.checkChunkFilename( filename ) ) {
-      return new ChunkWriter( filename, content );
-    } else if ( FilenameUtilities.checkShardFilename( filename ) ) {
-      return new ShardWriter( filename, content );
-    } else {
-      System.err.println(
-          "createFileWriter: FileWriter couldn't be created. "+filename );
-      return null;
-    }
-  }
-
-  public FileWriter createFileWriter(FileReader reader) {
-    if ( FilenameUtilities.checkChunkFilename( reader.getFilename() ) ) {
-      return new ChunkWriter( reader );
+  public FileWriter createFileWriter(FileMetadata metadata) {
+    if ( FilenameUtilities.checkChunkFilename( metadata.getFilename() ) ) {
+      return new ChunkWriter( metadata );
     } else if ( FilenameUtilities.checkShardFilename(
-        reader.getFilename() ) ) {
-      return new ShardWriter( reader );
+        metadata.getFilename() ) ) {
+      return new ShardWriter( metadata );
     } else {
       System.err.println( "createFileWriter: FileWriter couldn't be created. "+
-                          reader.getFilename() );
+                          metadata.getFilename() );
       return null;
     }
   }
-
 }

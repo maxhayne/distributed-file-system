@@ -1,33 +1,50 @@
 package cs555.overlay.util;
 
 import cs555.overlay.node.Controller;
-import cs555.overlay.transport.ServerConnection;
 import cs555.overlay.transport.ControllerInformation;
+import cs555.overlay.transport.ServerConnection;
+import cs555.overlay.wireformats.Event;
+import cs555.overlay.wireformats.RepairChunk;
+import cs555.overlay.wireformats.RepairShard;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.TimerTask;
 
+/**
+ * Is run on a timer schedule for every Constants.HEARTRATE milliseconds. Reads
+ * the latest heartbeat sent by each registered ChunkServer and prints out
+ * information to the terminal. Tries to detect whether a ChunkServer is failing
+ * and should be deregistered. On major heartbeats, tries to replace files at
+ * servers that are missing.
+ *
+ * @author hayne
+ */
 public class HeartbeatMonitor extends TimerTask {
 
   private final Controller controller;
-  private final ControllerInformation connectionCache;
+  private final ControllerInformation information;
 
   public HeartbeatMonitor(Controller controller,
-      ControllerInformation connectionCache) {
+      ControllerInformation information) {
     this.controller = controller;
-    this.connectionCache = connectionCache;
+    this.information = information;
   }
 
-  private String[] splitFilename(String filename) {
-    return filename.split( "_chunk|_shard" );
-  }
-
+  /**
+   * Creates a long String of filenames sent by the ChunkServer in the most
+   * recent heartbeat.
+   *
+   * @param files ArrayList of FileMetadatas from latest heartbeat message
+   * @return String of files
+   */
   private String createStringOfFiles(ArrayList<FileMetadata> files) {
     if ( !files.isEmpty() ) {
       StringBuilder sb = new StringBuilder();
       for ( FileMetadata newFile : files ) {
-        sb.append( newFile.filename ).append( ", " );
+        sb.append( newFile.getFilename() ).append( ", " );
       }
       sb.delete( sb.length()-2, sb.length() );
       return "[ "+sb+" ]";
@@ -35,26 +52,42 @@ public class HeartbeatMonitor extends TimerTask {
     return "";
   }
 
-  private long getTimeSinceLastHeartbeat(long now, HeartbeatInformation info) {
-    return Math.min( now-info.getLastMajorHeartbeat(),
-        now-info.getLastMinorHeartbeat() );
-  }
-
+  /**
+   * Deduces the type of the last heartbeat received by the Controller from a
+   * ChunkServer
+   *
+   * @param now current time
+   * @param info latest heartbeat info from server
+   * @return 0 for minor, 1 for major, -1 for neither
+   */
   private int getLastHeartbeatType(long now, HeartbeatInformation info) {
+    if ( info.getLastMinorHeartbeat() == 0 &&
+         info.getLastMajorHeartbeat() == 0 ) {
+      return -1;
+    }
     return now-info.getLastMajorHeartbeat() < now-info.getLastMinorHeartbeat() ?
-               0 : 1;
+               1 : 0;
   }
 
+  /**
+   * Produces a score of how unhealthy the ChunkServer is based on a few
+   * criteria.
+   *
+   * @param now current time
+   * @param connectionStartTime time when ChunkServer registered
+   * @param info latest heartbeat info from server
+   * @return unhealthy score
+   */
   private int calculateUnhealthyScore(long now, long connectionStartTime,
       HeartbeatInformation info) {
     int unhealthyScore = 0;
     // ChunkServer has missed a major heartbeat
-    if ( info.getLastMajorHeartbeat() != -1 &&
+    if ( info.getLastMajorHeartbeat() != 0 &&
          now-info.getLastMajorHeartbeat() > (Constants.HEARTRATE*11) ) {
-      unhealthyScore += 1;
+      unhealthyScore++;
     }
     // ChunkServer has missed a minor heartbeat
-    if ( info.getLastMinorHeartbeat() != -1 &&
+    if ( info.getLastMinorHeartbeat() != 0 &&
          now-info.getLastMinorHeartbeat() > (Constants.HEARTRATE*2) ) {
       unhealthyScore += 1+( int ) (
           (now-info.getLastMinorHeartbeat()-(Constants.HEARTRATE*2))/
@@ -62,16 +95,22 @@ public class HeartbeatMonitor extends TimerTask {
     }
     // Hasn't even sent a minor heartbeat
     if ( now-connectionStartTime > (Constants.HEARTRATE*2) &&
-         info.getLastMinorHeartbeat() == -1 ) {
+         info.getLastMinorHeartbeat() == 0 ) {
       unhealthyScore += 1;
     } // Hasn't even sent a major heartbeat
     if ( now-connectionStartTime > Constants.HEARTRATE &&
-         info.getLastMajorHeartbeat() == -1 ) {
+         info.getLastMajorHeartbeat() == 0 ) {
       unhealthyScore += 1;
     }
     return unhealthyScore;
   }
 
+  /**
+   * Adjusts the unhealthy member of the ServerConnection.
+   *
+   * @param unhealthyScore
+   * @param connection server to adjust connection health for
+   */
   private void adjustConnectionHealth(int unhealthyScore,
       ServerConnection connection) {
     if ( unhealthyScore >= 2 ) {
@@ -81,16 +120,83 @@ public class HeartbeatMonitor extends TimerTask {
     }
   }
 
-  public synchronized void run() {
-    ArrayList<Integer> toDeregister = new ArrayList<>();
+  /**
+   * If the major heartbeat doesn't contain a file that the Controller believes
+   * it should, it tries to dispatch a repair message to replace it.
+   *
+   * @param connection ServerConnection whose files to cross-reference
+   * @param information HeartbeatInformation for this connection
+   */
+  private void replaceMissingFiles(ServerConnection connection,
+      HeartbeatInformation information) {
+    HashSet<String> chunksAtServer = new HashSet<>();
+    for ( String filename : information.getFiles()
+                                       .stream()
+                                       .map( FileMetadata::getFilename )
+                                       .toList() ) {
+      chunksAtServer.add( filename.split( "_shard" )[0] );
+    }
+    Map<String, ArrayList<Integer>> storedChunks = connection.getStoredChunks();
+    for ( String filename : storedChunks.keySet() ) {
+      ArrayList<Integer> sequences = storedChunks.get( filename );
+      for ( int sequence : sequences ) {
+        if ( !chunksAtServer.contains( filename+"_chunk"+sequence ) ) {
+          System.out.println(
+              "Dispatching repair for "+filename+"_chunk"+sequence );
+          dispatchRepair( filename, sequence, connection.getServerAddress() );
+        }
+      }
+    }
+  }
 
-    // THIS SHOULD NOW SYNCHRONIZE ON THE CONTROLLER ITSELF, SO THAT WE CAN
-    // PREVENT CHUNKS FROM BEING ADDED OR SUBTRACTED, OR SERVERS FROM
-    // REGISTERING OR DEREGISTERING WHILE WE ARE CONDUCTING ANALYSIS ON THE
-    // HEARTBEATS
+  /**
+   * Creates a repair message to replace the chunk with the filename/sequence
+   * combo given as parameters. A different message has to be created whether
+   * erasure coding or replicating.
+   *
+   * @param filename base filename of chunk to be repaired
+   * @param sequence sequence of chunk to be repaired
+   * @param destination host:port address of server that needs replacement file
+   */
+  private void dispatchRepair(String filename, int sequence,
+      String destination) {
+    String[] servers = information.getServers( filename, sequence );
+    Event repairMessage;
+    String sendTo;
+    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+      RepairShard repairShard =
+          new RepairShard( filename+"_chunk"+sequence+"_shard", destination,
+              servers );
+      sendTo = repairShard.getAddress();
+      repairMessage = repairShard;
+    } else {
+      RepairChunk repairChunk =
+          new RepairChunk( filename+"_chunk"+sequence, destination,
+              new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 },
+              ArrayUtilities.removeFromArray( servers, destination ) );
+      sendTo = repairChunk.getAddress();
+      repairMessage = repairChunk;
+    }
+    try {
+      information.getConnection( sendTo )
+                 .getConnection()
+                 .getSender()
+                 .sendData( repairMessage.getBytes() );
+    } catch ( IOException ioe ) {
+      System.err.println(
+          "dispatchRepair: Failed to send message. "+ioe.getMessage() );
+    }
+  }
+
+  /**
+   * Method performed every time the HeartbeatMonitor's timer task is called.
+   */
+  public void run() {
+    ArrayList<Integer> toDeregister = new ArrayList<>();
+    // synchronized on Controller itself to prevent modification operations
     synchronized( controller ) { // lock the Controller
       Map<Integer, ServerConnection> registeredServers =
-          connectionCache.getRegisteredServers();
+          information.getRegisteredServers();
       if ( registeredServers.isEmpty() ) {
         return; // no information to report
       }
@@ -100,120 +206,32 @@ public class HeartbeatMonitor extends TimerTask {
 
       long now = System.currentTimeMillis();
       for ( ServerConnection connection : registeredServers.values() ) {
-
         sb.append( "\n" ).append( connection.toString() );
 
         HeartbeatInformation heartbeatInformation =
             connection.getHeartbeatInfo().copy();
 
-        // Append list of new files to print later
         sb.append( "\n" )
           .append( createStringOfFiles( heartbeatInformation.getFiles() ) );
 
-        long timeSinceLastHeartbeat =
-            getTimeSinceLastHeartbeat( now, heartbeatInformation );
-        int lastBeatType = getLastHeartbeatType( now, heartbeatInformation );
-
-        // Give the connection between the Controller and this ChunkServer a
-        // score measuring how unhealthy it is.
         int unhealthyScore =
             calculateUnhealthyScore( now, connection.getStartTime(),
                 heartbeatInformation );
-
-        // Add a 'poke' message to send to the ChunkServer, and on
-        // the next heartbeat, add to 'unhealthy' the discrepancy
-        // between the 'pokes' and the 'poke replies'.
-
-        // If unhealthyScore >= 2, increment connection's 'unhealthy' counter
         adjustConnectionHealth( unhealthyScore, connection );
-
-        // If this node has failed 3 heartbeats in a row, deregister it
         if ( connection.getUnhealthy() > 3 ) {
           toDeregister.add( connection.getIdentifier() );
+          continue;
+        }
+
+        // For a major heartbeat, replace missing files
+        int lastBeatType = getLastHeartbeatType( now, heartbeatInformation );
+        if ( lastBeatType == 1 ) {
+          replaceMissingFiles( connection, heartbeatInformation );
         }
       }
 
       // Print the contents of all heartbeats for registered ChunkServers
-      System.out.println( sb.toString() );
-
-      // For major heartbeats, the Controller check that there are no chunks
-      // that should be held by the ChunkServer but aren't. It should then
-      // try to replace those missing files by sending out repair messages.
-
-      // Try to replace files missing from ChunkServers
-      //ArrayList<String> missingFiles = idealState.differences(
-      // reportedState );
-      //System.out.println( missingFiles.size() );
-      //      for ( String file : missingFiles )
-      //        System.out.print( file + " ");
-      /*
-      for ( String missingFile : missingFiles ) {
-        // missingFile structure: "timestamp,baseFilename,sequence,
-        // serverIdentifier, (optional) fragment"
-        String[] missingFileSplit = missingFile.split( "," );
-
-        // Decode what was returned
-        long timestamp = Long.parseLong( missingFileSplit[0] );
-        String baseFilename = missingFileSplit[1];
-        int sequence = Integer.parseInt( missingFileSplit[2] );
-        int serverIdentifier = Integer.parseInt( missingFileSplit[3] );
-        int fragment = missingFileSplit.length == 5 ?
-                           Integer.parseInt( missingFileSplit[4] ) : -1;
-
-        // if chunk is newly created,
-        if ( now-timestamp < Constants.HEARTRATE ) {
-          continue; // If the chunk is new, might just not have been stored
-          // yet.
-        }
-
-        String serverAddress =
-            connectionCache.getChunkServerAddress( serverIdentifier );
-        if ( serverAddress.isEmpty() ) {
-          continue;
-        }
-
-        String storageInfo =
-            connectionCache.getChunkStorageInfo( baseFilename, sequence );
-
-        Event repairMessage;
-        String addressToContact;
-        String filename;
-        if ( missingFileSplit.length == 4 ) { // It is a chunk
-          filename = baseFilename+"_chunk"+sequence;
-          String[] servers = storageInfo.split( "\\|", -1 )[0].split( "," );
-          // Remove destination server from list of servers
-          servers = ArrayUtilities.removeFromArray( servers, serverAddress );
-          RepairChunk repairChunk = new RepairChunk( filename, serverAddress,
-              new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 }, servers );
-          addressToContact = repairChunk.getAddress();
-          repairMessage = repairChunk;
-        } else { // It is a shard
-          filename = baseFilename+"_chunk"+sequence+"_shard"+fragment;
-          String[] servers = storageInfo.split( "\\|", -1 )[1].split( "," );
-          if ( servers.length == 1 && servers[0].isEmpty() ) {
-            continue;
-          }
-          // Replace "-1" with null in shard server array
-          ArrayUtilities.replaceArrayItem( servers, "-1", null );
-          RepairShard repairShard =
-              new RepairShard( filename, serverAddress, servers );
-          addressToContact = repairShard.getAddress();
-          repairMessage = repairShard;
-        }
-
-        try {
-          connectionCache.getConnection( addressToContact )
-                         .getConnection()
-                         .getSender()
-                         .sendData( repairMessage.getBytes() );
-        } catch ( Exception e ) {
-          System.err.println( "HearbeatMonitor::run: There was a problem "+
-                              "sending the repair request to "+addressToContact+
-                              " to replace '"+filename+"' at "+serverAddress+
-                              "."+e.getMessage() );
-        }
-      }
-      */
+      System.out.println( sb );
     }
     for ( Integer i : toDeregister ) {
       controller.deregister( i );

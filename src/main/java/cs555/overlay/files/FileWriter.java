@@ -22,6 +22,13 @@ public interface FileWriter {
   String getFilename();
 
   /**
+   * Set the content of the writer.
+   *
+   * @param content byte[] of file content
+   */
+  void setContent(byte[] content);
+
+  /**
    * Fully prepares the byte string that represents the file to be written.
    *
    * @throws NoSuchAlgorithmException if SHA1 can't be used

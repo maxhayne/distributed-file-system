@@ -24,6 +24,7 @@ public class ClientWriter implements Runnable {
 
   private final Client client;
   private final Path pathToFile;
+  private final String dateAddedFilename;
   private final AtomicInteger chunksSent;
   private final AtomicInteger totalChunks;
   private final TCPConnectionCache connectionCache;
@@ -36,13 +37,16 @@ public class ClientWriter implements Runnable {
    *
    * @param client Client on which the ClientWriter will be executing
    * @param pathToFile full path of file to be stored on the DFS
+   * @param dateAddedFilename filename with date appended to it
    */
-  public ClientWriter(Client client, Path pathToFile) {
+  public ClientWriter(Client client, Path pathToFile,
+      String dateAddedFilename) {
     this.client = client;
     this.pathToFile = pathToFile;
     this.chunksSent = new AtomicInteger( 0 );
     this.totalChunks = new AtomicInteger( 1 );
     this.connectionCache = new TCPConnectionCache();
+    this.dateAddedFilename = dateAddedFilename;
   }
 
   /**
@@ -74,13 +78,13 @@ public class ClientWriter implements Runnable {
       chunkizeFileAndStore( file, setTotalChunks( file.length() ) );
     } catch ( IOException|InterruptedException ioe ) {
       System.err.println( "ClientWriter: Exception thrown while writing '"+
-                          pathToFile.toString()+"' to the DFS. "+
+                          dateAddedFilename+"' to the DFS. "+
                           ioe.getMessage() );
     }
     try {
       cleanup();
     } catch ( InterruptedException ie ) {
-      System.err.println( pathToFile.getFileName()+" cleanup() interrupted." );
+      System.err.println( dateAddedFilename+" cleanup() interrupted." );
     }
   }
 
@@ -88,14 +92,14 @@ public class ClientWriter implements Runnable {
    * Attempts to read the file into chunks, request servers to store those
    * chunks from the Controller, and send those chunks to those servers.
    *
-   * @param file RandomAccessFile that has been opened for the file being
-   * read (assuming an exclusive lock has already been acquired)
-   * @param totalChunks the total number of chunks that should be read from
-   * the file
-   * @throws IOException if the function encounters a problem while reading
-   * the file
-   * @throws InterruptedException if the function is interrupted while
-   * waiting for servers from the Controller
+   * @param file RandomAccessFile that has been opened for the file being read
+   * (assuming an exclusive lock has already been acquired)
+   * @param totalChunks the total number of chunks that should be read from the
+   * file
+   * @throws IOException if the function encounters a problem while reading the
+   * file
+   * @throws InterruptedException if the function is interrupted while waiting
+   * for servers from the Controller
    */
   private void chunkizeFileAndStore(RandomAccessFile file, int totalChunks)
       throws IOException, InterruptedException {
@@ -122,11 +126,11 @@ public class ClientWriter implements Runnable {
    * Cleans up this ClientReader.
    */
   private void cleanup() throws InterruptedException {
-    client.removeWriter( pathToFile.getFileName().toString() ); // remove self
+    client.removeWriter( dateAddedFilename ); // remove self
     Thread.sleep( 1000 );
     connectionCache.closeConnections(); // shutdown connections
     System.out.println(
-        "The ClientWriter for '"+pathToFile.getFileName()+"' has cleaned up." );
+        "The ClientWriter for '"+dateAddedFilename+"' has cleaned up." );
   }
 
   /**
@@ -269,23 +273,13 @@ public class ClientWriter implements Runnable {
   }
 
   /**
-   * Getter for 'pathToFile'.
-   *
-   * @return pathToFile
-   */
-  public Path getPathToFile() {
-    return pathToFile;
-  }
-
-  /**
    * Creates the initial message type based on the storageType of the Client.
    *
    * @return new ClientStore message with correct filename, and sequence number
    * of 0
    */
   private ClientStore createNewStoreMessage() {
-    String filename = pathToFile.getFileName().toString();
-    return new ClientStore( filename, 0 );
+    return new ClientStore( dateAddedFilename, 0 );
   }
 
   /**
@@ -296,7 +290,7 @@ public class ClientWriter implements Runnable {
    * @return filename
    */
   private String createFilename(int sequence) {
-    String filename = pathToFile.getFileName().toString()+"_chunk"+sequence;
+    String filename = dateAddedFilename+"_chunk"+sequence;
     if ( client.getStorageType() == 1 ) {
       filename += "_shard";
     }

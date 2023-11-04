@@ -23,7 +23,7 @@ public class ChunkServerSendsHeartbeat implements Event {
       int totalChunks, long freeSpace, ArrayList<FileMetadata> files) {
     this.type = Protocol.CHUNK_SERVER_SENDS_HEARTBEAT;
     this.identifier = identifier;
-    this.beatType = type;
+    this.beatType = beatType;
     this.totalChunks = totalChunks;
     this.freeSpace = freeSpace;
     this.files = files;
@@ -79,13 +79,13 @@ public class ChunkServerSendsHeartbeat implements Event {
 
     dout.writeInt( files.size() );
     for ( FileMetadata meta : files ) {
-      byte[] array = meta.filename.getBytes();
+      byte[] array = meta.getFilename().getBytes();
       dout.writeInt( array.length );
       dout.write( array );
 
-      dout.writeInt( meta.version );
+      dout.writeInt( meta.getVersion() );
 
-      dout.writeLong( meta.timestamp );
+      dout.writeLong( meta.getTimestamp() );
     }
 
     byte[] marshalledBytes = bout.toByteArray();

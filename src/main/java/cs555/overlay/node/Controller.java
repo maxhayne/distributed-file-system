@@ -4,10 +4,7 @@ import cs555.overlay.transport.ControllerInformation;
 import cs555.overlay.transport.ServerConnection;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPServerThread;
-import cs555.overlay.util.ApplicationProperties;
-import cs555.overlay.util.Constants;
-import cs555.overlay.util.FilenameUtilities;
-import cs555.overlay.util.HeartbeatMonitor;
+import cs555.overlay.util.*;
 import cs555.overlay.wireformats.*;
 
 import java.io.IOException;
@@ -235,7 +232,8 @@ public class Controller implements Node {
     } else {
       RepairChunk repairChunk =
           new RepairChunk( report.getFilename(), destination,
-              report.getSlices(), servers );
+              report.getSlices(),
+              ArrayUtilities.removeFromArray( servers, destination ) );
       sendTo = repairChunk.getAddress();
       repairMessage = repairChunk;
     }
@@ -279,10 +277,6 @@ public class Controller implements Node {
    */
   private void heartbeatHelper(Event event) {
     ChunkServerSendsHeartbeat heartbeat = ( ChunkServerSendsHeartbeat ) event;
-    // How should the updating of the heartbeat information actually
-    // happen? In the same way as before, or does a new function need
-    // to be written to update the heartbeat information all in one go?
-    // It should be done with one function call.
     ServerConnection connection =
         information.getConnection( heartbeat.getIdentifier() );
     if ( connection == null ) {

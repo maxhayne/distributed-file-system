@@ -1,11 +1,12 @@
 package cs555.overlay.files;
 
+import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FileSynchronizer;
 
 import java.security.NoSuchAlgorithmException;
 
 public class ShardWriter implements FileWriter {
-  private final String filename;
+  private final FileMetadata metadata;
   private byte[] content;
 
   private byte[] preparedShard;
@@ -15,22 +16,19 @@ public class ShardWriter implements FileWriter {
   /**
    * Constructor for if your goal is to write a new shard file.
    *
-   * @param filename of shard to be written
-   * @param content of shard to be written (raw data)
+   * @param metadata of shard to be written
    */
-  public ShardWriter(String filename, byte[] content) {
-    this.filename = filename;
-    this.content = content;
+  public ShardWriter(FileMetadata metadata) {
+    this.metadata = metadata;
   }
 
   /**
-   * Constructor for if your goal is to write a shard reconstructed from other
-   * shards. Shards used to reconstruct are added later.
+   * Sets the content of the shard to be written.
    *
-   * @param reader used to read a previously stored shard
+   * @param content byte[] of file content
    */
-  public ShardWriter(FileReader reader) {
-    this.filename = reader.getFilename();
+  public void setContent(byte[] content) {
+    this.content = content;
   }
 
   /**
@@ -54,9 +52,8 @@ public class ShardWriter implements FileWriter {
   private void prepareNewShard() {
     int sequence = getSequenceFromFilename();
     int fragment = getFragmentFromFilename();
-    preparedShard =
-        FileSynchronizer.readyShardForStorage( sequence, fragment, 0,
-            content );
+    preparedShard = FileSynchronizer.readyShardForStorage( sequence, fragment,
+        metadata.getVersion(), metadata.getTimestamp(), content );
   }
 
   /**
@@ -70,7 +67,8 @@ public class ShardWriter implements FileWriter {
         int sequence = getSequenceFromFilename();
         int fragment = getFragmentFromFilename();
         preparedShard =
-            FileSynchronizer.readyShardForStorage( sequence, fragment, 0,
+            FileSynchronizer.readyShardForStorage( sequence, fragment,
+                metadata.getVersion(), metadata.getTimestamp(),
                 reconstructedShards[fragment] );
       }
     }
@@ -83,7 +81,7 @@ public class ShardWriter implements FileWriter {
    */
   private int getSequenceFromFilename() {
     return Integer.parseInt(
-        filename.split( "_shard" )[0].split( "_chunk" )[1] );
+        metadata.getFilename().split( "_shard" )[0].split( "_chunk" )[1] );
   }
 
   /**
@@ -92,7 +90,7 @@ public class ShardWriter implements FileWriter {
    * @return fragment number of this shard
    */
   private int getFragmentFromFilename() {
-    return Integer.parseInt( filename.split( "_shard" )[1] );
+    return Integer.parseInt( metadata.getFilename().split( "_shard" )[1] );
   }
 
   /**
@@ -116,7 +114,8 @@ public class ShardWriter implements FileWriter {
   @Override
   public boolean write(FileSynchronizer synchronizer) {
     if ( preparedShard != null ) {
-      return synchronizer.overwriteFile( filename, preparedShard );
+      return synchronizer.overwriteFile( metadata.getFilename(),
+          preparedShard );
     }
     return false;
   }
@@ -124,6 +123,6 @@ public class ShardWriter implements FileWriter {
 
   @Override
   public String getFilename() {
-    return filename;
+    return metadata.getFilename();
   }
 }

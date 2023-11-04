@@ -19,7 +19,5 @@ public interface FileReader {
 
   int[] getCorruption();
 
-  FileMetadata getMetadata();
-
   byte[] getData();
 }
