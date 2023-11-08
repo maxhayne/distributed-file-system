@@ -81,9 +81,8 @@ public class ChunkServer implements Node {
       // Start the TCPServerThread
       (new Thread( new TCPServerThread( chunkServer, serverSocket ) )).start();
 
-      logger.info(
-          "ServerThread has started and at ["+chunkServer.getHost()+":"+
-          chunkServer.getPort()+"]" );
+      logger.info( "ServerThread has started at ["+chunkServer.getHost()+":"+
+                   chunkServer.getPort()+"]" );
 
       // Establish socket connection with controller, send a registration
       // request, and start the TCPReceiverThread
@@ -591,18 +590,22 @@ public class ChunkServer implements Node {
       String[] splitCommand = command.split( "\\s+" );
       switch ( splitCommand[0].toLowerCase() ) {
 
+        case "i":
         case "info":
           info();
           break;
 
+        case "f":
         case "files":
           listFiles();
           break;
 
+        case "e":
         case "exit":
           deregister();
           break interactLoop;
 
+        case "h":
         case "help":
           showHelp();
           break;
@@ -658,13 +661,13 @@ public class ChunkServer implements Node {
    * Prints a list of valid commands.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-5s : %s%n", "", "info",
+    System.out.printf( "%3s%-5s : %s%n", "", "i[nfo]",
         "print host:port server address of this ChunkServer" );
-    System.out.printf( "%3s%-5s : %s%n", "", "files",
+    System.out.printf( "%3s%-5s : %s%n", "", "f[iles]",
         "print a list of files stored at this ChunkServer" );
-    System.out.printf( "%3s%-5s : %s%n", "", "exit",
+    System.out.printf( "%3s%-5s : %s%n", "", "e[xit]",
         "attempt to deregister and shutdown the ChunkServer" );
-    System.out.printf( "%3s%-5s : %s%n", "", "help",
+    System.out.printf( "%3s%-5s : %s%n", "", "h[elp]",
         "print a list of valid commands" );
   }
 

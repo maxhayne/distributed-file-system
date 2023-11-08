@@ -65,6 +65,7 @@ public class Client implements Node {
       client.controllerConnection =
           new TCPConnection( client, controllerSocket );
       client.controllerConnection.start();
+      logger.info( "Connected to the Controller." );
 
       // Loop for user interaction
       client.interact();
@@ -224,30 +225,37 @@ public class Client implements Node {
       String[] splitCommand = command.split( "\\s+" );
       switch ( splitCommand[0].toLowerCase() ) {
 
+        case "p":
         case "put":
           put( splitCommand );
           break;
 
+        case "g":
         case "get":
           get( splitCommand );
           break;
 
+        case "d":
         case "delete":
           requestFileDelete( splitCommand );
           break;
 
+        case "s":
         case "stop":
           stopHelper( splitCommand );
           break;
 
+        case "r":
         case "readers":
           showReaders();
           break;
 
+        case "w":
         case "writers":
           showWriters();
           break;
 
+        case "f":
         case "files":
           requestFileList();
           break;
@@ -256,9 +264,11 @@ public class Client implements Node {
           printWorkingDirectory( splitCommand );
           break;
 
+        case "e":
         case "exit":
           break interactLoop;
 
+        case "h":
         case "help":
           showHelp();
           break;
@@ -503,25 +513,25 @@ public class Client implements Node {
    * Prints a list of valid commands.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-19s : %s%n", "", "put path/filename",
+    System.out.printf( "%3s%-19s : %s%n", "", "p[ut] path/filename",
         "store a local file on the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "get # [#]",
+    System.out.printf( "%3s%-19s : %s%n", "", "g[et] # [#...]",
         "retrieve file(s) from the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "delete # [#]",
+    System.out.printf( "%3s%-19s : %s%n", "", "d[elete] # [#...]",
         "request that file(s) be deleted from the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "stop filename",
+    System.out.printf( "%3s%-19s : %s%n", "", "s[top] filename",
         "stops writer for 'filename' and sends delete request" );
-    System.out.printf( "%3s%-19s : %s%n", "", "writers",
+    System.out.printf( "%3s%-19s : %s%n", "", "w[riters]",
         "display list files in the process of being stored" );
-    System.out.printf( "%3s%-19s : %s%n", "", "readers",
+    System.out.printf( "%3s%-19s : %s%n", "", "r[eaders]",
         "display list files in the process of being retrieved" );
-    System.out.printf( "%3s%-19s : %s%n", "", "files",
+    System.out.printf( "%3s%-19s : %s%n", "", "f[iles]",
         "print a list of files stored on the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "wd [new_workdir]",
         "print the current working directory or change it" );
-    System.out.printf( "%3s%-19s : %s%n", "", "exit",
+    System.out.printf( "%3s%-19s : %s%n", "", "e[xit]",
         "disconnect from the Controller and shutdown the Client" );
-    System.out.printf( "%3s%-19s : %s%n", "", "help",
+    System.out.printf( "%3s%-19s : %s%n", "", "h[elp]",
         "print a list of valid commands" );
   }
 

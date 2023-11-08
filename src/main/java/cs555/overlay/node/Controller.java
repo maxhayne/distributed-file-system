@@ -429,14 +429,17 @@ public class Controller implements Node {
       String[] splitCommand = command.split( "\\s+" );
       switch ( splitCommand[0].toLowerCase() ) {
 
+        case "s":
         case "servers":
           listRegisteredChunkServers();
           break;
 
+        case "f":
         case "files":
           listAllocatedFiles();
           break;
 
+        case "h":
         case "help":
           showHelp();
           break;
@@ -473,11 +476,11 @@ public class Controller implements Node {
    * Prints a list of commands available to the user.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-8s : %s%n", "", "servers",
+    System.out.printf( "%3s%-8s : %s%n", "", "s[ervers]",
         "print the addresses of all registered ChunkServers" );
-    System.out.printf( "%3s%-8s : %s%n", "", "files",
+    System.out.printf( "%3s%-8s : %s%n", "", "f[iles]",
         "print the names of all files earmarked for storage" );
-    System.out.printf( "%3s%-8s : %s%n", "", "help",
+    System.out.printf( "%3s%-8s : %s%n", "", "h[elp]",
         "print a list of valid commands" );
   }
 }
