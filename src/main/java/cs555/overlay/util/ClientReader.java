@@ -1,5 +1,7 @@
 package cs555.overlay.util;
 
+import cs555.overlay.config.ApplicationProperties;
+import cs555.overlay.config.Constants;
 import cs555.overlay.node.Client;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.Event;
@@ -25,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class ClientReader implements Runnable {
 
+  private static final Logger logger = Logger.getInstance();
   private final Client client;
   private final String filename;
   private final AtomicInteger chunksReceived;
@@ -78,15 +81,14 @@ public class ClientReader implements Runnable {
           writeChunksToDisk( file );
         }
       } catch ( IOException|InterruptedException ioe ) {
-        System.err.println(
-            "ClientReader: Exception thrown while writing '"+filename+
-            "' to disk. "+ioe.getMessage() );
+        logger.error( "ClientReader: Exception thrown while writing '"+filename+
+                      "' to disk. "+ioe.getMessage() );
       }
     }
     try {
       cleanup();
     } catch ( InterruptedException ie ) {
-      System.err.println( filename+" cleanup() interrupted." );
+      logger.error( filename+" cleanup() interrupted." );
     }
   }
 
@@ -110,9 +112,9 @@ public class ClientReader implements Runnable {
    * array.
    */
   private void initializeReceivedFiles() {
-    receivedFiles =
-        client.getStorageType() == 0 ? new byte[servers.length][1][] :
-            new byte[servers.length][Constants.TOTAL_SHARDS][];
+    receivedFiles = ApplicationProperties.storageType.equals( "erasure" ) ?
+                        new byte[servers.length][Constants.TOTAL_SHARDS][] :
+                        new byte[servers.length][1][];
   }
 
   /**
@@ -125,19 +127,19 @@ public class ClientReader implements Runnable {
    */
   public void addFile(String filename, byte[] content) {
     int sequence = FilenameUtilities.getSequence( filename );
-    int fragment = client.getStorageType() == 1 ?
+    int fragment = ApplicationProperties.storageType.equals( "erasure" ) ?
                        FilenameUtilities.getFragment( filename ) : 0;
     synchronized( receivedFiles[sequence] ) {
-      if ( client.getStorageType() == 0 ) { // replication
-        receivedFiles[sequence][0] = content;
-        writeLatch.countDown(); // full chunk received, countdown the latch
-        chunksReceived.incrementAndGet();
-      } else { // erasure
+      if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
         receivedFiles[sequence][fragment] = content;
         if ( ArrayUtilities.countNulls( receivedFiles[sequence] ) == 0 ) {
           writeLatch.countDown();
           chunksReceived.incrementAndGet();
         }
+      } else { // replication
+        receivedFiles[sequence][0] = content;
+        writeLatch.countDown(); // full chunk received, countdown the latch
+        chunksReceived.incrementAndGet();
       }
     }
   }
@@ -151,23 +153,29 @@ public class ClientReader implements Runnable {
    * @throws IOException if error encountered while writing
    */
   private void writeChunksToDisk(RandomAccessFile file) throws IOException {
+    int nullChunks = 0;
     for ( int i = 0; i < receivedFiles.length; ++i ) {
       synchronized( receivedFiles[i] ) {
-        if ( client.getStorageType() == 0 ) { // for replication
-          if ( receivedFiles[i][0] != null ) {
-            file.write( receivedFiles[i][0] );
-          } else {
-            System.out.println( "receivedFiles["+i+"] is null" );
-          }
-        } else { // for erasure coding
+        if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
           byte[][] decoded =
               FileSynchronizer.decodeMissingShards( receivedFiles[i] );
           if ( decoded != null ) {
             byte[] content = FileSynchronizer.getContentFromShards( decoded );
             file.write( content );
+          } else {
+            nullChunks++;
+          }
+        } else { // replication
+          if ( receivedFiles[i][0] != null ) {
+            file.write( receivedFiles[i][0] );
+          } else {
+            nullChunks++;
           }
         }
       }
+    }
+    if ( nullChunks > 0 ) {
+      logger.info( nullChunks+" chunks were not received." );
     }
   }
 
@@ -187,17 +195,14 @@ public class ClientReader implements Runnable {
   private void wrangleChunks() throws InterruptedException {
     int requests;
     do {
-      //System.out.println( "wrangling" );
       requests = requestUnaskedServers( true );
       if ( requests == 0 ) {
-        //System.out.println( "requests == 0" );
         break; // stop the process if no other servers can be contacted
       } else {
         requestUnaskedServers( false );
       }
     } while ( !writeLatch.await( 10000+(10L*requests),
         TimeUnit.MILLISECONDS ) );
-    //System.out.println( writeLatch.getCount() );
   }
 
   /**
@@ -220,7 +225,8 @@ public class ClientReader implements Runnable {
             servers[i][j] = null;
           }
           askCount++;
-          if ( client.getStorageType() == 0 ) { // only ask one if replicating
+          if ( !ApplicationProperties.storageType.equals( "erasure" ) ) {
+            // only ask one when replicating
             break;
           }
         }
@@ -250,9 +256,9 @@ public class ClientReader implements Runnable {
                      .sendData( requestMessage.getBytes() );
       return true; // message sent
     } catch ( IOException ioe ) {
-      System.err.println( "requestFileFromServer: "+specificFilename+" "+
-                          "could not be requested from "+address+
-                          ioe.getMessage() );
+      logger.error(
+          specificFilename+" could not be requested from "+address+". "+
+          ioe.getMessage() );
       return false; // message not sent
     }
   }
@@ -268,8 +274,9 @@ public class ClientReader implements Runnable {
    * @return filename of chunk/shard to be requested
    */
   private String appendFilename(int sequence, int serverPosition) {
-    return client.getStorageType() == 0 ? filename+"_chunk"+sequence :
-               filename+"_chunk"+sequence+"_shard"+serverPosition;
+    return ApplicationProperties.storageType.equals( "erasure" ) ?
+               filename+"_chunk"+sequence+"_shard"+serverPosition :
+               filename+"_chunk"+sequence;
   }
 
   /**
@@ -279,7 +286,7 @@ public class ClientReader implements Runnable {
     client.removeReader( filename ); // remove self
     Thread.sleep( 1000 );
     connectionCache.closeConnections(); // shutdown connections
-    System.out.println( "The ClientReader for '"+filename+"' has cleaned up." );
+    logger.info( "The ClientReader for "+filename+" has cleaned up." );
   }
 
   /**
@@ -292,7 +299,7 @@ public class ClientReader implements Runnable {
       Files.createDirectories( readDirectory );
       return true;
     } catch ( IOException e ) {
-      System.err.println(
+      logger.error(
           "Couldn't create directory to store files read from the DFS: "+
           readDirectory );
       return false;
@@ -329,7 +336,7 @@ public class ClientReader implements Runnable {
     if ( servers != null ) {
       return true;
     } else {
-      System.err.println( "'"+filename+"' has zero chunks stored on the DFS." );
+      logger.error( filename+" has zero chunks stored on the DFS." );
       return false;
     }
   }

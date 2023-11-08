@@ -1,8 +1,9 @@
 package cs555.overlay.transport;
 
-import cs555.overlay.util.ApplicationProperties;
+import cs555.overlay.config.ApplicationProperties;
+import cs555.overlay.config.Constants;
 import cs555.overlay.util.ArrayUtilities;
-import cs555.overlay.util.Constants;
+import cs555.overlay.util.Logger;
 import cs555.overlay.wireformats.Event;
 import cs555.overlay.wireformats.RepairChunk;
 import cs555.overlay.wireformats.RepairShard;
@@ -19,6 +20,7 @@ import java.util.*;
  */
 public class ControllerInformation {
 
+  private static final Logger logger = Logger.getInstance();
   private final ArrayList<Integer> availableIdentifiers;
   private final Map<Integer, ServerConnection> registeredServers;
 
@@ -38,12 +40,11 @@ public class ControllerInformation {
    * the files and the connections to the ChunkServers.
    */
   public ControllerInformation() {
-    this.registeredServers = new HashMap<Integer, ServerConnection>();
-    this.availableIdentifiers = new ArrayList<Integer>();
+    this.registeredServers = new HashMap<>();
+    this.availableIdentifiers = new ArrayList<>();
     for ( int i = 1; i <= 32; ++i ) {
       this.availableIdentifiers.add( i );
     }
-
     this.fileTable = new HashMap<>();
   }
 
@@ -452,31 +453,29 @@ public class ControllerInformation {
     String appendedFilename = filename+"_chunk"+sequence;
     String addressToContact;
     Event relocateMessage;
-    if ( ApplicationProperties.storageType.equals( "replication" ) ) {
+    if ( ApplicationProperties.storageType.equals( "erasure" ) ) { // erasure
+      int fragment = ArrayUtilities.contains( servers, destination );
+      appendedFilename = appendedFilename+"_shard"+fragment;
+      RepairShard repairShard =
+          new RepairShard( appendedFilename, destination, servers );
+      addressToContact = repairShard.getAddress();
+      relocateMessage = repairShard;
+    } else { // replication
       // Remove destination server from list of servers
       servers = ArrayUtilities.removeFromArray( servers, destination );
       RepairChunk repairChunk = new RepairChunk( appendedFilename, destination,
           new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 }, servers );
       addressToContact = repairChunk.getAddress();
       relocateMessage = repairChunk;
-    } else { // erasure coding
-      int fragment = ArrayUtilities.contains( servers, destination );
-      appendedFilename = appendedFilename+"_shard"+fragment;
-      System.out.println( appendedFilename );
-      RepairShard repairShard =
-          new RepairShard( appendedFilename, destination, servers );
-      addressToContact = repairShard.getAddress();
-      relocateMessage = repairShard;
     }
     try {
       getConnection( addressToContact ).getConnection()
                                        .getSender()
                                        .sendData( relocateMessage.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "sendReplacementMessage: There was an error sending a message to "+
-          addressToContact+" to replace '"+appendedFilename+"' at "+destination+
-          ". "+ioe.getMessage() );
+      logger.debug(
+          "Unable to send a message to "+addressToContact+" to replace '"+
+          appendedFilename+"' at "+destination+". "+ioe.getMessage() );
       return false;
     }
     return true;
@@ -493,9 +492,8 @@ public class ControllerInformation {
         try {
           connection.getConnection().getSender().sendData( marshalledBytes );
         } catch ( IOException ioe ) {
-          System.err.println(
-              "broadcast: Unable to send message to ChunkServer "+
-              connection.getIdentifier()+". "+ioe.getMessage() );
+          logger.debug( "Unable to send message to ChunkServer "+
+                        connection.getIdentifier()+". "+ioe.getMessage() );
         }
       }
     }

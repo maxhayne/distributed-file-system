@@ -14,6 +14,7 @@ import java.util.*;
  */
 public class HeartbeatService extends TimerTask {
 
+  private static final Logger logger = Logger.getInstance();
   private final ChunkServer chunkServer;
   private final Map<String, FileMetadata> majorFiles;
   private final Map<String, FileMetadata> minorFiles;
@@ -71,8 +72,7 @@ public class HeartbeatService extends TimerTask {
       try {
         return heartbeat.getBytes();
       } catch ( IOException ioe ) {
-        System.out.println( "heartbeat: Unable to create heartbeat message. "+
-                            ioe.getMessage() );
+        logger.debug( "Unable to create heartbeat message. "+ioe.getMessage() );
         // return null if message bytes can't be constructed
         return null;
       }
@@ -91,20 +91,15 @@ public class HeartbeatService extends TimerTask {
       chunkServer.getControllerConnection()
                  .getSender()
                  .sendData( heartbeatMessage );
-      System.out.println(
-          "Heartbeat "+heartbeatNumber+" has been sent to the Controller at "+
-          new Date() );
-
+      logger.debug( "Heartbeat "+heartbeatNumber+" sent to the Controller at "+
+                    new Date() );
     } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println( "HeartbeatService::run: NoSuchAlgorithmException. "+
-                          nsae.getMessage() );
+      logger.error( nsae.getMessage() );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "HeartbeatService::run: Unable to send heartbeat to Controller. "+
-          ioe.getMessage() );
+      logger.debug(
+          "Unable to send heartbeat to Controller. "+ioe.getMessage() );
     } catch ( AssertionError ae ) {
-      System.err.println( "HeartbeatService::run: heartbeatMessage could not "+
-                          "be constructed. "+ae.getMessage() );
+      logger.debug( "Heartbeat couldn't be constructed. "+ae.getMessage() );
     } finally {
       heartbeatNumber++;
     }

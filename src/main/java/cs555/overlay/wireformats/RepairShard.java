@@ -1,6 +1,6 @@
 package cs555.overlay.wireformats;
 
-import cs555.overlay.util.Constants;
+import cs555.overlay.config.Constants;
 
 import java.io.*;
 

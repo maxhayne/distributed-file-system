@@ -1,8 +1,14 @@
 package cs555.overlay.util;
 
+/**
+ * Class to keep track of the metadata associated with files stored on
+ * ChunkServers.
+ *
+ * @author hayne
+ */
 public class FileMetadata {
 
-  private final String filename; // will include _chunk and/or _shard
+  private final String filename; // includes "_chunk#" and "_shard#"
   private int version;
   private long timestamp;
 
@@ -30,20 +36,5 @@ public class FileMetadata {
 
   public void updateTimestamp() {
     timestamp = System.currentTimeMillis();
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if ( o == this ) {
-      return true;
-    }
-    if ( !(o instanceof FileMetadata fileData) ) {
-      return false;
-    }
-
-    // May need to modify this to ignore the version number,as a
-    // different version number doesn't imply different content.
-    return this.filename.equals( fileData.filename ) &&
-           this.version == fileData.version;
   }
 }

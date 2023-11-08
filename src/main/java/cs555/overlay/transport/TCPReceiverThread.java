@@ -1,6 +1,7 @@
 package cs555.overlay.transport;
 
 import cs555.overlay.node.Node;
+import cs555.overlay.util.Logger;
 import cs555.overlay.wireformats.Event;
 import cs555.overlay.wireformats.EventFactory;
 
@@ -17,6 +18,7 @@ import java.net.Socket;
  */
 public class TCPReceiverThread implements Runnable {
 
+  private static final Logger logger = Logger.getInstance();
   private final Node node;
   private final Socket socket;
   private final TCPConnection connection;
@@ -59,7 +61,7 @@ public class TCPReceiverThread implements Runnable {
         Event event = eventFactory.createEvent( marshalledBytes );
         node.onEvent( event, connection );
       } catch ( IOException ioe ) {
-        System.out.println( "Socket connection has closed. "+ioe.getMessage() );
+        logger.debug("Socket connection has closed. "+ioe.getMessage());
         break;
       }
     }

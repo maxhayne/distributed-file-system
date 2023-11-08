@@ -1,5 +1,6 @@
 package cs555.overlay.util;
 
+import cs555.overlay.config.Constants;
 import erasure.ReedSolomon;
 
 import java.io.File;
@@ -27,6 +28,7 @@ import java.util.stream.Stream;
  */
 public class FileSynchronizer {
 
+  private static final Logger logger = Logger.getInstance();
   public static int CHUNK_DATA_LENGTH = 65536;
   public static int CHUNK_FILE_LENGTH = 65720;
   public static int SHARD_FILE_LENGTH =
@@ -72,11 +74,9 @@ public class FileSynchronizer {
   public static byte[][] makeShardsFromContent(int length, byte[] content) {
     int storedSize = Constants.BYTES_IN_INT+Constants.CHUNK_DATA_LENGTH;
     int shardSize = (storedSize+8)/Constants.DATA_SHARDS;
-    //System.out.println( shardSize );
     int bufferSize = shardSize*Constants.DATA_SHARDS;
     byte[] allBytes = new byte[bufferSize];
     ByteBuffer allBytesBuffer = ByteBuffer.wrap( allBytes );
-    //System.out.println( "makeShardsFromContent length: "+length );
     allBytesBuffer.putInt( length );
     allBytesBuffer.put( content );
     byte[][] shards = new byte[Constants.TOTAL_SHARDS][shardSize];
@@ -143,7 +143,6 @@ public class FileSynchronizer {
     // first four bytes contains the length (hopefully)
     int length = ByteBuffer.wrap( decodedChunk ).getInt();
     return Arrays.copyOfRange( decodedChunk, 4, 4+length );
-    //return Arrays.copyOfRange( decodedChunk, 4, 65724 );
   }
 
   /**
@@ -201,8 +200,7 @@ public class FileSynchronizer {
         Arrays.fill( sliceArray, ( byte ) 0 );
       }
     } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println(
-          "readyChunkForStorage: Can't access algorithm for SHA1." );
+      logger.error( "Can't access algorithm for SHA1."+nsae.getMessage() );
       return null;
     }
     return chunkToFileArray;
@@ -239,8 +237,7 @@ public class FileSynchronizer {
       shardFileArrayWrap.put( shardWithMetaData );
       return shardToFileArray;
     } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println(
-          "readyShardForStorage: Can't access algorithm for SHA1." );
+      logger.error( "Can't access algorithm for SHA1. "+nsae.getMessage() );
       return null;
     }
   }
@@ -276,12 +273,9 @@ public class FileSynchronizer {
       }
     } catch ( BufferUnderflowException bue ) {
       // The array wasn't the correct length for a chunk
-      System.err.println(
-          "checkChunkCorruption: Byte string wasn't "+"formatted properly." );
-      //return null;
+      logger.debug( "Byte array wasn't formatted properly." );
     } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println( "checkChunkCorruption: Couldn't use SHA1." );
-      //return null;
+      logger.error( "Couldn't use SHA1. "+nsae.getMessage() );
     }
     // The array could pass all the tests and still be corrupt, if any
     // information was added to the end of the file storing the chunk.
@@ -313,7 +307,7 @@ public class FileSynchronizer {
     } catch ( BufferUnderflowException bue ) {
       return true;
     } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println( "checkShardForCorruption: Couldn't use SHA1." );
+      logger.error( "Couldn't use SHA1. "+nsae.getMessage() );
       return true;
     }
     return true;
@@ -438,18 +432,6 @@ public class FileSynchronizer {
     }
   }
 
-  public synchronized void truncateFile(String filename, long size) {
-    String filePath = getPath( filename ).toString();
-    try ( RandomAccessFile file = new RandomAccessFile( filePath, "rw" );
-          FileChannel channel = file.getChannel();
-          FileLock lock = channel.lock() ) {
-      channel.truncate( size );
-    } catch ( IOException ioe ) {
-      System.out.println(
-          "truncateFile: Error truncating '"+filename+"'. "+ioe.getMessage() );
-    }
-  }
-
   /**
    * Reads up to the first N bytes of a file.
    *
@@ -466,9 +448,8 @@ public class FileSynchronizer {
           FileLock lock = channel.lock( 0, N, true ) ) {
       file.read( fileBytes );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "readNBytesFromFile: Unable to read "+N+" bytes of '"+filename+"'. "+
-          ioe.getMessage() );
+      logger.debug(
+          "Unable to read "+N+" bytes of '"+filename+"'. "+ioe.getMessage() );
     }
     return fileBytes;
   }
@@ -488,9 +469,7 @@ public class FileSynchronizer {
         FileLock lock = channel.lock() ) {
       channel.truncate( 0 );
       file.write( content );
-      System.out.println(
-          "overwriteFile: "+content.length+" bytes "+"written to '"+filename+
-          "'" );
+      logger.debug( content.length+" bytes written to "+filename );
       return true;
     } catch ( IOException ioe ) {
       return false;

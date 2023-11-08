@@ -1,5 +1,7 @@
 package cs555.overlay.util;
 
+import cs555.overlay.config.ApplicationProperties;
+import cs555.overlay.config.Constants;
 import cs555.overlay.node.Client;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.ClientStore;
@@ -21,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author hayne
  */
 public class ClientWriter implements Runnable {
-
+  private static final Logger logger = Logger.getInstance();
   private final Client client;
   private final Path pathToFile;
   private final String dateAddedFilename;
@@ -76,15 +78,15 @@ public class ClientWriter implements Runnable {
         "r" ); FileChannel channel = file.getChannel();
           FileLock fileLock = channel.lock( 0, file.length(), true ) ) {
       chunkizeFileAndStore( file, setTotalChunks( file.length() ) );
-    } catch ( IOException|InterruptedException ioe ) {
-      System.err.println( "ClientWriter: Exception thrown while writing '"+
-                          dateAddedFilename+"' to the DFS. "+
-                          ioe.getMessage() );
+    } catch ( IOException|InterruptedException e ) {
+      logger.error(
+          "Exception thrown while writing "+dateAddedFilename+" to the DFS. "+
+          e.getMessage() );
     }
     try {
       cleanup();
     } catch ( InterruptedException ie ) {
-      System.err.println( dateAddedFilename+" cleanup() interrupted." );
+      logger.error( dateAddedFilename+" cleanup() interrupted." );
     }
   }
 
@@ -112,6 +114,7 @@ public class ClientWriter implements Runnable {
         if ( servers == null ||
              !sendChunkToServers( requestMessage.getSequence(),
                  chunkContent ) ) { // stopped by user, or chunk not sent out
+          logger.error( "Couldn't store chunk "+i+" to the DFS." );
           break;
         }
       } else {
@@ -129,8 +132,7 @@ public class ClientWriter implements Runnable {
     client.removeWriter( dateAddedFilename ); // remove self
     Thread.sleep( 1000 );
     connectionCache.closeConnections(); // shutdown connections
-    System.out.println(
-        "The ClientWriter for '"+dateAddedFilename+"' has cleaned up." );
+    logger.info( "The ClientWriter for "+dateAddedFilename+" has cleaned up." );
   }
 
   /**
@@ -165,7 +167,7 @@ public class ClientWriter implements Runnable {
       client.getControllerConnection().getSender().sendData( event.getBytes() );
       return true;
     } catch ( IOException ioe ) {
-      System.err.println( "Couldn't send message to Controller." );
+      logger.error( "Couldn't send message to Controller." );
       return false;
     }
   }
@@ -205,8 +207,7 @@ public class ClientWriter implements Runnable {
                      .sendData( event.getBytes() );
       return true;
     } catch ( IOException ioe ) {
-      System.err.println(
-          "sendToChunkServer: Couldn't send file to '"+address+"'. " );
+      logger.debug( "Couldn't send file to "+address );
       return false;
     }
   }
@@ -221,12 +222,12 @@ public class ClientWriter implements Runnable {
    * message
    */
   private byte[][] createContentToSend(byte[] content) {
-    if ( client.getStorageType() == 0 ) { // replicating
-      return new byte[][]{ content };
-    } else { // erasure coding
+    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
       int length = content.length;
       content = standardizeLength( content );
       return FileSynchronizer.makeShardsFromContent( length, content );
+    } else { // replication
+      return new byte[][]{ content };
     }
   }
 
@@ -291,9 +292,18 @@ public class ClientWriter implements Runnable {
    */
   private String createFilename(int sequence) {
     String filename = dateAddedFilename+"_chunk"+sequence;
-    if ( client.getStorageType() == 1 ) {
+    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
       filename += "_shard";
     }
     return filename;
+  }
+
+  /**
+   * Getter for pathToFile.
+   *
+   * @return pathToFile
+   */
+  public Path getPathToFile() {
+    return pathToFile;
   }
 }

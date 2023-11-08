@@ -1,4 +1,6 @@
-package cs555.overlay.util;
+package cs555.overlay.config;
+
+import cs555.overlay.util.Logger;
 
 import java.io.FileInputStream;
 import java.util.Properties;
@@ -11,7 +13,9 @@ import java.util.Properties;
  * @author hayne
  */
 public class PropertyLoader {
-  public static PropertyLoader loader = new PropertyLoader();
+
+  private static final Logger logger = Logger.getInstance();
+  private static final PropertyLoader loader = new PropertyLoader();
   private final Properties properties;
 
   /**
@@ -21,13 +25,11 @@ public class PropertyLoader {
    */
   private PropertyLoader() {
     properties = new Properties();
-    try {
-      FileInputStream in = new FileInputStream(
-          cs555.overlay.util.ApplicationProperties.propertyFile );
+    try ( FileInputStream in = new FileInputStream(
+        ApplicationProperties.propertyFile ) ) {
       properties.load( in );
-      in.close();
     } catch ( Exception e ) {
-      System.err.println(
+      logger.error(
           "'"+ApplicationProperties.propertyFile+"' file could not be loaded. "+
           e.getMessage() );
     }

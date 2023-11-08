@@ -1,4 +1,4 @@
-package cs555.overlay.util;
+package cs555.overlay.config;
 
 /**
  * Interface to store constants that will be used both by ChunkServers and the

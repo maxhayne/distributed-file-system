@@ -1,6 +1,7 @@
 package cs555.overlay.transport;
 
 import cs555.overlay.node.Node;
+import cs555.overlay.util.Logger;
 
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -14,6 +15,7 @@ import java.net.Socket;
  */
 public class TCPServerThread implements Runnable {
 
+  private static final Logger logger = Logger.getInstance();
   private final Node node;
   private final ServerSocket serverSocket;
 
@@ -40,7 +42,7 @@ public class TCPServerThread implements Runnable {
         Socket newSocket = serverSocket.accept();
         (new TCPConnection( node, newSocket )).start();
       } catch ( IOException ioe ) {
-        System.err.println( "ServerSocket has stopped. "+ioe.getMessage() );
+        logger.debug( "ServerSocket has stopped. "+ioe.getMessage() );
         break;
       }
 

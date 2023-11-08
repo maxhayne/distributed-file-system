@@ -1,6 +1,7 @@
 package cs555.overlay.files;
 
 import cs555.overlay.util.FilenameUtilities;
+import cs555.overlay.util.Logger;
 
 /**
  * Creates FileReader objects based on the name of the file being read. This
@@ -10,6 +11,8 @@ import cs555.overlay.util.FilenameUtilities;
  * @author hayne
  */
 public class FileReaderFactory {
+
+  private static final Logger logger = Logger.getInstance();
   private static final FileReaderFactory fileReaderFactory =
       new FileReaderFactory(); // singleton factory
 
@@ -33,8 +36,7 @@ public class FileReaderFactory {
     } else if ( FilenameUtilities.checkShardFilename( filename ) ) {
       return new ShardReader( filename );
     } else {
-      System.err.println(
-          "createFileReader: FileReader couldn't be created. "+filename );
+      logger.error( "FileReader couldn't be created. "+filename );
       return null;
     }
   }

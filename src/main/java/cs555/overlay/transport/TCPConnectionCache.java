@@ -7,6 +7,11 @@ import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Holds established TCPConnections for reuse.
+ *
+ * @author hayne
+ */
 public class TCPConnectionCache {
 
   private final Map<String, TCPConnection> cachedConnections;

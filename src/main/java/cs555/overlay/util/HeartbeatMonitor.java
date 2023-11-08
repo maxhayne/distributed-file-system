@@ -1,5 +1,7 @@
 package cs555.overlay.util;
 
+import cs555.overlay.config.ApplicationProperties;
+import cs555.overlay.config.Constants;
 import cs555.overlay.node.Controller;
 import cs555.overlay.transport.ControllerInformation;
 import cs555.overlay.transport.ServerConnection;
@@ -24,6 +26,7 @@ import java.util.TimerTask;
  */
 public class HeartbeatMonitor extends TimerTask {
 
+  private static final Logger logger = Logger.getInstance();
   private final Controller controller;
   private final ControllerInformation information;
 
@@ -141,8 +144,7 @@ public class HeartbeatMonitor extends TimerTask {
       ArrayList<Integer> sequences = storedChunks.get( filename );
       for ( int sequence : sequences ) {
         if ( !chunksAtServer.contains( filename+"_chunk"+sequence ) ) {
-          System.out.println(
-              "Dispatching repair for "+filename+"_chunk"+sequence );
+          logger.debug( "Dispatching repair for "+filename+"_chunk"+sequence );
           dispatchRepair( filename, sequence, connection.getServerAddress() );
         }
       }
@@ -161,30 +163,29 @@ public class HeartbeatMonitor extends TimerTask {
   private void dispatchRepair(String filename, int sequence,
       String destination) {
     String[] servers = information.getServers( filename, sequence );
-    Event repairMessage;
-    String sendTo;
+    Event replaceMessage;
+    String addressToContact;
     if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
       RepairShard repairShard =
           new RepairShard( filename+"_chunk"+sequence+"_shard", destination,
               servers );
-      sendTo = repairShard.getAddress();
-      repairMessage = repairShard;
+      addressToContact = repairShard.getAddress();
+      replaceMessage = repairShard;
     } else {
       RepairChunk repairChunk =
           new RepairChunk( filename+"_chunk"+sequence, destination,
               new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 },
               ArrayUtilities.removeFromArray( servers, destination ) );
-      sendTo = repairChunk.getAddress();
-      repairMessage = repairChunk;
+      addressToContact = repairChunk.getAddress();
+      replaceMessage = repairChunk;
     }
     try {
-      information.getConnection( sendTo )
+      information.getConnection( addressToContact )
                  .getConnection()
                  .getSender()
-                 .sendData( repairMessage.getBytes() );
+                 .sendData( replaceMessage.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "dispatchRepair: Failed to send message. "+ioe.getMessage() );
+      logger.debug( "Failed to send message. "+ioe.getMessage() );
     }
   }
 
@@ -231,7 +232,7 @@ public class HeartbeatMonitor extends TimerTask {
       }
 
       // Print the contents of all heartbeats for registered ChunkServers
-      System.out.println( sb );
+      logger.debug( sb.toString() );
     }
     for ( Integer i : toDeregister ) {
       controller.deregister( i );

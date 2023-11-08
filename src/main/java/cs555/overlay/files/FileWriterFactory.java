@@ -2,6 +2,7 @@ package cs555.overlay.files;
 
 import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FilenameUtilities;
+import cs555.overlay.util.Logger;
 
 /**
  * Creates FileWriter objects based on the name of the file being written. This
@@ -11,6 +12,7 @@ import cs555.overlay.util.FilenameUtilities;
  * @author hayne
  */
 public class FileWriterFactory {
+  private static final Logger logger = Logger.getInstance();
   private static final FileWriterFactory fileWriterFactory =
       new FileWriterFactory(); // singleton factory
 
@@ -35,8 +37,7 @@ public class FileWriterFactory {
         metadata.getFilename() ) ) {
       return new ShardWriter( metadata );
     } else {
-      System.err.println( "createFileWriter: FileWriter couldn't be created. "+
-                          metadata.getFilename() );
+      logger.error( "FileWriter couldn't be created. "+metadata.getFilename() );
       return null;
     }
   }

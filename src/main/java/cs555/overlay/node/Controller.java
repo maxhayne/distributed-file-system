@@ -1,10 +1,15 @@
 package cs555.overlay.node;
 
+import cs555.overlay.config.ApplicationProperties;
+import cs555.overlay.config.Constants;
 import cs555.overlay.transport.ControllerInformation;
 import cs555.overlay.transport.ServerConnection;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPServerThread;
-import cs555.overlay.util.*;
+import cs555.overlay.util.ArrayUtilities;
+import cs555.overlay.util.FilenameUtilities;
+import cs555.overlay.util.HeartbeatMonitor;
+import cs555.overlay.util.Logger;
 import cs555.overlay.wireformats.*;
 
 import java.io.IOException;
@@ -23,6 +28,7 @@ import java.util.TreeMap;
  */
 public class Controller implements Node {
 
+  private static final Logger logger = Logger.getInstance();
   private final String host;
   private final int port;
   private final ControllerInformation information;
@@ -52,8 +58,8 @@ public class Controller implements Node {
       // Start the ServerThread
       (new Thread( new TCPServerThread( controller, serverSocket ) )).start();
 
-      System.out.println( "Controller's ServerThread has started at ["+host+":"+
-                          ApplicationProperties.controllerPort+"]" );
+      logger.info( "ServerThread has started at ["+host+":"+
+                   ApplicationProperties.controllerPort+"]" );
 
       // Start the HeartbeatMonitor
       HeartbeatMonitor heartbeatMonitor =
@@ -65,7 +71,7 @@ public class Controller implements Node {
       // Start looping for user interaction
       controller.interact();
     } catch ( IOException ioe ) {
-      System.err.println( "Controller failed to start. "+ioe.getMessage() );
+      logger.error( "Controller failed to start. "+ioe.getMessage() );
       System.exit( 1 );
     }
 
@@ -122,7 +128,7 @@ public class Controller implements Node {
         break;
 
       default:
-        System.err.println( "Event couldn't be processed. "+event.getType() );
+        logger.debug( "Event couldn't be processed. "+event.getType() );
         break;
     }
   }
@@ -138,13 +144,13 @@ public class Controller implements Node {
     if ( fileList.length == 0 ) {
       fileList = null;
     }
-
     ControllerSendsFileList response = new ControllerSendsFileList( fileList );
     try {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println( "fileListRequest: Unable to send response"+
-                          " to Client containing list of files." );
+      logger.debug(
+          "Unable to send response to Client containing list of files. "+
+          ioe.getMessage() );
     }
   }
 
@@ -157,7 +163,6 @@ public class Controller implements Node {
    */
   private synchronized void clientRead(Event event, TCPConnection connection) {
     String filename = (( GeneralMessage ) event).getMessage();
-
     // Get servers for all the file's chunks
     String[][] servers = null;
     if ( information.getFileTable().containsKey( filename ) ) {
@@ -170,15 +175,14 @@ public class Controller implements Node {
         index++;
       }
     }
-
     ControllerSendsStorageList response =
         new ControllerSendsStorageList( filename, servers );
     try {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println( "clientRead: Unable to send response to Client"+
-                          " containing storage information about "+filename+
-                          "." );
+      logger.debug(
+          "Unable to send response to Client containing storage information "+
+          "about '"+filename+"'. "+ioe.getMessage() );
     }
   }
 
@@ -212,40 +216,40 @@ public class Controller implements Node {
 
     // If no servers hold this chunk, there is nothing to be done
     if ( servers == null ) {
-      System.err.println( "corruptionHelper: The Controller doesn't have an "+
-                          "entry in its fileTable for '"+report.getFilename()+
-                          "', so it cannot be repaired." );
+      logger.debug(
+          "The Controller doesn't have an entry in its fileTable for '"+
+          report.getFilename()+"', so it cannot be repaired." );
       return;
     } else if ( destination == null ) {
-      System.err.println( "corruptionHelper: Could not fetch the destination "+
-                          "address of the server needing the repair." );
+      logger.debug(
+          "Could not fetch the destination address of the server needing the "+
+          "repair." );
       return;
     }
 
     Event repairMessage;
-    String sendTo;
+    String addressToContact;
     if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
       RepairShard repairShard =
           new RepairShard( report.getFilename(), destination, servers );
-      sendTo = repairShard.getAddress();
+      addressToContact = repairShard.getAddress();
       repairMessage = repairShard;
     } else {
       RepairChunk repairChunk =
           new RepairChunk( report.getFilename(), destination,
               report.getSlices(),
               ArrayUtilities.removeFromArray( servers, destination ) );
-      sendTo = repairChunk.getAddress();
+      addressToContact = repairChunk.getAddress();
       repairMessage = repairChunk;
     }
 
     try {
-      information.getConnection( sendTo )
+      information.getConnection( addressToContact )
                  .getConnection()
                  .getSender()
                  .sendData( repairMessage.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println( "corruptionHelper: Failed to send repair message to"+
-                          " its first hop." );
+      logger.debug( "Failed to send repair message to its first hop." );
     }
   }
 
@@ -261,9 +265,8 @@ public class Controller implements Node {
     ServerConnection connection =
         information.getConnection( response.getIdentifier() );
     if ( connection == null ) {
-      System.err.println( "pokeHelper: there is no registered ChunkServer"+
-                          " with an identifier of "+response.getIdentifier()+
-                          "." );
+      logger.debug( "There is no registered ChunkServer with an identifier of "+
+                    response.getIdentifier()+"." );
       return;
     }
     connection.incrementPokeReplies();
@@ -280,9 +283,8 @@ public class Controller implements Node {
     ServerConnection connection =
         information.getConnection( heartbeat.getIdentifier() );
     if ( connection == null ) {
-      System.err.println( "heartbeatHelper: there is no registered ChunkServer"+
-                          "with an identifier of "+heartbeat.getIdentifier()+
-                          "." );
+      logger.debug( "There is no registered ChunkServer with an identifier of "+
+                    heartbeat.getIdentifier()+"." );
       return;
     }
     connection.getHeartbeatInfo()
@@ -317,9 +319,8 @@ public class Controller implements Node {
     try {
       information.broadcast( deleteRequest.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "deleteFile: Error while sending file delete request to all "+
-          "ChunkServers. "+ioe.getMessage() );
+      logger.debug( "Problem sending file delete request to all ChunkServers. "+
+                    ioe.getMessage() );
     }
 
     // Send client an acknowledgement
@@ -328,9 +329,8 @@ public class Controller implements Node {
     try {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "deleteFile: Unable to acknowledge Client's request to "+"delete "+
-          "file. "+ioe.getMessage() );
+      logger.debug( "Unable to acknowledge Client's request to delete file. "+
+                    ioe.getMessage() );
     }
   }
 
@@ -369,9 +369,8 @@ public class Controller implements Node {
     try {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "Unable to respond to Client's request to store chunk. "+
-          ioe.getMessage() );
+      logger.debug( "Unable to respond to Client's request to store chunk. "+
+                    ioe.getMessage() );
     }
   }
 
@@ -396,9 +395,8 @@ public class Controller implements Node {
       try {
         connection.getSender().sendData( message.getBytes() );
       } catch ( IOException ioe ) {
-        System.err.println(
-            "Failed to notify ChunkServer of registration status. "+
-            "Deregistering. "+ioe.getMessage() );
+        logger.debug( "Failed to notify ChunkServer of registration status. "+
+                      "Deregistering. "+ioe.getMessage() );
         if ( registrationStatus != -1 ) {
           information.deregister( registrationStatus );
         }
@@ -416,7 +414,6 @@ public class Controller implements Node {
    * @param identifier of the server to be deregistered
    */
   public synchronized void deregister(int identifier) {
-    System.out.println( "deregister called "+identifier );
     information.deregister( identifier );
   }
 
@@ -466,9 +463,9 @@ public class Controller implements Node {
    * Prints a list of registered ChunkServers.
    */
   private synchronized void listRegisteredChunkServers() {
-    String[] servers = information.getAllServerAddresses();
-    for ( String server : servers ) {
-      System.out.printf( "%3s%s%n", "", server );
+    for ( ServerConnection connection : information.getRegisteredServers()
+                                                   .values() ) {
+      System.out.printf( "%3s%s%n", "", connection.toString() );
     }
   }
 

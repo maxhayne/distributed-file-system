@@ -1,10 +1,11 @@
 package cs555.overlay.node;
 
+import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.transport.TCPConnection;
-import cs555.overlay.util.ApplicationProperties;
 import cs555.overlay.util.ClientReader;
 import cs555.overlay.util.ClientWriter;
 import cs555.overlay.util.FilenameUtilities;
+import cs555.overlay.util.Logger;
 import cs555.overlay.wireformats.*;
 
 import java.io.File;
@@ -16,7 +17,6 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  * Client node in the DFS. It is responsible for parsing commands from the user
@@ -27,26 +27,21 @@ import java.util.concurrent.ConcurrentMap;
  */
 public class Client implements Node {
 
-  private final int storageType;
+  private static final Logger logger = Logger.getInstance();
   private TCPConnection controllerConnection;
-  private final ConcurrentMap<String, ClientWriter> writers;
-  private final ConcurrentMap<String, ClientReader> readers;
+  private final ConcurrentHashMap<String, ClientWriter> writers;
+  private final ConcurrentHashMap<String, ClientReader> readers;
   private Path workingDirectory;
-  private final SimpleDateFormat format; // for appending to filenames
   private String[] controllerFileList;
   private final Object listLock; // for protecting the controllerFileList
 
   /**
    * Default constructor.
-   *
-   * @param storageType 0 for replication, 1 for erasure coding
    */
-  public Client(int storageType) {
-    this.storageType = storageType;
+  public Client() {
     this.writers = new ConcurrentHashMap<>();
     this.readers = new ConcurrentHashMap<>();
     this.workingDirectory = Paths.get( System.getProperty( "user.dir" ) );
-    this.format = new SimpleDateFormat( "yyyy-MM-dd-HHmmss" );
     this.listLock = new Object();
   }
 
@@ -59,27 +54,12 @@ public class Client implements Node {
    * @param args ignored
    */
   public static void main(String[] args) {
-
-    // Get storageType from 'application.properties' file
-    int storageType;
-    if ( ApplicationProperties.storageType.equalsIgnoreCase( "erasure" ) ) {
-      storageType = 1;
-    } else if ( ApplicationProperties.storageType.equalsIgnoreCase(
-        "replication" ) ) {
-      storageType = 0;
-    } else {
-      System.out.println(
-          "storageType set in 'application.properties' file is neither "+
-          "'replication' nor 'erasure', defaulting to 'replication'." );
-      storageType = 0;
-    }
-
     // Establish connection with Controller
     try ( Socket controllerSocket = new Socket(
         ApplicationProperties.controllerHost,
         ApplicationProperties.controllerPort ) ) {
 
-      Client client = new Client( storageType );
+      Client client = new Client();
 
       // Set Client's connection to Controller, start the receiver
       client.controllerConnection =
@@ -89,9 +69,8 @@ public class Client implements Node {
       // Loop for user interaction
       client.interact();
     } catch ( IOException ioe ) {
-      System.err.println(
-          "Connection to the Controller couldn't be established. "+
-          ioe.getMessage() );
+      logger.error( "Connection to the Controller couldn't be established. "+
+                    ioe.getMessage() );
       System.exit( 1 );
     }
   }
@@ -116,7 +95,7 @@ public class Client implements Node {
 
       case Protocol.CHUNK_SERVER_DENIES_REQUEST:
         String filename = (( GeneralMessage ) event).getMessage();
-        System.err.println( "Request denied for "+filename );
+        logger.debug( "Request denied for "+filename );
         break;
 
       case Protocol.CONTROLLER_SENDS_FILE_LIST:
@@ -128,7 +107,7 @@ public class Client implements Node {
         break;
 
       case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
-        System.out.println( "The Controller has denied a storage request." );
+        logger.info( "The Controller has denied a storage request." );
         stopWriterAndRequestDelete( (( GeneralMessage ) event).getMessage() );
         break;
 
@@ -137,7 +116,7 @@ public class Client implements Node {
         break;
 
       default:
-        System.err.println( "Event couldn't be processed. "+event.getType() );
+        logger.debug( "Event couldn't be processed. "+event.getType() );
         break;
     }
   }
@@ -176,9 +155,9 @@ public class Client implements Node {
     try {
       controllerConnection.getSender().sendData( requestDelete.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println( "stopWriterAndRequestDelete: Couldn't send "+
-                          "Controller a request to delete '"+filename+"'"+
-                          ioe.getMessage() );
+      logger.error(
+          "Couldn't send Controller a request to delete '"+filename+"'"+
+          ioe.getMessage() );
     }
   }
 
@@ -285,7 +264,7 @@ public class Client implements Node {
           break;
 
         default:
-          System.err.println( "Unrecognized command. Use 'help' command." );
+          logger.error( "Unrecognized command. Use 'help' command." );
           break;
       }
     }
@@ -304,7 +283,7 @@ public class Client implements Node {
     if ( command.length > 1 ) {
       stopWriterAndRequestDelete( command[1] );
     } else {
-      System.err.println( "stop: No filename given. Use 'help' for usage." );
+      logger.error( "No filename given. Use 'help' for usage." );
     }
   }
 
@@ -316,11 +295,12 @@ public class Client implements Node {
   private void requestFileDelete(String[] command) {
     synchronized( listLock ) {
       if ( controllerFileList == null ) {
-        System.err.println(
-            "delete: The file list hasn't been retrieved from the Controller "+
-            "yet. Use command 'files' to retrieve the list, then use the "+
-            "delete command followed by one or more of the numbers printed to"+
-            " the left of the list of files." );
+        logger.error(
+            "Either no files are stored on the DFS or the file list hasn't "+
+            "been retrieved from the Controller yet. Use command 'files' to "+
+            "retrieve the list, then use the delete command followed by one "+
+            "or more of the numbers printed to the left of the list of files"+
+            "." );
         return;
       }
       if ( command.length > 1 ) {
@@ -335,15 +315,14 @@ public class Client implements Node {
                                   .sendData( deleteMessage.getBytes() );
             }
           } catch ( IOException ioe ) {
-            System.err.println(
-                "delete: Couldn't send Controller a delete request. "+
-                ioe.getMessage() );
+            logger.error( "Couldn't send Controller a delete request. "+
+                          ioe.getMessage() );
           } catch ( NumberFormatException nfe ) {
-            System.err.println( "delete: "+command[i]+" is not an integer." );
+            logger.error( command[i]+" is not an integer." );
           }
         }
       } else {
-        System.err.println( "delete: No number given. Use 'help' for usage." );
+        logger.error( "No number given. Use 'help' for usage." );
       }
     }
   }
@@ -376,9 +355,8 @@ public class Client implements Node {
     try {
       controllerConnection.getSender().sendData( requestMessage.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "requestFileList: Could not send a file list request to the "+
-          "Controller. "+ioe.getMessage() );
+      logger.error( "Could not send a file list request to the Controller. "+
+                    ioe.getMessage() );
     }
   }
 
@@ -448,17 +426,38 @@ public class Client implements Node {
    */
   private void put(String[] command) {
     if ( command.length < 2 ) {
-      System.err.println( "put: No file given. Use 'help' for usage. " );
+      logger.error( "No file given. Use 'help' for usage." );
       return;
     }
     Path pathToFile = parsePath( command[1] );
-    // Give the file a unique name based on the current time
-    String dateAddedFilename =
-        pathToFile.getFileName().toString()+"_"+format.format( new Date() );
-    ClientWriter writer =
-        new ClientWriter( this, pathToFile, dateAddedFilename );
-    writers.put( dateAddedFilename, writer );
-    (new Thread( writer )).start();
+    Boolean alreadyWriting = writers.searchValues( 10,
+        (w) -> w.getPathToFile().equals( pathToFile ) );
+    if ( alreadyWriting == null || !alreadyWriting ) {
+      String dateAddedFilename =
+          addDateToFilename( pathToFile.getFileName().toString() );
+      ClientWriter writer =
+          new ClientWriter( this, pathToFile, dateAddedFilename );
+      writers.put( dateAddedFilename, writer );
+      (new Thread( writer )).start();
+    }
+  }
+
+  /**
+   * Add timestamp to filename before last dot. Won't work well for '.tar .gz',
+   * but will for most other extensions.
+   *
+   * @param filename filename to be modified
+   * @return modified filename
+   */
+  private String addDateToFilename(String filename) {
+    SimpleDateFormat sdf = new SimpleDateFormat( "yyyy-MM-dd-HHmmss" );
+    int fileExtensionIndex = filename.lastIndexOf( '.' );
+    if ( fileExtensionIndex != -1 ) {
+      return filename.substring( 0, fileExtensionIndex )+"_"+
+             sdf.format( new Date() )+filename.substring( fileExtensionIndex );
+    } else {
+      return filename+"_"+sdf.format( new Date() );
+    }
   }
 
   /**
@@ -469,13 +468,13 @@ public class Client implements Node {
   private void get(String[] command) {
     synchronized( listLock ) {
       if ( controllerFileList == null ) {
-        System.err.println(
-            "get: The file list hasn't been retrieved from the Controller yet"+
+        logger.error(
+            "The file list hasn't been retrieved from the Controller yet"+
             ". Use command 'files' to retrieve the list, then use the number "+
             "to the left of the filename in your 'get' command." );
         return;
       } else if ( command.length < 2 ) {
-        System.err.println( "get: No number given. Use 'help' command." );
+        logger.error( "No number given. Use 'help' command." );
         return;
       }
       for ( int i = 1; i < command.length; ++i ) {
@@ -483,16 +482,18 @@ public class Client implements Node {
         try {
           fileNumber = Integer.parseInt( command[i] );
         } catch ( NumberFormatException nfe ) {
-          System.err.println( "get: "+command[i]+" isn't an integer." );
+          logger.error( command[i]+" isn't an integer." );
           continue;
         }
-        if ( fileNumber >= 0 && fileNumber < controllerFileList.length ) {
+        if ( fileNumber >= 0 && fileNumber < controllerFileList.length &&
+             !readers.containsKey( controllerFileList[fileNumber] ) ) {
           ClientReader reader =
               new ClientReader( this, controllerFileList[fileNumber] );
           readers.put( controllerFileList[fileNumber], reader );
           (new Thread( reader )).start();
         } else {
-          System.err.println( "get: "+fileNumber+" is not a valid file." );
+          logger.error(
+              fileNumber+" is either a duplicate, or not a valid file." );
         }
       }
     }
@@ -504,9 +505,9 @@ public class Client implements Node {
   private void showHelp() {
     System.out.printf( "%3s%-19s : %s%n", "", "put path/filename",
         "store a local file on the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "get # #",
+    System.out.printf( "%3s%-19s : %s%n", "", "get # [#]",
         "retrieve file(s) from the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "delete # #",
+    System.out.printf( "%3s%-19s : %s%n", "", "delete # [#]",
         "request that file(s) be deleted from the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "stop filename",
         "stops writer for 'filename' and sends delete request" );
@@ -551,14 +552,5 @@ public class Client implements Node {
    */
   public TCPConnection getControllerConnection() {
     return controllerConnection;
-  }
-
-  /**
-   * Getter for storageType
-   *
-   * @return 0 for replication, 1 for erasure coding
-   */
-  public int getStorageType() {
-    return storageType;
   }
 }

@@ -1,4 +1,4 @@
-package cs555.overlay.util;
+package cs555.overlay.config;
 
 /**
  * Interface to store properties as loaded from the application.properties file.
@@ -15,6 +15,12 @@ public interface ApplicationProperties {
   int controllerPort = Integer.parseInt(
       PropertyLoader.getInstance().getProperty( "controllerPort", "46529" ) );
 
-  String storageType =
-      PropertyLoader.getInstance().getProperty( "storageType", "replication" );
+  String storageType = PropertyLoader.getInstance()
+                                     .getProperty( "storageType",
+                                         "replication" )
+                                     .toLowerCase();
+
+  String logLevel = PropertyLoader.getInstance()
+                                  .getProperty( "logLevel", "info" )
+                                  .toLowerCase();
 }

@@ -1,5 +1,7 @@
 package cs555.overlay.wireformats;
 
+import cs555.overlay.util.Logger;
+
 import java.io.IOException;
 
 /**
@@ -10,6 +12,7 @@ import java.io.IOException;
  */
 public class EventFactory {
 
+  private static final Logger logger = Logger.getInstance();
   private static final EventFactory eventFactory = new EventFactory();
 
   /**
@@ -37,16 +40,13 @@ public class EventFactory {
     switch ( marshalledBytes[0] ) {
       case Protocol.CHUNK_SERVER_SENDS_REGISTRATION:
       case Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION:
-      case Protocol.CHUNK_SERVER_REQUESTS_FILE:
       case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
       case Protocol.CONTROLLER_SENDS_HEARTBEAT:
       case Protocol.CLIENT_REQUESTS_FILE_LIST:
       case Protocol.CONTROLLER_APPROVES_FILE_DELETE:
       case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
-      case Protocol.CLIENT_REQUESTS_FILE_SIZE:
       case Protocol.CLIENT_REQUESTS_FILE_DELETE:
       case Protocol.REQUEST_FILE:
-      case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_ACQUIRE:
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FOR_STORAGE:
       case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS:
       case Protocol.CHUNK_SERVER_DENIES_REQUEST:
@@ -88,7 +88,7 @@ public class EventFactory {
         return new ChunkServerReportsFileCorruption( marshalledBytes );
 
       default:
-        System.err.println( "Event couldn't be created. "+marshalledBytes[0] );
+        logger.error( "Event couldn't be created. "+marshalledBytes[0] );
         return null;
     }
   }

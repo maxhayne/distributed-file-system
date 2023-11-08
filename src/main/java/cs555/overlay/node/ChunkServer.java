@@ -1,5 +1,7 @@
 package cs555.overlay.node;
 
+import cs555.overlay.config.ApplicationProperties;
+import cs555.overlay.config.Constants;
 import cs555.overlay.files.*;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPConnectionCache;
@@ -26,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public class ChunkServer implements Node {
 
+  private static final Logger logger = Logger.getInstance();
   private final String host;
   private final int port;
   private TCPConnection controllerConnection;
@@ -78,9 +81,9 @@ public class ChunkServer implements Node {
       // Start the TCPServerThread
       (new Thread( new TCPServerThread( chunkServer, serverSocket ) )).start();
 
-      System.out.println(
-          "TCPServerThread is started and available at ["+chunkServer.getHost()+
-          ":"+chunkServer.getPort()+"]" );
+      logger.info(
+          "ServerThread has started and at ["+chunkServer.getHost()+":"+
+          chunkServer.getPort()+"]" );
 
       // Establish socket connection with controller, send a registration
       // request, and start the TCPReceiverThread
@@ -89,14 +92,13 @@ public class ChunkServer implements Node {
       chunkServer.sendGeneralMessage( Protocol.CHUNK_SERVER_SENDS_REGISTRATION,
           host+":"+serverSocket.getLocalPort(),
           chunkServer.controllerConnection );
-      System.out.println(
-          "A registration request has been sent to the Controller." );
+      logger.info( "A registration request has been sent to the Controller." );
       chunkServer.controllerConnection.start();
 
       // Loop for user interaction
       chunkServer.interact();
     } catch ( IOException ioe ) {
-      System.err.println( "ChunkServer failed to start. "+ioe.getMessage() );
+      logger.error( "ChunkServer failed to start. "+ioe.getMessage() );
       System.exit( 1 );
     }
   }
@@ -117,7 +119,7 @@ public class ChunkServer implements Node {
     // to make sure that the ChunkServer is registered. If not, don't
     // process the Event.
     if ( connection != controllerConnection && !isRegistered.get() ) {
-      System.err.println(
+      logger.debug(
           "onEvent: Event wasn't be processed because the ChunkServer "+
           "isn't registered. "+event.getType() );
       return;
@@ -153,7 +155,7 @@ public class ChunkServer implements Node {
         break;
 
       default:
-        System.err.println( "Event couldn't be processed. "+event.getType() );
+        logger.debug( "Event couldn't be processed. "+event.getType() );
         break;
     }
   }
@@ -179,9 +181,8 @@ public class ChunkServer implements Node {
           repaired = repairAndWriteShard( repairMessage, meta );
         }
         String succeeded = repaired ? "" : "NOT ";
-        System.out.println(
-            "repairShardHelper: '"+repairMessage.getFilename()+"' was "+
-            succeeded+"repaired." );
+        logger.debug(
+            repairMessage.getFilename()+" was "+succeeded+"repaired." );
       }
     } else { // try to add our uncorrupted shard
       contributeToShardRepair( repairMessage, shardReader );
@@ -199,9 +200,7 @@ public class ChunkServer implements Node {
                        .getSender()
                        .sendData( repairMessage.getBytes() );
       } catch ( IOException ioe ) {
-        System.err.println(
-            "repairShardHelper: Message couldn't be forwarded. "+
-            ioe.getMessage() );
+        logger.debug( "Message couldn't be forwarded. "+ioe.getMessage() );
         connectionCache.removeConnection( nextServer );
       }
     }
@@ -240,9 +239,8 @@ public class ChunkServer implements Node {
       shardWriter.prepare();
       return shardWriter.write( synchronizer );
     } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println( "repairAndWriteShard: SHA1 unavailable. '"+
-                          repairMessage.getFilename()+
-                          "' could not be repaired."+nsae.getMessage() );
+      logger.error( "SHA1 unavailable. '"+repairMessage.getFilename()+
+                    "' could not be repaired."+nsae.getMessage() );
     }
     return false;
   }
@@ -269,9 +267,8 @@ public class ChunkServer implements Node {
           repaired = repairAndWriteChunk( repairMessage, chunkReader, meta );
         }
         String succeeded = repaired ? "" : "NOT ";
-        System.out.println(
-            "repairChunkHelper: '"+repairMessage.getFilename()+"' was "+
-            succeeded+"repaired." );
+        logger.debug(
+            repairMessage.getFilename()+" was "+succeeded+"repaired." );
       }
     } else { // Try to attach uncorrupted slices and relay the message
       contributeToChunkRepair( repairMessage, chunkReader );
@@ -288,9 +285,7 @@ public class ChunkServer implements Node {
                        .getSender()
                        .sendData( repairMessage.getBytes() );
       } catch ( IOException ioe ) {
-        System.err.println(
-            "repairChunkHelper: Message couldn't be forwarded. "+
-            ioe.getMessage() );
+        logger.debug( "Message couldn't be forwarded. "+ioe.getMessage() );
         connectionCache.removeConnection( nextServer );
       }
     }
@@ -312,7 +307,7 @@ public class ChunkServer implements Node {
     for ( int index : slicesNeedingRepair ) {
       // 'contains' function always returns false if localCorruptSlices=null
       if ( !ArrayUtilities.contains( localCorruptSlices, index ) ) {
-        System.out.println( "Adding slice "+index+" to message." );
+        logger.debug( "Adding slice "+index+" to message." );
         repairMessage.attachSlice( index, localSlices[index] );
       }
     }
@@ -331,7 +326,7 @@ public class ChunkServer implements Node {
       ChunkReader chunkReader, FileMetadata metadata) {
     ChunkWriter chunkWriter = new ChunkWriter( metadata, chunkReader );
     if ( repairMessage.getRepairedIndices() == null ) {
-      System.out.println( "repairAndWriteChunk: repaired indices is null." );
+      logger.debug( "Repaired indices is null." );
     }
     chunkWriter.setReplacementSlices( repairMessage.getRepairedIndices(),
         repairMessage.getReplacedSlices() );
@@ -339,9 +334,8 @@ public class ChunkServer implements Node {
       chunkWriter.prepare();
       return chunkWriter.write( synchronizer );
     } catch ( NoSuchAlgorithmException nsae ) {
-      System.err.println( "repairAndWriteChunk: SHA1 unavailable. '"+
-                          repairMessage.getFilename()+
-                          "' could not be repaired."+nsae.getMessage() );
+      logger.error( "SHA1 unavailable. '"+repairMessage.getFilename()+
+                    "' could not be repaired."+nsae.getMessage() );
     }
     return false;
   }
@@ -363,14 +357,12 @@ public class ChunkServer implements Node {
       try {
         connection.getSender().sendData( ack.getBytes() );
       } catch ( IOException ioe ) {
-        System.out.println(
-            "acknowledgeHeartbeat: Unable to send response to Controller's "+
-            "heartbeat. "+ioe.getMessage() );
+        logger.debug( "Unable to send response to Controller's heartbeat. "+
+                      ioe.getMessage() );
       }
     } else {
-      System.out.println(
-          "acknowledgeHeartbeat: Received a heartbeat, but it wasn't from the"+
-          " Controller. Ignoring it." );
+      logger.debug( "Received a heartbeat, but it wasn't from the"+
+                    " Controller. Ignoring." );
     }
   }
 
@@ -399,17 +391,15 @@ public class ChunkServer implements Node {
         controllerConnection.getSender()
                             .sendData( corruptionMessage.getBytes() );
       } catch ( IOException ioe ) {
-        System.err.println(
-            "serveFile: Controller could not be notified of corruption. "+
-            ioe.getMessage() );
+        logger.debug( "Controller could not be notified of corruption. "+
+                      ioe.getMessage() );
       }
       try {
         sendGeneralMessage( Protocol.CHUNK_SERVER_DENIES_REQUEST, filename,
             connection );
       } catch ( IOException ioe ) {
-        System.err.println(
-            "serveFile: Connection could not be notified of of denial. "+
-            ioe.getMessage() );
+        logger.debug( "Connection could not be notified of of denial. "+
+                      ioe.getMessage() );
       }
       return;
     }
@@ -420,8 +410,7 @@ public class ChunkServer implements Node {
     try {
       connection.getSender().sendData( serveMessage.getBytes() );
     } catch ( IOException ioe ) {
-      System.err.println(
-          "serveFile: Unable to serve file to connection. "+ioe.getMessage() );
+      logger.debug( "Unable to serve file to connection. "+ioe.getMessage() );
     }
   }
 
@@ -445,15 +434,13 @@ public class ChunkServer implements Node {
         writer.prepare();
         success = writer.write( synchronizer );
       } catch ( NoSuchAlgorithmException nsae ) {
-        System.err.println(
-            "storeAndRelay: SHA1 is not available. "+nsae.getMessage() );
+        logger.error( "SHA1 is not available. "+nsae.getMessage() );
       }
     }
 
     // Print debug message
     String not = success ? "" : "NOT ";
-    System.out.println(
-        "storeAndRelay: '"+message.getFilename()+"' was "+not+"stored." );
+    logger.debug( message.getFilename()+" was "+not+"stored." );
 
     // While there are still servers to forward to, tries to pass on the message
     while ( message.nextPosition() ) {
@@ -463,9 +450,8 @@ public class ChunkServer implements Node {
                        .sendData( message.getBytes() );
         break;
       } catch ( IOException ioe ) {
-        System.err.println(
-            "storeAndRelay: Unable to relay message to next ChunkServer. "+
-            ioe.getMessage() );
+        logger.debug(
+            "Unable to relay message to next ChunkServer. "+ioe.getMessage() );
         connectionCache.removeConnection( message.getServer() );
       }
     }
@@ -486,23 +472,21 @@ public class ChunkServer implements Node {
    */
   private void deleteRequestHelper(Event event, TCPConnection connection) {
     String filename = (( GeneralMessage ) event).getMessage();
-    System.out.println( "deleteRequestHelper: Attempting to delete '"+filename+
-                        "' from the ChunkServer." );
+    logger.debug( "Attempting to delete "+filename+" from the ChunkServer." );
     synchronized( files ) {
       files.deleteFile( filename );
       try {
         synchronizer.deleteFile( filename );
       } catch ( IOException ioe ) {
-        System.out.println(
-            "deleteRequestHelper: Could not delete file. "+ioe.getMessage() );
+        logger.debug( "Could not delete file. "+ioe.getMessage() );
       }
       try {
         sendGeneralMessage( Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE,
             filename, connection );
       } catch ( IOException ioe ) {
-        System.err.println(
-            "deleteRequestHelper: Unable to send acknowledgement of "+
-            "deletion to Controller. "+ioe.getMessage() );
+        logger.debug(
+            "Unable to send acknowledgement of deletion to Controller. "+
+            ioe.getMessage() );
       }
     }
   }
@@ -520,27 +504,23 @@ public class ChunkServer implements Node {
     GeneralMessage report = ( GeneralMessage ) event;
     int status = Integer.parseInt( report.getMessage() );
     if ( status == -1 ) {
-      System.out.println(
-          "registrationInterpreter: Controller denied the registration "+
-          "request." );
+      logger.info( "Controller denied the registration request." );
     } else {
       if ( registrationSetup( status ) ) {
-        System.out.println(
-            "registrationInterpreter: Controller has approved the"+" "+
-            "registration request. Our identifier is "+status+"." );
+        logger.info(
+            "Controller has approved the registration request. Our identifier"+
+            " is "+status+"." );
       } else {
-        System.err.println(
-            "registrationInterpreter: Though the Controller approved our "+
-            "registration request, there was a problem setting up the "+
-            "FileSynchronizer and HeartbeatService. Sending "+
-            "deregistration back to Controller." );
+        logger.info( "Though the Controller approved our "+
+                     "registration request, there was a problem setting up "+
+                     "the FileSynchronizer and HeartbeatService. Sending "+
+                     "deregistration back to Controller." );
         try {
           sendGeneralMessage( Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION,
               String.valueOf( status ), controllerConnection );
         } catch ( IOException ioe ) {
-          System.err.println( "registrationInterpreter: Unable to "+
-                              "send deregistration request to Controller. "+
-                              ioe.getMessage() );
+          logger.debug( "Unable to send deregistration request to Controller. "+
+                        ioe.getMessage() );
         }
       }
     }
@@ -569,10 +549,9 @@ public class ChunkServer implements Node {
           Constants.HEARTRATE );
       isRegistered.set( true ); // set the registered status
     } catch ( Exception e ) {
-      System.err.println(
-          "registrationInterpreter: There was a problem setting up "+
-          "the ChunkServer for operation after it had been registered. "+
-          e.getMessage() );
+      logger.info(
+          "There was a problem setting up the ChunkServer for operation after"+
+          " it had been registered. "+e.getMessage() );
       synchronizer = null;
       if ( heartbeatTimer != null ) {
         heartbeatTimer.cancel();
@@ -595,7 +574,6 @@ public class ChunkServer implements Node {
    */
   private void sendGeneralMessage(byte type, String message,
       TCPConnection connection) throws IOException {
-
     GeneralMessage generalMessage = new GeneralMessage( type, message );
     connection.getSender().sendData( generalMessage.getBytes() );
   }
@@ -630,7 +608,7 @@ public class ChunkServer implements Node {
           break;
 
         default:
-          System.err.println( "Unrecognized command. Use 'help' command." );
+          logger.error( "Unrecognized command. Use 'help' command." );
           break;
       }
     }
@@ -657,8 +635,8 @@ public class ChunkServer implements Node {
       sendGeneralMessage( Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION,
           String.valueOf( identifier ), controllerConnection );
     } catch ( IOException ioe ) {
-      System.err.println( "deregister: Couldn't send deregistration request "+
-                          "to the Controller. "+ioe.getMessage() );
+      logger.error( "Couldn't send deregistration request to the Controller. "+
+                    ioe.getMessage() );
     }
   }
 

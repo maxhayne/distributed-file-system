@@ -197,3 +197,5 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - Implement a proper logger with correct log levels. Then add another property in the application.properties file to specify the logging level.
 
 - As it is currently programmed, the Controller never figures out that a chunk is no longer able to be repaired.
+
+- The reason for creating a custom Logger would be so that you could set the log level in the application.properties file without having to also use a logging.properties file, as java.util.logging doesn't support setting the global log level programmatically, only through a config file.

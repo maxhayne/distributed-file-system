@@ -1,6 +1,7 @@
 package cs555.overlay.transport;
 
 import cs555.overlay.node.Node;
+import cs555.overlay.util.Logger;
 
 import java.io.IOException;
 import java.net.Socket;
@@ -15,6 +16,7 @@ import java.net.Socket;
  */
 public class TCPConnection {
 
+  private static final Logger logger = Logger.getInstance();
   private final Socket socket;
   private final TCPSender sender;
   private final TCPReceiverThread receiver;
@@ -74,7 +76,7 @@ public class TCPConnection {
       receiver.din.close();
       socket.close();
     } catch ( IOException ioe ) {
-      System.err.println( "Problem closing socket/streams. "+ioe.getMessage() );
+      logger.error( "Problem closing socket/streams. "+ioe.getMessage() );
     }
   }
 }
