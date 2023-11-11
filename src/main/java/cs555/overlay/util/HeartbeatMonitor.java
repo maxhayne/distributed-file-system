@@ -5,9 +5,7 @@ import cs555.overlay.config.Constants;
 import cs555.overlay.node.Controller;
 import cs555.overlay.transport.ControllerInformation;
 import cs555.overlay.transport.ServerConnection;
-import cs555.overlay.wireformats.Event;
-import cs555.overlay.wireformats.RepairChunk;
-import cs555.overlay.wireformats.RepairShard;
+import cs555.overlay.wireformats.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -125,30 +123,59 @@ public class HeartbeatMonitor extends TimerTask {
 
   /**
    * If the major heartbeat doesn't contain a file that the Controller believes
-   * it should, it tries to dispatch a repair message to replace it.
+   * it should AND that specific file has already been added to the
+   * missingChunks set, the Controller dispatches a message intended to replace
+   * that file at the server.
    *
    * @param connection ServerConnection whose files to cross-reference
-   * @param information HeartbeatInformation for this connection
+   * @param files list of files from most recent (major) heartbeat
+   * @param missingChunks set of file:sequence pairs the Controller has noticed
+   * might be missing from the ChunkServer
    */
   private void replaceMissingFiles(ServerConnection connection,
-      HeartbeatInformation information) {
-    HashSet<String> chunksAtServer = new HashSet<>();
-    for ( String filename : information.getFiles()
-                                       .stream()
-                                       .map( FileMetadata::getFilename )
-                                       .toList() ) {
-      chunksAtServer.add( filename.split( "_shard" )[0] );
-    }
+      ArrayList<FileMetadata> files,
+      HashSet<Map.Entry<String, Integer>> missingChunks) {
+    HashSet<Map.Entry<String, Integer>> chunksAtServer =
+        createSetOfChunks( files );
     Map<String, ArrayList<Integer>> storedChunks = connection.getStoredChunks();
     for ( String filename : storedChunks.keySet() ) {
       ArrayList<Integer> sequences = storedChunks.get( filename );
       for ( int sequence : sequences ) {
-        if ( !chunksAtServer.contains( filename+"_chunk"+sequence ) ) {
-          logger.debug( "Dispatching repair for "+filename+"_chunk"+sequence );
-          dispatchRepair( filename, sequence, connection.getServerAddress() );
+        Map.Entry<String, Integer> entry = Map.entry( filename, sequence );
+        if ( !chunksAtServer.contains( entry ) ) {
+          if ( !missingChunks.contains( entry ) ) {
+            logger.debug(
+                filename+"_chunk"+sequence+" added to "+"missingChunks." );
+            missingChunks.add( entry );
+          } else {
+            logger.debug(
+                "Dispatching repair for "+filename+"_chunk"+sequence );
+            dispatchRepair( filename, sequence, connection.getServerAddress() );
+            missingChunks.remove( entry );
+          }
         }
       }
     }
+  }
+
+  /**
+   * Creates a HashSet of filename:sequence tuples that are stored at the
+   * ChunkServer.
+   *
+   * @param files list of FileMetadatas stored at the ChunkServer
+   * @return HashSet made from the list of FileMetadatas
+   */
+  private HashSet<Map.Entry<String, Integer>> createSetOfChunks(
+      ArrayList<FileMetadata> files) {
+    HashSet<Map.Entry<String, Integer>> chunksAtServer = new HashSet<>();
+    for ( String filename : files.stream()
+                                 .map( FileMetadata::getFilename )
+                                 .toList() ) {
+      String baseFilename = FilenameUtilities.getBaseFilename( filename );
+      int sequence = FilenameUtilities.getSequence( filename );
+      chunksAtServer.add( Map.entry( baseFilename, sequence ) );
+    }
+    return chunksAtServer;
   }
 
   /**
@@ -190,44 +217,63 @@ public class HeartbeatMonitor extends TimerTask {
   }
 
   /**
+   * Sends a poke message to a ChunkServer.
+   *
+   * @param connection to send poke message to
+   * @return true if successfully sent, false if pipe is broken
+   */
+  private boolean pokeServer(ServerConnection connection) {
+    try {
+      connection.getConnection()
+                .getSender()
+                .sendData( (new GeneralMessage(
+                    Protocol.CONTROLLER_SENDS_HEARTBEAT )).getBytes() );
+      connection.incrementPokes();
+      return true;
+    } catch ( IOException ioe ) {
+      logger.debug( connection.getServerAddress()+" is unreachable. Set to "+
+                    "deregister. "+ioe.getMessage() );
+      return false;
+    }
+  }
+
+  /**
    * Method performed every time the HeartbeatMonitor's timer task is called.
    */
   public void run() {
     ArrayList<Integer> toDeregister = new ArrayList<>();
-    // synchronized on Controller itself to prevent modification operations
-    synchronized( controller ) { // lock the Controller
-      Map<Integer, ServerConnection> registeredServers =
-          information.getRegisteredServers();
-      if ( registeredServers.isEmpty() ) {
-        return; // no information to report
+    synchronized( controller ) { // to prevent modifications
+      if ( information.getRegisteredServers().isEmpty() ) {
+        return;
       }
 
-      StringBuilder sb = new StringBuilder();
-      sb.append( "\nHeartbeat Monitor:" );
+      StringBuilder sb = (new StringBuilder()).append( "\nHeartbeat Monitor:" );
+      long currentTime = System.currentTimeMillis();
+      for ( ServerConnection connection : information.getRegisteredServers()
+                                                     .values() ) {
+        if ( !pokeServer( connection ) ) {
+          toDeregister.add( connection.getIdentifier() );
+          continue;
+        }
 
-      long now = System.currentTimeMillis();
-      for ( ServerConnection connection : registeredServers.values() ) {
         sb.append( "\n" ).append( connection.toString() );
-
         HeartbeatInformation heartbeatInformation =
             connection.getHeartbeatInfo().copy();
-
         sb.append( "\n" )
           .append( createStringOfFiles( heartbeatInformation.getFiles() ) );
 
-        int unhealthyScore =
-            calculateUnhealthyScore( now, connection.getStartTime(),
-                heartbeatInformation );
-        adjustConnectionHealth( unhealthyScore, connection );
+        adjustConnectionHealth(
+            calculateUnhealthyScore( currentTime, connection.getStartTime(),
+                heartbeatInformation ), connection );
         if ( connection.getUnhealthy() > 3 ) {
           toDeregister.add( connection.getIdentifier() );
           continue;
         }
 
         // For a major heartbeat, replace missing files
-        int lastBeatType = getLastHeartbeatType( now, heartbeatInformation );
-        if ( lastBeatType == 1 ) {
-          replaceMissingFiles( connection, heartbeatInformation );
+        if ( getLastHeartbeatType( currentTime, heartbeatInformation ) == 1 ) {
+          replaceMissingFiles( connection, heartbeatInformation.getFiles(),
+              heartbeatInformation.getMissingChunks() );
         }
       }
 

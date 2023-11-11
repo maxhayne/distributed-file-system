@@ -24,7 +24,6 @@ public class ServerConnection {
 
   // HeartbeatInformation
   private final HeartbeatInformation heartbeatInformation;
-  // latest heartbeat info
   private int unhealthy;
   private int pokes;
   private int pokeReplies;
@@ -37,12 +36,10 @@ public class ServerConnection {
     this.address = address;
     this.connection = connection;
     this.storedChunks = new HashMap<>();
-
     this.heartbeatInformation = new HeartbeatInformation();
     this.unhealthy = 0;
     this.pokes = 0;
     this.pokeReplies = 0;
-
     this.startTime = System.currentTimeMillis();
   }
 
@@ -95,13 +92,25 @@ public class ServerConnection {
   }
 
   /**
-   * Removes a file with filename 'filename' from the 'storedChunks' map.
+   * Removes a file with filename 'filename' from the 'storedChunks' map, and
+   * clears the 'missingChunks' HashSet from the HeartbeatInformation of any
+   * chunks with that filename.
    *
    * @param filename filename of file
    */
   public void deleteFile(String filename) {
+    ArrayList<Integer> sequences;
     synchronized( storedChunks ) {
+      sequences = storedChunks.get( filename );
       storedChunks.remove( filename );
+    }
+    if ( sequences != null ) {
+      synchronized( heartbeatInformation ) {
+        for ( int sequence : sequences ) {
+          heartbeatInformation.getMissingChunks()
+                              .remove( Map.entry( filename, sequence ) );
+        }
+      }
     }
   }
 
@@ -113,7 +122,7 @@ public class ServerConnection {
     pokeReplies++;
   }
 
-  public synchronized int getPokeDiscrepancy() {
+  public synchronized int pokeDiscrepancy() {
     return (pokes-pokeReplies);
   }
 
@@ -121,9 +130,13 @@ public class ServerConnection {
     return heartbeatInformation;
   }
 
-  public long getFreeSpace() {return heartbeatInformation.getFreeSpace();}
+  public long getFreeSpace() {
+    return heartbeatInformation.getFreeSpace();
+  }
 
-  public int getTotalChunks() {return heartbeatInformation.getTotalChunks();}
+  public int getTotalChunks() {
+    return heartbeatInformation.getTotalChunks();
+  }
 
   public long getStartTime() {
     return startTime;

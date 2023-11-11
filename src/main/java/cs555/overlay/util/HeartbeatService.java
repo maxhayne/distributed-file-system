@@ -31,7 +31,7 @@ public class HeartbeatService extends TimerTask {
    * Performs a heartbeat for the ChunkServer, either major or minor. Gets a
    * list of files in the ChunkServer's directory using listFiles(). Every file
    * returned by listFiles that is also in the ChunkServer's 'files' FileMap is
-   * added to the list of FileMetadatas
+   * added to the list of FileMetadatas.
    *
    * @param beatType 1 for major, 0 for minor
    * @return byte string of heartbeat message, or null if couldn't be created
@@ -85,12 +85,12 @@ public class HeartbeatService extends TimerTask {
    */
   public void run() {
     try {
-      byte[] heartbeatMessage =
+      byte[] heartbeat =
           heartbeatNumber%10 == 0 ? heartbeat( 1 ) : heartbeat( 0 );
-      assert heartbeatMessage != null;
+      assert heartbeat != null;
       chunkServer.getControllerConnection()
                  .getSender()
-                 .sendData( heartbeatMessage );
+                 .sendData( heartbeat );
       logger.debug( "Heartbeat "+heartbeatNumber+" sent to the Controller at "+
                     new Date() );
     } catch ( NoSuchAlgorithmException nsae ) {
@@ -98,6 +98,8 @@ public class HeartbeatService extends TimerTask {
     } catch ( IOException ioe ) {
       logger.debug(
           "Unable to send heartbeat to Controller. "+ioe.getMessage() );
+      // Could just deregister here...
+
     } catch ( AssertionError ae ) {
       logger.debug( "Heartbeat couldn't be constructed. "+ae.getMessage() );
     } finally {

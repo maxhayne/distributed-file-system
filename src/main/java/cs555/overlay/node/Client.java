@@ -33,7 +33,7 @@ public class Client implements Node {
   private final ConcurrentHashMap<String, ClientReader> readers;
   private Path workingDirectory;
   private String[] controllerFileList;
-  private final Object listLock; // for protecting the controllerFileList
+  private final Object listLock; // protects the controllerFileList
 
   /**
    * Default constructor.
@@ -41,7 +41,8 @@ public class Client implements Node {
   public Client() {
     this.writers = new ConcurrentHashMap<>();
     this.readers = new ConcurrentHashMap<>();
-    this.workingDirectory = Paths.get( System.getProperty( "user.dir" ) );
+    this.workingDirectory =
+        Paths.get( System.getProperty( "user.dir" ), "data" );
     this.listLock = new Object();
   }
 
@@ -90,13 +91,18 @@ public class Client implements Node {
   public void onEvent(Event event, TCPConnection connection) {
     switch ( event.getType() ) {
 
+      case Protocol.CONTROLLER_APPROVES_FILE_DELETE:
+        logger.debug( "Controller approved deletion of "+
+                      (( GeneralMessage ) event).getMessage() );
+        break;
+
       case Protocol.CHUNK_SERVER_SERVES_FILE:
         directFileToReader( event );
         break;
 
       case Protocol.CHUNK_SERVER_DENIES_REQUEST:
-        String filename = (( GeneralMessage ) event).getMessage();
-        logger.debug( "Request denied for "+filename );
+        logger.debug(
+            "Request denied for "+(( GeneralMessage ) event).getMessage() );
         break;
 
       case Protocol.CONTROLLER_SENDS_FILE_LIST:

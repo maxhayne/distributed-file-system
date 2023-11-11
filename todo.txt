@@ -199,3 +199,13 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 - As it is currently programmed, the Controller never figures out that a chunk is no longer able to be repaired.
 
 - The reason for creating a custom Logger would be so that you could set the log level in the application.properties file without having to also use a logging.properties file, as java.util.logging doesn't support setting the global log level programmatically, only through a config file.
+
+- The dispatchRepair method of the HeartbeatMonitor works well in principle, but because the HeartbeatMonitor doesn't know when certain files were allocated, it can't refrain from trying to replace missing files that are new and haven't been sent by the Controller yet. Also, the 'stop' command at the Controller is flawed in that it can cause deadlock.
+
+- What might have happened was that between calls to the Controller by the Client to allocateServers, the ChunkServers sent major heartbeats. The HeartbeatMonitor acquired the intrinsic lock for the Controller, and proceeded with its functions. The Client waited for a return message.The HeartbeatMonitor detected files that weren't stored by the proper ChunkServers (because they were still in the process of being delivered to them by the Client), and tried to dispatch repairs for those files, for all ChunkServers that were sending major heartbeats (which all of them were). When I tried to use the 'stop' command for the writer, the writer wasn't waiting, so the stop() function blocked indefinitely until it could acquire the intrinsic lock of the writer, which never became available. I wish I could know where the ClientWriter itself was blocking.
+
+- Randomize the order of the servers given to the Client when they ask for the severs storing a particular chunk, but only if using replicationand not erasure coding. Hopefully this better distributed the load of requests, and increases the liklihood of detecting corruption before it becomes a problem.
+
+- Make the HeartbeatInformation keep track of successive major heartbeats to solve the problem of the Controller prematurely trying to replace missing files at ChunkServers.
+
+- Instead of detecting missing files at the Controller, wouldn't it be easier to, every major heartbeat, check them at the ChunkServer -- perform an ls on the folder, and report corruptions for every file that is in the fileTable but not in the folder?

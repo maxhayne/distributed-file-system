@@ -661,13 +661,13 @@ public class ChunkServer implements Node {
    * Prints a list of valid commands.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-5s : %s%n", "", "i[nfo]",
+    System.out.printf( "%3s%-7s : %s%n", "", "i[nfo]",
         "print host:port server address of this ChunkServer" );
-    System.out.printf( "%3s%-5s : %s%n", "", "f[iles]",
+    System.out.printf( "%3s%-7s : %s%n", "", "f[iles]",
         "print a list of files stored at this ChunkServer" );
-    System.out.printf( "%3s%-5s : %s%n", "", "e[xit]",
+    System.out.printf( "%3s%-7s : %s%n", "", "e[xit]",
         "attempt to deregister and shutdown the ChunkServer" );
-    System.out.printf( "%3s%-5s : %s%n", "", "h[elp]",
+    System.out.printf( "%3s%-7s : %s%n", "", "h[elp]",
         "print a list of valid commands" );
   }
 

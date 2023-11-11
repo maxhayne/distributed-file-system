@@ -127,6 +127,11 @@ public class Controller implements Node {
         fileListRequest( connection );
         break;
 
+      case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE:
+        logger.debug( "ChunkServer acknowledges deletion of "+
+                      (( GeneralMessage ) event).getMessage() );
+        break;
+
       default:
         logger.debug( "Event couldn't be processed. "+event.getType() );
         break;
@@ -325,7 +330,8 @@ public class Controller implements Node {
 
     // Send client an acknowledgement
     GeneralMessage response =
-        new GeneralMessage( Protocol.CONTROLLER_APPROVES_FILE_DELETE );
+        new GeneralMessage( Protocol.CONTROLLER_APPROVES_FILE_DELETE,
+            filename );
     try {
       connection.getSender().sendData( response.getBytes() );
     } catch ( IOException ioe ) {
@@ -476,11 +482,11 @@ public class Controller implements Node {
    * Prints a list of commands available to the user.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-8s : %s%n", "", "s[ervers]",
+    System.out.printf( "%3s%-9s : %s%n", "", "s[ervers]",
         "print the addresses of all registered ChunkServers" );
-    System.out.printf( "%3s%-8s : %s%n", "", "f[iles]",
-        "print the names of all files earmarked for storage" );
-    System.out.printf( "%3s%-8s : %s%n", "", "h[elp]",
+    System.out.printf( "%3s%-9s : %s%n", "", "f[iles]",
+        "print the names of all files allocated for storage" );
+    System.out.printf( "%3s%-9s : %s%n", "", "h[elp]",
         "print a list of valid commands" );
   }
 }

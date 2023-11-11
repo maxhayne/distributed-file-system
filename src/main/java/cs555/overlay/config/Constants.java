@@ -13,10 +13,6 @@ public class Constants {
   public static final int BYTES_IN_INT = 4;
   public static final int BYTES_IN_LONG = 8;
 
-  // To differentiate between Chunks and Shards as ServerFiles
-  public static final byte CHUNK_TYPE = 0;
-  public static final byte SHARD_TYPE = 1;
-
   // Number of milliseconds between each Heartbeat
-  public static final int HEARTRATE = 15*1000;
+  public static final int HEARTRATE = 10*1000;
 }

@@ -110,13 +110,15 @@ public class ClientWriter implements Runnable {
     for ( int i = 0; i < totalChunks; ++i ) {
       byte[] chunkContent = readAndResize( file, chunk );
       if ( chunkContent != null && sendToController( requestMessage ) ) {
+        logger.debug( "wait for allocated servers "+i );
         this.wait(); // wait for Controller to send allocated servers
         if ( servers == null ||
              !sendChunkToServers( requestMessage.getSequence(),
                  chunkContent ) ) { // stopped by user, or chunk not sent out
-          logger.error( "Couldn't store chunk "+i+" to the DFS." );
+          logger.error( "Couldn't store chunk "+i+" to the DFS. Stopping." );
           break;
         }
+        logger.debug( "allocated servers "+i+" arrived and not null" );
       } else {
         break;
       }
