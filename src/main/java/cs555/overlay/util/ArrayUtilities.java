@@ -140,4 +140,23 @@ public class ArrayUtilities {
     }
     return count;
   }
+
+  /**
+   * Count nulls in a String array.
+   *
+   * @param array to be counted
+   * @return int number of nulls
+   */
+  public static int countNulls(String[] array) {
+    if ( array == null ) {
+      return 0;
+    }
+    int count = 0;
+    for ( String s : array ) {
+      if ( java.util.Objects.equals( s, null ) ) {
+        ++count;
+      }
+    }
+    return count;
+  }
 }

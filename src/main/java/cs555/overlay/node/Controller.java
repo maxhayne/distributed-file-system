@@ -14,7 +14,6 @@ import cs555.overlay.wireformats.*;
 
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.util.Map;
 import java.util.Scanner;
 import java.util.Timer;
 import java.util.TreeMap;
@@ -306,27 +305,8 @@ public class Controller implements Node {
   private synchronized void deleteFile(Event event, TCPConnection connection) {
     String filename = (( GeneralMessage ) event).getMessage();
 
-    // Delete the file from the fileTable
-    information.deleteFile( filename );
-
-    // Delete the file from the 'storedChunks' map of all servers in
-    // registeredServers
-    Map<Integer, ServerConnection> registeredServers =
-        information.getRegisteredServers();
-    for ( ServerConnection server : registeredServers.values() ) {
-      server.deleteFile( filename );
-    }
-
-    // Send delete request to all registered ChunkServers
-    GeneralMessage deleteRequest =
-        new GeneralMessage( Protocol.CONTROLLER_REQUESTS_FILE_DELETE,
-            filename );
-    try {
-      information.broadcast( deleteRequest.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.debug( "Problem sending file delete request to all ChunkServers. "+
-                    ioe.getMessage() );
-    }
+    // Delete file from the fileTable, and send delete messages to servers too
+    information.deleteFileFromDFS( filename );
 
     // Send client an acknowledgement
     GeneralMessage response =
@@ -370,7 +350,6 @@ public class Controller implements Node {
         Protocol.CONTROLLER_DENIES_STORAGE_REQUEST, request.getFilename() ) :
                          new ControllerReservesServers( request.getFilename(),
                              request.getSequence(), servers );
-
     // Respond to the Client
     try {
       connection.getSender().sendData( response.getBytes() );
@@ -400,6 +379,10 @@ public class Controller implements Node {
           String.valueOf( registrationStatus ) );
       try {
         connection.getSender().sendData( message.getBytes() );
+        if ( registrationStatus != -1 ) {
+          // give new registrant the files it has been allocated, if any
+          information.refreshServerFiles( registrationStatus );
+        }
       } catch ( IOException ioe ) {
         logger.debug( "Failed to notify ChunkServer of registration status. "+
                       "Deregistering. "+ioe.getMessage() );

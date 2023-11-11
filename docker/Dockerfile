@@ -64,6 +64,7 @@ FROM eclipse-temurin:17.0.8.1_1-jre-alpine AS client
 RUN addgroup -g 1001 -S client && adduser -u 1001 -S client -G client
 
 RUN mkdir /app && chown -R client:client /app
+RUN mkdir /app/data && chown -R client:client /app/data
 
 WORKDIR /app
 
@@ -71,9 +72,9 @@ COPY --from=build --chown=client:client /app/build/libs/*.jar /app/dfs.jar
 COPY --chown=client:client config /app/config
 
 # Copy data files to client for use in testing
-COPY --chown=client:client data/large.jpg /app/large.jpg
-COPY --chown=client:client data/medium.pdf /app/medium.pdf
-COPY --chown=client:client data/small.txt /app/small.txt
+COPY --chown=client:client data/large.jpg /app/data/large.jpg
+COPY --chown=client:client data/medium.pdf /app/data/medium.pdf
+COPY --chown=client:client data/small.txt /app/data/small.txt
 
 # Switch to non-root user
 USER client

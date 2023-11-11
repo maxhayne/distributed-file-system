@@ -4,9 +4,7 @@ import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.config.Constants;
 import cs555.overlay.util.ArrayUtilities;
 import cs555.overlay.util.Logger;
-import cs555.overlay.wireformats.Event;
-import cs555.overlay.wireformats.RepairChunk;
-import cs555.overlay.wireformats.RepairShard;
+import cs555.overlay.wireformats.*;
 
 import java.io.IOException;
 import java.util.*;
@@ -214,19 +212,31 @@ public class ControllerInformation {
   }
 
   /**
-   * Deletes an entire file from the table. Will be called from a synchronized
-   * function in the Controller, and will be followed by an operation to delete
-   * all filename entries from every ServerConnection too . Then, a broadcast
-   * message will be sent out to all ServerConnections to delete the filename
-   * from their storage.
+   * Attempts to fully delete a file from the DFS. First, deletes the file from
+   * the fileTable, then removes the file from all ServerConnection storedChunks
+   * maps, then sends out broadcast message to delete the file at all servers.
    *
    * @param filename filename to be deleted
    */
-  public void deleteFile(String filename) {
+  public void deleteFileFromDFS(String filename) {
     fileTable.remove( filename );
+    // Delete from the storedChunks map of all servers in registeredServers
+    for ( ServerConnection server : registeredServers.values() ) {
+      server.deleteFile( filename );
+    }
+    // Send message to all servers to delete
+    GeneralMessage deleteRequest =
+        new GeneralMessage( Protocol.CONTROLLER_REQUESTS_FILE_DELETE,
+            filename );
+    try {
+      broadcast( deleteRequest.getBytes() );
+    } catch ( IOException ioe ) {
+      logger.debug( "Problem sending file delete request to all ChunkServers. "+
+                    ioe.getMessage() );
+    }
   }
 
-  // this will be called via a synchronized method in the Controller as well,
+  // This will be called via a synchronized method in the Controller as well,
   // when the Client is requesting storage information
 
   /**
@@ -347,7 +357,10 @@ public class ControllerInformation {
 
   /**
    * Attempts to register the host:port combination as a ChunkServer. If
-   * registration fails, returns -1, else it returns the identifier.
+   * registration fails, returns -1, else it returns the identifier. If the
+   * registration is successful, the newly registered server is assigned chunks
+   * that were previously not held by anyone (in an attempt to bring files back
+   * up to their proper replication factor).
    *
    * @return status of registration attempt
    */
@@ -371,7 +384,8 @@ public class ControllerInformation {
 
   /**
    * Iterates through the fileTable and assigns one null value per chunk to be
-   * taken up by the newly registered connection.
+   * taken up by the newly registered connection. (a null value meaning that the
+   * chunk isn't being stored by anyone right now, but it should be)
    *
    * @param connection newly registered connection
    */
@@ -386,7 +400,7 @@ public class ControllerInformation {
             servers[nullIndex] = connection.getServerAddress();
             connection.addChunk( filename, entry.getKey() );
             logger.debug( "Assigned "+filename+"_chunk"+entry.getKey()+" to "+
-                         connection.getServerAddress() );
+                          connection.getServerAddress() );
           }
         }
       }
@@ -448,13 +462,82 @@ public class ControllerInformation {
               replacement.removeChunk( filename, sequence );
               continue;
             }
+            logger.debug(
+                "Moving "+filename+"_chunk"+sequence+" to "+candidate );
             replaced = true;
             break;
           }
         }
         if ( !replaced ) { // set host:port to null in servers
           ArrayUtilities.replaceFirst( servers, deregisterAddress, null );
+          deleteChunkIfUnrecoverable( servers, filename, sequence );
         }
+      }
+    }
+    // Deletes all files that have no more recoverable chunks
+    deleteUnrecoverableFiles();
+  }
+
+  /**
+   * Checks if a chunk cannot be recovered and deletes it if it can't. If
+   * replicating, that means that a chunk no longer has any replicas. If erasure
+   * coding, that means that fewer than the needed number of fragments to
+   * recover the chunk are available.
+   *
+   * @param servers String[] servers supposedly storing the chunk
+   * @param filename base filename of the chunk
+   * @param sequence sequence number of the chunk
+   */
+  private void deleteChunkIfUnrecoverable(String[] servers, String filename,
+      int sequence) {
+    int numberOfNulls = ArrayUtilities.countNulls( servers );
+    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+      if ( numberOfNulls > Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
+        fileTable.get( filename ).remove( sequence );
+        logger.debug(
+            "Deleting "+filename+"_chunk"+sequence+" from the fileTable." );
+      }
+    } else { // replication
+      if ( numberOfNulls == 3 ) {
+        fileTable.get( filename ).remove( sequence );
+        logger.debug(
+            "Deleting "+filename+"_chunk"+sequence+" from the fileTable." );
+      }
+    }
+  }
+
+  /**
+   * Calls the deleteFileFromDFS() method on any file that no longer has any
+   * valid recoverable chunks.
+   */
+  private void deleteUnrecoverableFiles() {
+    for ( Map.Entry<String, TreeMap<Integer, String[]>> entry :
+        fileTable.entrySet() ) {
+      if ( entry.getValue().isEmpty() ) {
+        deleteFileFromDFS( entry.getKey() );
+        logger.debug( entry.getKey()+" is unrecoverable. Deleting." );
+      }
+    }
+  }
+
+  /**
+   * Dispatch repair/replace messages for all files in a ChunkServer's
+   * 'storedChunks' map.
+   *
+   * @param identifier of ChunkServer to refresh files for
+   */
+  public void refreshServerFiles(int identifier) {
+    ServerConnection connection = registeredServers.get( identifier );
+    for ( Map.Entry<String, ArrayList<Integer>> entry :
+        connection.getStoredChunks()
+                                                                  .entrySet() ) {
+      for ( Integer sequence : entry.getValue() ) {
+        boolean sent = sendReplacementMessage( entry.getKey(), sequence,
+            connection.getServerAddress(),
+            fileTable.get( entry.getKey() ).get( sequence ) );
+        String not = sent ? "" : "NOT ";
+        logger.debug( entry.getKey()+"_chunk"+sequence+" was "+not+"sent to "+
+                      connection.getServerAddress() );
       }
     }
   }

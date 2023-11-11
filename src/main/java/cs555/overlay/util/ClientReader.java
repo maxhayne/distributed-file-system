@@ -132,7 +132,8 @@ public class ClientReader implements Runnable {
     synchronized( receivedFiles[sequence] ) {
       if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
         receivedFiles[sequence][fragment] = content;
-        if ( ArrayUtilities.countNulls( receivedFiles[sequence] ) == 0 ) {
+        if ( ArrayUtilities.countNulls( receivedFiles[sequence] ) ==
+             Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
           writeLatch.countDown();
           chunksReceived.incrementAndGet();
         }
@@ -201,8 +202,7 @@ public class ClientReader implements Runnable {
       } else {
         requestUnaskedServers( false );
       }
-    } while ( !writeLatch.await( 10000+(10L*requests),
-        TimeUnit.MILLISECONDS ) );
+    } while ( !writeLatch.await( 10000+(5L*requests), TimeUnit.MILLISECONDS ) );
   }
 
   /**
