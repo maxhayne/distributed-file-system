@@ -122,6 +122,7 @@ public class ServerConnection {
     pokeReplies++;
   }
 
+  // Not being used right now...
   public synchronized int pokeDiscrepancy() {
     return (pokes-pokeReplies);
   }

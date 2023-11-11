@@ -159,7 +159,7 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 
 - The relocate process upon deregistration doesn't seem to be working for erasuring coding. It is working for replication, but the file stored at the replacement server keeps complaining that it is corrupt, even though the file is the correct length. After adding a print statement, it believes that all 8 slices are corrupt, every time. Something must be going wrong with replacing the hashes and writing the file. // FIXED
 
-- When a ChunkServer registers, and registers successfully, there should be a routine that runs at the Controller to check to see if there are any chunks that don't have a proper replication factor, and to task the new registrant with storing that replica/shard. // TODO
+- When a ChunkServer registers, and registers successfully, there should be a routine that runs at the Controller to check to see if there are any chunks that don't have a proper replication factor, and to task the new registrant with storing that replica/shard. // DONE
 
 - The correct slices are getting to the destination server, but they'r e not getting copied correctly to the slices array before getting written to the disk. // FIXED
 

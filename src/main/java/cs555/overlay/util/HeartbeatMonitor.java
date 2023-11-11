@@ -145,7 +145,7 @@ public class HeartbeatMonitor extends TimerTask {
         if ( !chunksAtServer.contains( entry ) ) {
           if ( !missingChunks.contains( entry ) ) {
             logger.debug(
-                filename+"_chunk"+sequence+" added to "+"missingChunks." );
+                filename+"_chunk"+sequence+" added to missingChunks." );
             missingChunks.add( entry );
           } else {
             logger.debug(
@@ -153,6 +153,8 @@ public class HeartbeatMonitor extends TimerTask {
             dispatchRepair( filename, sequence, connection.getServerAddress() );
             missingChunks.remove( entry );
           }
+        } else { // file stored at server, remove if exists from missingChunks
+          missingChunks.remove( entry );
         }
       }
     }

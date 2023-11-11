@@ -265,13 +265,13 @@ public class ControllerInformation {
     }
   }
 
-  // this cannot work properly unless servers cannot register or deregister
-  // while this function is operating, how can we achieve this?
-  // could keep a hashtable in each chunkserverconnection that holds the
-  // files stored at that chunkserver, but then we'd need to iterate over all
+  // This cannot work properly unless servers cannot register or deregister
+  // while this function is operating... how can we achieve this?
+  // Could keep a hashtable in each ServerConnection that holds the
+  // files stored there, but then we'd need to iterate over all
   // servers to get the storage info of a particular chunk, which is
-  // inefficient. but if the chunkserverconnectioncache were sorted, we could
-  // iterate through chunkserverconnections to add instances of the chunk
+  // inefficient. But if registeredServers were sorted, we could
+  // iterate through ServerConnections to add instances of the chunk
   // being stored. no, that's bad. that would avoid iterating over a list
   // to find the particular chunks stored at a particular server, but other
   // than that it would be inefficient.
@@ -361,11 +361,36 @@ public class ControllerInformation {
           ServerConnection newConnection =
               new ServerConnection( identifier, address, connection );
           registeredServers.put( identifier, newConnection );
+          assignNullReplications( newConnection ); // assign server chunks
           registrationStatus = identifier; // registration successful
         }
       }
     }
     return registrationStatus;
+  }
+
+  /**
+   * Iterates through the fileTable and assigns one null value per chunk to be
+   * taken up by the newly registered connection.
+   *
+   * @param connection newly registered connection
+   */
+  private void assignNullReplications(ServerConnection connection) {
+    synchronized( fileTable ) {
+      for ( String filename : fileTable.keySet() ) {
+        for ( Map.Entry<Integer, String[]> entry : fileTable.get( filename )
+                                                            .entrySet() ) {
+          String[] servers = entry.getValue();
+          int nullIndex = ArrayUtilities.contains( servers, null );
+          if ( nullIndex != -1 ) {
+            servers[nullIndex] = connection.getServerAddress();
+            connection.addChunk( filename, entry.getKey() );
+            logger.debug( "Assigned "+filename+"_chunk"+entry.getKey()+" to "+
+                         connection.getServerAddress() );
+          }
+        }
+      }
+    }
   }
 
   /**

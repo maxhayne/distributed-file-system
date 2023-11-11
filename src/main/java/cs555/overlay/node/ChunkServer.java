@@ -173,15 +173,14 @@ public class ChunkServer implements Node {
 
     // If we are the target in the repair
     if ( repairMessage.getDestination().equals( host+":"+port ) ) {
-      if ( shardReader.isCorrupt() ) { // And if the shard is corrupt
-        boolean repaired;
-        synchronized( files ) {
-          FileMetadata meta = files.addOrUpdate( repairMessage.getFilename() );
-          repaired = repairAndWriteShard( repairMessage, meta );
+      synchronized( files ) {
+        FileMetadata meta = files.addOrUpdate( repairMessage.getFilename() );
+        if ( shardReader.isCorrupt() ) { // And if the shard is corrupt
+          boolean repaired = repairAndWriteShard( repairMessage, meta );
+          String succeeded = repaired ? "" : "NOT ";
+          logger.debug(
+              repairMessage.getFilename()+" was "+succeeded+"repaired." );
         }
-        String succeeded = repaired ? "" : "NOT ";
-        logger.debug(
-            repairMessage.getFilename()+" was "+succeeded+"repaired." );
       }
     } else { // try to add our uncorrupted shard
       contributeToShardRepair( repairMessage, shardReader );
@@ -259,15 +258,15 @@ public class ChunkServer implements Node {
 
     // If we are the target for the repair
     if ( repairMessage.getDestination().equals( host+":"+port ) ) {
-      if ( chunkReader.isCorrupt() ) { // And if the chunk is corrupt
-        boolean repaired;
-        synchronized( files ) {
-          FileMetadata meta = files.addOrUpdate( repairMessage.getFilename() );
-          repaired = repairAndWriteChunk( repairMessage, chunkReader, meta );
+      synchronized( files ) {
+        FileMetadata meta = files.addOrUpdate( repairMessage.getFilename() );
+        if ( chunkReader.isCorrupt() ) { // And if the chunk is corrupt
+          boolean repaired =
+              repairAndWriteChunk( repairMessage, chunkReader, meta );
+          String succeeded = repaired ? "" : "NOT ";
+          logger.debug(
+              repairMessage.getFilename()+" was "+succeeded+"repaired." );
         }
-        String succeeded = repaired ? "" : "NOT ";
-        logger.debug(
-            repairMessage.getFilename()+" was "+succeeded+"repaired." );
       }
     } else { // Try to attach uncorrupted slices and relay the message
       contributeToChunkRepair( repairMessage, chunkReader );
