@@ -64,8 +64,7 @@ public class ServerConnection {
     synchronized( storedChunks ) {
       ArrayList<Integer> sequenceNumbers = storedChunks.get( filename );
       if ( sequenceNumbers == null ) {
-        storedChunks.put( filename,
-            new ArrayList<Integer>( List.of( sequence ) ) );
+        storedChunks.put( filename, new ArrayList<>( List.of( sequence ) ) );
       } else {
         sequenceNumbers.add( sequence );
       }

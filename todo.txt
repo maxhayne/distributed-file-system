@@ -213,3 +213,5 @@ The Client doesn't need to to make use of the TCPReceiverThread that must be mod
 ANSWER: Yes, that could be done, but it takes the responsibility for maintaining a proper replication factor out of the hands of the Controller. It would be a minor violation of division of responsibility.
 
 - Why not use Circle Plots to visualize the data patterns for the Controller, Client, and ChunkServer during operation? // TODO MAYBE
+
+- Rewrite the readme. // TODO

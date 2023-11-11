@@ -109,7 +109,8 @@ public class HeartbeatMonitor extends TimerTask {
   /**
    * Adjusts the unhealthy member of the ServerConnection.
    *
-   * @param unhealthyScore
+   * @param unhealthyScore how unhealthy the connection to the server is as
+   * judged by the HeartbeatMonitor
    * @param connection server to adjust connection health for
    */
   private void adjustConnectionHealth(int unhealthyScore,
@@ -258,7 +259,7 @@ public class HeartbeatMonitor extends TimerTask {
           continue;
         }
 
-        sb.append( "\n" ).append( connection.toString() );
+        sb.append( "\n" ).append( connection );
         HeartbeatInformation heartbeatInformation =
             connection.getHeartbeatInfo().copy();
         sb.append( "\n" )
