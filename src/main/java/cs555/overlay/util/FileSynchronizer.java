@@ -29,7 +29,6 @@ import java.util.stream.Stream;
 public class FileSynchronizer {
 
   private static final Logger logger = Logger.getInstance();
-  public static int CHUNK_DATA_LENGTH = 65536;
   public static int CHUNK_FILE_LENGTH = 65720;
   public static int SHARD_FILE_LENGTH =
       10924+20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG;

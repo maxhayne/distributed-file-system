@@ -106,7 +106,7 @@ public class ClientWriter implements Runnable {
   private void chunkizeFileAndStore(RandomAccessFile file, int totalChunks)
       throws IOException, InterruptedException {
     ClientStore requestMessage = createNewStoreMessage(); // reusable
-    byte[] chunk = new byte[FileSynchronizer.CHUNK_DATA_LENGTH]; // reusable
+    byte[] chunk = new byte[Constants.CHUNK_DATA_LENGTH]; // reusable
     for ( int i = 0; i < totalChunks; ++i ) {
       byte[] chunkContent = readAndResize( file, chunk );
       if ( chunkContent != null && sendToController( requestMessage ) ) {

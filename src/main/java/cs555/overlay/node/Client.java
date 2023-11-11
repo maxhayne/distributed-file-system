@@ -519,21 +519,21 @@ public class Client implements Node {
    * Prints a list of valid commands.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-19s : %s%n", "", "p[ut] path/filename",
+    System.out.printf( "%3s%-19s : %s%n", "", "p[ut] PATH/FILENAME",
         "store a local file on the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "g[et] # [#...]",
         "retrieve file(s) from the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "d[elete] # [#...]",
         "request that file(s) be deleted from the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "s[top] filename",
-        "stops writer for 'filename' and sends delete request" );
+    System.out.printf( "%3s%-19s : %s%n", "", "s[top] FILENAME",
+        "stops writer for FILENAME and sends delete request" );
     System.out.printf( "%3s%-19s : %s%n", "", "w[riters]",
         "display list files in the process of being stored" );
     System.out.printf( "%3s%-19s : %s%n", "", "r[eaders]",
         "display list files in the process of being retrieved" );
     System.out.printf( "%3s%-19s : %s%n", "", "f[iles]",
         "print a list of files stored on the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "wd [new_workdir]",
+    System.out.printf( "%3s%-19s : %s%n", "", "wd [NEW_WORKDIR]",
         "print the current working directory or change it" );
     System.out.printf( "%3s%-19s : %s%n", "", "e[xit]",
         "disconnect from the Controller and shutdown the Client" );
