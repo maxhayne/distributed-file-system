@@ -2,8 +2,12 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Message used by a ChunkServer to send a file's data to a Client.
+ *
+ * @author hayne
+ */
 public class ChunkServerServesFile implements Event {
-
   private final byte type;
   private final String filename;
   private final byte[] content;

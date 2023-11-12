@@ -2,8 +2,14 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Sent by the Controller to a ChunkServer, carrying the content of a chunk
+ * to be written to disk. Message will be forwarded to other ChunkServers
+ * that must store the same chunk.
+ *
+ * @author hayne
+ */
 public class SendsFileForStorage implements Event {
-
   private final byte type;
   private final String filename;
   private final byte[][] content;

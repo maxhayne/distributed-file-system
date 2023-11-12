@@ -2,8 +2,13 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Dispatched by the Controller to be relayed between ChunkServers with
+ * uncorrupted slices of the chunk in need of a repair.
+ *
+ * @author hayne
+ */
 public class RepairChunk implements Event {
-
   private final byte type;
   private final String filename; // including _chunk#
   private final String destination; // host:port of server that needs repair

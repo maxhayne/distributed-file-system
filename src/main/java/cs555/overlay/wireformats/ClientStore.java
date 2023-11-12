@@ -2,6 +2,12 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Sent by the Client to the Controller to request that servers be allocated
+ * to store a particular chunk.
+ *
+ * @author hayne
+ */
 public class ClientStore implements Event {
   private final byte type;
   private final String filename;

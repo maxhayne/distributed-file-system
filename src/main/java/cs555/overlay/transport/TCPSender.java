@@ -17,8 +17,8 @@ public class TCPSender {
   /**
    * Creates DataOutputStream based on the passed Socket.
    *
-   * @param socket
-   * @throws IOException
+   * @param socket to open the DataOutputStream on
+   * @throws IOException if stream can't be created
    */
   public TCPSender(Socket socket) throws IOException {
     this.dout = new DataOutputStream( socket.getOutputStream() );
@@ -28,7 +28,7 @@ public class TCPSender {
    * Synchronized method to send data out of the DataOutputStream.
    *
    * @param data to send
-   * @throws IOException
+   * @throws IOException if data can't be sent over the socket
    */
   public synchronized void sendData(byte[] data) throws IOException {
     int length = data.length;

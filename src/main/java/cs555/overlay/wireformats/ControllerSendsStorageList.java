@@ -2,8 +2,13 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Sent by the Controller to the Client containing information about where
+ * all the chunks of a file are stored on the DFS.
+ *
+ * @author hayne
+ */
 public class ControllerSendsStorageList implements Event {
-
   private final byte type;
   private final String filename;
   private final String[][] servers;

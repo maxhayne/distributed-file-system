@@ -2,8 +2,12 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Used by Controller to send list of stored files to the Client.
+ *
+ * @author hayne
+ */
 public class ControllerSendsFileList implements Event {
-
   private final byte type;
   private String[] list;
 

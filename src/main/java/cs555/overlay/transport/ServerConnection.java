@@ -126,9 +126,7 @@ public class ServerConnection {
     return (pokes-pokeReplies);
   }
 
-  public HeartbeatInformation getHeartbeatInfo() {
-    return heartbeatInformation;
-  }
+  public HeartbeatInformation getHeartbeatInfo() {return heartbeatInformation;}
 
   public long getFreeSpace() {
     return heartbeatInformation.getFreeSpace();
@@ -154,9 +152,7 @@ public class ServerConnection {
     return unhealthy;
   }
 
-  public synchronized void incrementUnhealthy() {
-    this.unhealthy += 1;
-  }
+  public synchronized void incrementUnhealthy() {this.unhealthy += 1;}
 
   public synchronized void decrementUnhealthy() {
     if ( unhealthy > 0 ) {

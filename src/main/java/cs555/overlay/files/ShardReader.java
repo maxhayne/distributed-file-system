@@ -1,9 +1,6 @@
 package cs555.overlay.files;
 
-import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FileSynchronizer;
-
-import java.nio.ByteBuffer;
 
 /**
  * Class used to simplify the reading of Shards from the disk. Instead of doing
@@ -18,6 +15,7 @@ public class ShardReader implements FileReader {
   private final String filename;
   private byte[] shardBytes;
   private boolean corrupt;
+
   public ShardReader(String filename) {
     this.filename = filename;
   }

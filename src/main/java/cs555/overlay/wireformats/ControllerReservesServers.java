@@ -2,6 +2,11 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Sent to the Client in response to a successful ClientStore request.
+ *
+ * @author hayne
+ */
 public class ControllerReservesServers implements Event {
   private final byte type;
   private final String filename;

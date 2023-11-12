@@ -2,6 +2,12 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Message sent to Controller by ChunkServer whenever a corrupt chunk or
+ * shard is detected.
+ *
+ * @author hayne
+ */
 public class ChunkServerReportsFileCorruption implements Event {
 
   private final byte type;

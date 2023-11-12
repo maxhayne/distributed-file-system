@@ -4,8 +4,13 @@ import cs555.overlay.config.Constants;
 
 import java.io.*;
 
+/**
+ * Dispatched by the Controller to be relayed between ChunkServers with
+ * fragments of the chunk in need of repair.
+ *
+ * @author hayne
+ */
 public class RepairShard implements Event {
-
   private final byte type;
   private final String filename; // full filename of shard that needs replacing
   private int destination; // position of destination in server list

@@ -1,7 +1,6 @@
 package cs555.overlay.files;
 
 import cs555.overlay.util.FileSynchronizer;
-import cs555.overlay.util.FileMetadata;
 
 /**
  * An interface that both ChunkReader and ShardReader implement. This way,

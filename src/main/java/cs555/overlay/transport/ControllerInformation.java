@@ -96,41 +96,6 @@ public class ControllerInformation {
   }
 
   /**
-   * Returns an array containing all host:port addresses of registered servers.
-   *
-   * @return String[] of host:port addresses
-   */
-  public String[] getAllServerAddresses() {
-    synchronized( registeredServers ) {
-      String[] addresses = new String[registeredServers.size()];
-      int index = 0;
-      for ( ServerConnection connection : registeredServers.values() ) {
-        addresses[index] = connection.getServerAddress();
-        index++;
-      }
-      return addresses;
-    }
-  }
-
-  /**
-   * Returns the identifier of a server with a particular host:port address.
-   *
-   * @param address host:port string
-   * @return identifier of server reachable at that address, -1 if there is no
-   * registered server with that address
-   */
-  public int getChunkServerIdentifier(String address) {
-    synchronized( registeredServers ) {
-      for ( ServerConnection connection : registeredServers.values() ) {
-        if ( connection.getServerAddress().equals( address ) ) {
-          return connection.getIdentifier();
-        }
-      }
-    }
-    return -1; // can't return null
-  }
-
-  /**
    * Returns the host:port address of a server with a particular identifier.
    *
    * @param identifier of a server
@@ -145,70 +110,6 @@ public class ControllerInformation {
       }
     }
     return null; // should return null, not empty string
-  }
-
-  // this will be called with synchronized method from Controller after
-  // receiving a ChunkServerReportsFileCorruption Message
-
-  /**
-   * Removes (sets to null) a particular host:port address of a server from a
-   * chunk's list of servers. Is used when the Controller receives a message
-   * that the replication/fragment located at that server is corrupt.
-   *
-   * @param filename base filename of chunk -- what comes before "_chunk"
-   * @param sequence the sequence number of the chunk
-   * @param address the address to remove from the chunk's servers
-   */
-  public void removeServer(String filename, int sequence, String address) {
-    if ( fileTable.containsKey( filename ) ) {
-      TreeMap<Integer, String[]> fileMap = fileTable.get( filename );
-      if ( fileMap.containsKey( sequence ) ) {
-        ArrayUtilities.replaceArrayItem( fileMap.get( sequence ), address,
-            null );
-      }
-    }
-  }
-
-  // these next two functions will also be called via synchronized methods in
-  // the Controller via ChunkServerReportsFileFixed messages, which will
-  // contain the filename, and thus will inform on which function to use
-
-  /**
-   * Adds a server's host:port address to the list of servers storing a
-   * particular chunk. Will be called when a server reports that it has repaired
-   * a chunk that was previously corrupt.
-   *
-   * @param filename base filename of chunk -- what comes before "_chunk"
-   * @param sequence the sequence number of the chunk
-   * @param address the address to add to the chunk's servers
-   */
-  public void addServer(String filename, int sequence, String address) {
-    if ( fileTable.containsKey( filename ) ) {
-      TreeMap<Integer, String[]> fileMap = fileTable.get( filename );
-      if ( fileMap.containsKey( sequence ) ) {
-        ArrayUtilities.replaceFirst( fileMap.get( sequence ), null, address );
-      }
-    }
-  }
-
-  /**
-   * Adds a server's host:port address to the list of servers storing a
-   * particular chunk, at a particular fragment number. Will be called when a
-   * server reports that it has fixed a shard that was previously corrupt.
-   *
-   * @param filename base filename of chunk -- what comes before "_chunk"
-   * @param sequence the sequence number of the chunk
-   * @param fragment the fragment number of the chunk
-   * @param address the address to add to the chunk's servers
-   */
-  public void addServer(String filename, int sequence, int fragment,
-      String address) {
-    if ( fileTable.containsKey( filename ) ) {
-      TreeMap<Integer, String[]> fileMap = fileTable.get( filename );
-      if ( fileMap.containsKey( sequence ) ) {
-        fileMap.get( sequence )[fragment] = address;
-      }
-    }
   }
 
   /**
@@ -237,7 +138,7 @@ public class ControllerInformation {
   }
 
   // This will be called via a synchronized method in the Controller as well,
-  // when the Client is requesting storage information
+  // when the Client is requesting storage information.
 
   /**
    * Returns the set of servers storing the particular chunk with that filename
@@ -275,30 +176,9 @@ public class ControllerInformation {
     }
   }
 
-  // This cannot work properly unless servers cannot register or deregister
-  // while this function is operating... how can we achieve this?
-  // Could keep a hashtable in each ServerConnection that holds the
-  // files stored there, but then we'd need to iterate over all
-  // servers to get the storage info of a particular chunk, which is
-  // inefficient. But if registeredServers were sorted, we could
-  // iterate through ServerConnections to add instances of the chunk
-  // being stored. no, that's bad. that would avoid iterating over a list
-  // to find the particular chunks stored at a particular server, but other
-  // than that it would be inefficient.
-  // We could use a parent class to store both the data structure used for
-  // keeping track of chunk locations and the data structure used to keep
-  // track of registered servers, and then ensure that this function requires
-  // double synchronization, but that is also messy, and could be hard to get
-  // right.
-  // the best way to achieve it is to synchronize the register and deregister
-  // functions inside the Controller, and to synchronize the message case
-  // that calls this function too. This means that the HeartbeatMonitor must
-  // call the Controller.deregister function, not the deregister function
-  // located in the ControllerInformation
-
-  // doesn't need local synchronization, will only be called via synchronized
+  // Doesn't need local synchronization, will only be called via synchronized
   // methods in the Controller (register and deregister will also be
-  // synchronized)
+  // synchronized).
 
   /**
    * Allocates a set of servers to store a particular chunk of a particular

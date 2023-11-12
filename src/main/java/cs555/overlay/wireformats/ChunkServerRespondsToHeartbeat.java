@@ -2,6 +2,11 @@ package cs555.overlay.wireformats;
 
 import java.io.*;
 
+/**
+ * Message a ChunkServer uses to respond to a poke by the Controller.
+ *
+ * @author hayne
+ */
 public class ChunkServerRespondsToHeartbeat implements Event {
 
   private final byte type;
