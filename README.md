@@ -11,7 +11,7 @@ The *ChunkServer* is responsible for storing file chunks, sending heartbeat mess
 The *Client* is responsible for taking commands issued by the user, and translating those commands into procedures that store and retrieve files to and from the DFS. Storage and retrieval operations are complex, requiring coordinated communication between both the *Controller* and select *ChunkServers* in the overlay.
 
 ## Two techniques for fault-tolerance
-This project uses two techniques for faul-tolerance, namely **erasure coding** and **replication**.
+This project uses two techniques for fault-tolerance, namely **erasure coding** and **replication**.
 
 *Replication* splits every file the *Client* wishes to store into 64KB **chunks**. This project uses a redundancy factor of three by default, meaning that every chunk will be replicated on three *ChunkServers* at any given time. If a *ChunkServer* storing particular chunk goes offline, the *Controller* will notice, and during the next heartbeat will make an attempt to forward the chunks that used to be stored at that server to other available servers. In doing this, the *Controller* strives to maintain three copies of every chunk available on the DFS.
 
