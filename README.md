@@ -1,6 +1,4 @@
 # Distributed File System
-Creating a distributed, fault-tolerant file system in Java. When it works, it should replicate data across multiple servers and repair pieces of files that have become corrupt.
-
 Though I'm proud of having created a project as large as this that works reasonably well (as far as I know), there is still much left to be desired. I prioritized just *getting through* the coding of most of the functionality, and didn't think hard enough about creating something that could be easily maintained, or understood by someone who isn't me. I may revisit this project in the future to refactor the code in order to bring it up to some basic level of comprehensibility, and to implement a more sane control structure, which it woefully lacks in its current state.
 
 ## How to use it
