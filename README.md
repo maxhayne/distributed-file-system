@@ -30,6 +30,6 @@ The scripts *osx.sh* and *ubuntu.sh* each do the same thing, but the former is i
 
 Commands can then be issued to each of the running nodes. The *Client*, by default, uses the *data* folder in the project directory as its working directory (which can be subsequently changed with the *wd* command). The *data* folder contains three test files -- *small.txt*, *medium.pdf*, and *large.jpg* -- which can, in a pinch, be used to test out the DFS. A command *put small.txt* should work right off the bat. You can then retrieve the file you just stored by issuing a *files* command, followed by a *get 0* command (which retrieves the zeroth file stored by the DFS).
 
-Additionally, all nodes print usage instructions for their commands if you use the *help* command.
+Additionally, all nodes print usage instructions for their commands with the *help* command.
 
 To use Docker instead of the scripts, change *controllerHost* in the *application.properties* file to *controller*, navigate to the *docker* directory in the project directory using your terminal, and, assuming Docker is already installed and running, use command *docker compose build* to first build the project, then *docker compose up -d* to run the project in detached mode. Then, to attach to any of the running containers, use *docker container attach <container_name>*. Detach from the the attached-to container using *CTRL-p-CTRL-q* (no dashes), which is the escape sequence. To shut down the Docker session, use *docker compose down*.
