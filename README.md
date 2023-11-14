@@ -6,9 +6,9 @@ The project focuses on three types of nodes -- a node being a computer on a netw
 
 The *Controller* communicates with the *Client* and *ChunkServers*. It keeps track of which files are stored by which *ChunkServers*. It is also responsible for deciding, after receiving a request from the *Client* to store a file, which *ChunkServers* will be responsible for storing that file's 64KB chunks. It also at regular intervals receives status updates from the *ChunkServers* called *heartbeats*. From these heartbeats the *Controller* determines whether a *ChunkServer* is healthy or is failing. If it concludes that a *ChunkServer* has failed, it orchestrates the relocation of that *ChunkServer's* chunks to other healthy *ChunkServers*, if possible.
 
-The *ChunkServer* is responsible for storing chunks, sending heartbeat messages, and serving chunks to the *Client*.
+The *ChunkServer* is responsible for storing chunks, sending heartbeat messages, and serving chunks to the *Client*. It stores its chunks in the */tmp* directory, in a folder it creates after successfully registering called *ChunkServer-#* (the # being its identifier).
 
-The *Client* is responsible for taking commands from the user, and storing and retrieving files from the DFS. Storage and retrieval operations are complex and require coordinated communication between both the *Controller* and the *ChunkServers*.
+The *Client* is responsible for taking commands from the user, and storing and retrieving files from the DFS. Storage and retrieval operations are complex and require coordinated communication between both the *Controller* and the *ChunkServers*. All files read from the DFS are stored by the *Client* in folder it creates called *reads*, located in directory where the project was compiled.
 
 ## Two techniques for fault-tolerance
 This project uses two techniques to achieve fault-tolerance -- **erasure coding** and **replication**.
