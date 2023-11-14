@@ -1,10 +1,10 @@
 # Distributed File System
-This project is an implementation of an assignment from a Distributed Systems course offered through CSU. I wanted to learn more about writing distributed applications and thought this could be a good place to start.
+This project is an assignment from a Distributed Systems course offered through CSU. I wanted to improve my understanding of distributed applications and thought this would be a good place to start.
 
 ## A quick overview
-The project is based around three types of nodes -- a node being a computer in a network executing a specific program. The three types of nodes are the *Controller*, the *ChunkServer*, and the *Client*.
+The project focuses on three types of nodes -- a node being a computer in a network executing a specific program. They are the *Controller*, the *ChunkServer*, and the *Client*.
 
-The *Controller* communicates with both the *Client* and the *ChunkServers*. It keeps track of which files are being stored by which *ChunkServer*. It is also responsible for deciding, upon receiving from the *Client* a request to store a file, which *ChunkServers* are responsible for storing certain parts of the file (chunks). Additionally, it receives, at regular intervals, status updates from every *ChunkServer* called *heartbeats*. From information contained in each heartbeat, the *Controller* determines whether a *ChunkServer* is ready for storage, or if it has failed. If it determines that a *ChunkServer* has failed, it orchestrates the relocation of the lost chunks to another *ChunkServer*, if possible.
+The *Controller* communicates with the *Client* and *ChunkServers*. It keeps track of which files are stored by which *ChunkServers*. It is also responsible for deciding, upon receiving from the *Client* a request to store a file, which *ChunkServers* are responsible for storing certain parts of the file (chunks). Additionally, it receives, at regular intervals, status updates from every *ChunkServer* called *heartbeats*. From information contained in each heartbeat, the *Controller* determines whether a *ChunkServer* is ready for storage, or if it has failed. If it determines that a *ChunkServer* has failed, it orchestrates the relocation of the lost chunks to another *ChunkServer*, if possible.
 
 The *ChunkServer* is responsible for storing file chunks, sending heartbeat messages to the *Controller*, and serving data to the *Client*.
 
