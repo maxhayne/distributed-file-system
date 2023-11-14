@@ -23,3 +23,6 @@
 
 # Reads from the DFS
 reads/
+
+# Generated plots
+docker/images/

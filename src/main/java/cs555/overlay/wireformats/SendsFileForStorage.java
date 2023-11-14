@@ -3,9 +3,9 @@ package cs555.overlay.wireformats;
 import java.io.*;
 
 /**
- * Sent by the Controller to a ChunkServer, carrying the content of a chunk
- * to be written to disk. Message will be forwarded to other ChunkServers
- * that must store the same chunk.
+ * Sent by the Controller to a ChunkServer, carrying the content of a chunk to
+ * be written to disk. Message will be forwarded to other ChunkServers that must
+ * store the same chunk.
  *
  * @author hayne
  */
@@ -50,8 +50,10 @@ public class SendsFileForStorage implements Event {
     content = new byte[numArrays][];
     for ( int i = 0; i < numArrays; ++i ) {
       len = din.readInt();
-      content[i] = new byte[len];
-      din.readFully( content[i] );
+      if ( len != 0 ) {
+        content[i] = new byte[len];
+        din.readFully( content[i] );
+      }
     }
 
     int numServers = din.readInt();
@@ -84,8 +86,12 @@ public class SendsFileForStorage implements Event {
 
     dout.writeInt( content.length );
     for ( byte[] data : content ) {
-      dout.writeInt( data.length );
-      dout.write( data );
+      if ( data == null ) {
+        dout.writeInt( 0 );
+      } else {
+        dout.writeInt( data.length );
+        dout.write( data );
+      }
     }
 
     if ( servers != null ) {
@@ -128,8 +134,8 @@ public class SendsFileForStorage implements Event {
   }
 
   /**
-   * If we have visited 'servers.length' servers, returns false. If we
-   * haven't yet, increments 'position' by one and returns true.
+   * If we have visited 'servers.length' servers, returns false. If we haven't
+   * yet, increments 'position' by one and returns true.
    *
    * @return true if there is another server to relay to, false if not
    */
@@ -150,7 +156,10 @@ public class SendsFileForStorage implements Event {
    */
   public byte[] getContent() {
     if ( filename.contains( "shard" ) ) {
-      return content[position];
+      byte[] copy = new byte[content[position].length];
+      System.arraycopy( content[position], 0, copy, 0, copy.length );
+      content[position] = null; // So we don't relay it to the next ChunkServer
+      return copy;
     } else {
       return content[0];
     }

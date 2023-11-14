@@ -29,7 +29,7 @@ services:
     depends_on: 
       - controller
     deploy:
-      replicas: 16 # adjustable
+      replicas: 9 # adjustable
     stdin_open: true
     tty: true
     networks:
