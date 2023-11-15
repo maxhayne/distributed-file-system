@@ -391,12 +391,16 @@ public class ControllerInformation {
    * valid recoverable chunks.
    */
   private void deleteUnrecoverableFiles() {
+    ArrayList<String> filesToDelete = new ArrayList<>();
     for ( Map.Entry<String, TreeMap<Integer, String[]>> entry :
         fileTable.entrySet() ) {
       if ( entry.getValue().isEmpty() ) {
-        deleteFileFromDFS( entry.getKey() );
+        filesToDelete.add( entry.getKey() );
         logger.debug( entry.getKey()+" is unrecoverable. Deleting." );
       }
+    }
+    for ( String filename : filesToDelete ) {
+      deleteFileFromDFS( filename );
     }
   }
 

@@ -282,9 +282,9 @@ public class HeartbeatMonitor extends TimerTask {
 
       // Print the contents of all heartbeats for registered ChunkServers
       logger.debug( sb.toString() );
-    }
-    for ( Integer i : toDeregister ) {
-      controller.deregister( i );
+      for ( Integer i : toDeregister ) {
+        controller.deregister( i );
+      }
     }
   }
 }

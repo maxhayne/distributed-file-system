@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # RUN USING REPLICATION:
-sed -i '' -e 's/storageType = erasure/storageType = replication/' ../config/application.properties
+sed -i '' -e 's/controllerHost[[:blank:]]*=.*$/controllerHost = controller/' ../config/application.properties
+sed -i '' -e 's/storageType[[:blank:]]*=[[:blank:]]*erasure/storageType = replication/' ../config/application.properties
 cat ../config/application.properties
 
 # Build and start the project
@@ -37,7 +38,8 @@ docker compose down
 sleep 3
 
 # WITH ERASURE CODING:
-sed -i '' -e 's/storageType = replication/storageType = erasure/' ../config/application.properties
+sed -i '' -e 's/controllerHost[[:blank:]]*=.*$/controllerHost = controller/' ../config/application.properties
+sed -i '' -e 's/storageType[[:blank:]]*=[[:blank:]]*replication/storageType = erasure/' ../config/application.properties
 cat ../config/application.properties
 
 # Build and start the project
