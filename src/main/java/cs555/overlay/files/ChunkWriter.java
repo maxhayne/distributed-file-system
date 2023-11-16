@@ -2,6 +2,7 @@ package cs555.overlay.files;
 
 import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FileSynchronizer;
+import cs555.overlay.util.FilenameUtilities;
 
 import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
@@ -18,9 +19,7 @@ public class ChunkWriter implements FileWriter {
   private final FileMetadata metadata;
   private byte[] content;
   private ChunkReader reader;
-
   private byte[] preparedChunk;
-
   private int[] slicesToRepair;
   private byte[][] replacementSlices;
 
@@ -61,7 +60,7 @@ public class ChunkWriter implements FileWriter {
    * 'content'.
    */
   private void prepareNewChunk() {
-    int sequence = getSequenceFromFilename();
+    int sequence = FilenameUtilities.getSequence( metadata.getFilename() );
     preparedChunk =
         FileSynchronizer.readyChunkForStorage( sequence, metadata.getVersion(),
             metadata.getTimestamp(), content );
@@ -140,16 +139,6 @@ public class ChunkWriter implements FileWriter {
    */
   private void updateTimestamp(ByteBuffer firstSliceBuffer) {
     firstSliceBuffer.putLong( 36, metadata.getTimestamp() );
-  }
-
-  /**
-   * Parses the filename of the chunk to find the filename. Assumes the filename
-   * is properly formatted.
-   *
-   * @return sequence number of chunk
-   */
-  private int getSequenceFromFilename() {
-    return Integer.parseInt( metadata.getFilename().split( "_chunk" )[1] );
   }
 
   /**

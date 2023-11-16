@@ -27,7 +27,6 @@ import java.util.stream.Stream;
  * @author hayne
  */
 public class FileSynchronizer {
-
   private static final Logger logger = Logger.getInstance();
   public static int CHUNK_FILE_LENGTH = 65720;
   public static int SHARD_FILE_LENGTH =
@@ -41,7 +40,7 @@ public class FileSynchronizer {
    * directory for the ChunkServer to use.
    *
    * @param identifier of ChunkServer using the FileSynchronizer
-   * @throws IOException if the can't be created
+   * @throws IOException if the directory can't be created
    */
   public FileSynchronizer(int identifier) throws IOException {
     this.directory =
@@ -407,27 +406,21 @@ public class FileSynchronizer {
   }
 
   /**
-   * Returns an array of filename strings that are either chunks or shards that
-   * are stored in the folder pointed to by the 'directory' member.
+   * Returns a list of filename strings that are either chunks or shards that
+   * are stored in the folder pointed to by the directory member.
    *
-   * @return String[] of filenames in 'directory'
+   * @return List<String> of filenames in directory
    * @throws IOException if the directory that Files.list() is to be run on
    * doesn't exist
    */
-  public String[] listFiles() throws IOException {
+  public List<String> listFiles() throws IOException {
     try ( Stream<Path> stream = Files.list( directory ) ) {
-      List<String> filenames =
-          stream.filter( file -> !Files.isDirectory( file ) )
-                .map( Path::getFileName )
-                .map( Path::toString )
-                .filter( file -> FilenameUtilities.checkChunkFilename( file ) ||
-                                 FilenameUtilities.checkShardFilename( file ) )
-                .toList();
-      String[] filenameArray = new String[filenames.size()];
-      for ( int i = 0; i < filenames.size(); ++i ) {
-        filenameArray[i] = filenames.get( i );
-      }
-      return filenameArray;
+      return stream.parallel()
+                   .filter( file -> !Files.isDirectory( file ) )
+                   .map( Path::getFileName )
+                   .map( Path::toString )
+                   .filter( FilenameUtilities::checkFilename )
+                   .toList();
     }
   }
 
@@ -439,7 +432,7 @@ public class FileSynchronizer {
    * @return byte string of length N, filled until an exception is thrown or the
    * entire file has been read
    */
-  public synchronized byte[] readNBytesFromFile(String filename, int N) {
+  public byte[] readNBytesFromFile(String filename, int N) {
     String fileWithPath = directory.resolve( filename ).toString();
     byte[] fileBytes = new byte[N];
     try ( RandomAccessFile file = new RandomAccessFile( fileWithPath, "r" );
@@ -460,7 +453,7 @@ public class FileSynchronizer {
    * @param content to be written
    * @return true if write succeeded, false if it didn't
    */
-  public synchronized boolean overwriteFile(String filename, byte[] content) {
+  public boolean overwriteFile(String filename, byte[] content) {
     String filenameWithPath = directory.resolve( filename ).toString();
     try (
         RandomAccessFile file = new RandomAccessFile( filenameWithPath, "rw" );
@@ -481,22 +474,28 @@ public class FileSynchronizer {
    * and deletes those.
    *
    * @param filename String filename to be deleted
-   * @throws IOException if the deletion or listFiles() operation fails
+   * @throws IOException if stream couldn't be created
    */
-  public synchronized void deleteFile(String filename) throws IOException {
+  public void deleteFile(String filename) throws IOException {
     // if filename is a specific chunk or shard, try to delete it
-    if ( FilenameUtilities.checkChunkFilename( filename ) ||
-         FilenameUtilities.checkShardFilename( filename ) ) {
-      Files.deleteIfExists( getPath( filename ) );
+    if ( FilenameUtilities.checkFilename( filename ) ) {
+      try {
+        Files.deleteIfExists( getPath( filename ) );
+      } catch ( IOException ioe ) {
+        logger.debug( "Delete failed. "+ioe.getMessage() );
+      }
       return;
     }
-    // if filename is a base (what would come before "_chunk" or
-    // "_shard"), then delete all chunks or shards with that base
-    String[] files = listFiles();
-    for ( String file : files ) {
-      if ( file.split( "_chunk" )[0].equals( filename ) ) {
-        Files.deleteIfExists( getPath( file ) );
+    // If filename is a base (what would come before "_chunk"), delete all
+    // chunks or shards with that base.
+    listFiles().parallelStream().forEach( (name) -> {
+      if ( FilenameUtilities.getBaseFilename( name ).equals( filename ) ) {
+        try {
+          Files.deleteIfExists( getPath( name ) );
+        } catch ( IOException ioe ) {
+          logger.debug( "Delete failed. "+ioe.getMessage() );
+        }
       }
-    }
+    } );
   }
 }

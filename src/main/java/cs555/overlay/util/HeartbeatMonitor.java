@@ -8,17 +8,15 @@ import cs555.overlay.transport.ServerConnection;
 import cs555.overlay.wireformats.*;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.TimerTask;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Is run on a timer schedule for every Constants.HEARTRATE milliseconds. Reads
- * the latest heartbeat sent by each registered ChunkServer and prints out
- * information to the terminal. Tries to detect whether a ChunkServer is failing
- * and should be deregistered. On major heartbeats, tries to replace files at
- * servers that are missing.
+ * Is run on a timer every Constants.HEARTRATE milliseconds. Reads the latest
+ * heartbeat sent by each registered ChunkServer and prints out information to
+ * the terminal. Detects whether a ChunkServer is failing and ought to be
+ * deregistered. On major heartbeats, tries to replace files at servers that are
+ * missing.
  *
  * @author hayne
  */
@@ -136,8 +134,7 @@ public class HeartbeatMonitor extends TimerTask {
   private void replaceMissingFiles(ServerConnection connection,
       ArrayList<FileMetadata> files,
       HashSet<Map.Entry<String, Integer>> missingChunks) {
-    HashSet<Map.Entry<String, Integer>> chunksAtServer =
-        createSetOfChunks( files );
+    Set<Map.Entry<String, Integer>> chunksAtServer = createSetOfChunks( files );
     Map<String, ArrayList<Integer>> storedChunks = connection.getStoredChunks();
     for ( String filename : storedChunks.keySet() ) {
       ArrayList<Integer> sequences = storedChunks.get( filename );
@@ -162,23 +159,24 @@ public class HeartbeatMonitor extends TimerTask {
   }
 
   /**
-   * Creates a HashSet of filename:sequence tuples that are stored at the
+   * Creates a Set of filename:sequence tuples that are stored at the
    * ChunkServer.
    *
    * @param files list of FileMetadatas stored at the ChunkServer
    * @return HashSet made from the list of FileMetadatas
    */
-  private HashSet<Map.Entry<String, Integer>> createSetOfChunks(
+  private Set<Map.Entry<String, Integer>> createSetOfChunks(
       ArrayList<FileMetadata> files) {
-    HashSet<Map.Entry<String, Integer>> chunksAtServer = new HashSet<>();
-    for ( String filename : files.stream()
-                                 .map( FileMetadata::getFilename )
-                                 .toList() ) {
-      String baseFilename = FilenameUtilities.getBaseFilename( filename );
-      int sequence = FilenameUtilities.getSequence( filename );
-      chunksAtServer.add( Map.entry( baseFilename, sequence ) );
-    }
-    return chunksAtServer;
+    ConcurrentHashMap<Map.Entry<String, Integer>, Integer> quickAddMap =
+        new ConcurrentHashMap<>();
+    files.parallelStream()
+         .map( FileMetadata::getFilename )
+         .forEach( (filename) -> {
+           quickAddMap.put(
+               Map.entry( FilenameUtilities.getBaseFilename( filename ),
+                   FilenameUtilities.getSequence( filename ) ), 0 );
+         } );
+    return quickAddMap.keySet();
   }
 
   /**

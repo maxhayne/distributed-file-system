@@ -7,7 +7,6 @@ package cs555.overlay.util;
  * @author hayne
  */
 public class FileMetadata {
-
   private final String filename; // includes "_chunk#" and "_shard#"
   private int version;
   private long timestamp;
@@ -18,23 +17,21 @@ public class FileMetadata {
     this.timestamp = timestamp;
   }
 
-  public String getFilename() {
-    return filename;
-  }
+  public String getFilename() {return filename;}
 
-  public int getVersion() {
+  public synchronized int getVersion() {
     return version;
   }
 
-  public long getTimestamp() {
+  public synchronized long getTimestamp() {
     return timestamp;
   }
 
-  public void incrementVersion() {
+  public synchronized void incrementVersion() {
     version++;
   }
 
-  public void updateTimestamp() {
+  public synchronized void updateTimestamp() {
     timestamp = System.currentTimeMillis();
   }
 }

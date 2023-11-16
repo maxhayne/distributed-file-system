@@ -168,39 +168,41 @@ public class ChunkServer implements Node {
    */
   private void repairShardHelper(Event event) {
     RepairShard repairMessage = ( RepairShard ) event;
-    ShardReader shardReader = new ShardReader( repairMessage.getFilename() );
-    shardReader.readAndProcess( synchronizer );
 
-    // If we are the target in the repair
-    if ( repairMessage.getDestination().equals( host+":"+port ) ) {
-      synchronized( files ) {
-        FileMetadata meta = files.addOrUpdate( repairMessage.getFilename() );
+    ShardReader shardReader = new ShardReader( repairMessage.getFilename() );
+    FileMetadata metadata = files.get( repairMessage.getFilename() );
+    synchronized( metadata ) { // Only we can read this particular filename
+      shardReader.readAndProcess( synchronizer );
+      // If we are the target in the repair
+      if ( repairMessage.getDestination().equals( host+":"+port ) ) {
         if ( shardReader.isCorrupt() ) { // And if the shard is corrupt
-          boolean repaired = repairAndWriteShard( repairMessage, meta );
+          metadata.incrementVersion();
+          metadata.updateTimestamp();
+          boolean repaired = repairAndWriteShard( repairMessage, metadata );
           String succeeded = repaired ? "" : "NOT ";
           logger.debug(
               repairMessage.getFilename()+" was "+succeeded+"repaired." );
         }
+        return;
       }
-    } else { // try to add our uncorrupted shard
-      contributeToShardRepair( repairMessage, shardReader );
-      // Forward message or send directly to destination
-      String nextServer;
-      if ( repairMessage.fragmentsCollected() >= Constants.DATA_SHARDS ||
-           !repairMessage.nextPosition() ) {
-        nextServer = repairMessage.getDestination();
-        repairMessage.setPositionToDestination(); // new, and necessary
-      } else {
-        nextServer = repairMessage.getAddress();
-      }
-      try {
-        connectionCache.getConnection( this, nextServer, false )
-                       .getSender()
-                       .sendData( repairMessage.getBytes() );
-      } catch ( IOException ioe ) {
-        logger.debug( "Message couldn't be forwarded. "+ioe.getMessage() );
-        connectionCache.removeConnection( nextServer );
-      }
+    }
+    // Try to attach fragment to message and send along
+    contributeToShardRepair( repairMessage, shardReader );
+    String nextServer;
+    if ( repairMessage.fragmentsCollected() >= Constants.DATA_SHARDS ||
+         !repairMessage.nextPosition() ) {
+      nextServer = repairMessage.getDestination();
+      repairMessage.setPositionToDestination(); // new, and necessary
+    } else {
+      nextServer = repairMessage.getAddress();
+    }
+    try {
+      connectionCache.getConnection( this, nextServer, false )
+                     .getSender()
+                     .sendData( repairMessage.getBytes() );
+    } catch ( IOException ioe ) {
+      logger.debug( "Message couldn't be forwarded. "+ioe.getMessage() );
+      connectionCache.removeConnection( nextServer );
     }
   }
 
@@ -215,7 +217,7 @@ public class ChunkServer implements Node {
       ShardReader shardReader) {
     if ( !shardReader.isCorrupt() ) { // if our own shard isn't corrupt
       int fragmentIndex =
-          Integer.parseInt( shardReader.getFilename().split( "_shard" )[1] );
+          FilenameUtilities.getFragment( shardReader.getFilename() );
       // attach local fragment to correct fragment index (parsed from filename)
       repairMessage.attachFragment( fragmentIndex, shardReader.getData() );
     }
@@ -253,39 +255,41 @@ public class ChunkServer implements Node {
    */
   private void repairChunkHelper(Event event) {
     RepairChunk repairMessage = ( RepairChunk ) event;
-    ChunkReader chunkReader = new ChunkReader( repairMessage.getFilename() );
-    chunkReader.readAndProcess( synchronizer );
 
-    // If we are the target for the repair
-    if ( repairMessage.getDestination().equals( host+":"+port ) ) {
-      synchronized( files ) {
-        FileMetadata meta = files.addOrUpdate( repairMessage.getFilename() );
+    ChunkReader chunkReader = new ChunkReader( repairMessage.getFilename() );
+    FileMetadata metadata = files.get( repairMessage.getFilename() );
+    synchronized( metadata ) {
+      chunkReader.readAndProcess( synchronizer );
+      // If we are the target for the repair
+      if ( repairMessage.getDestination().equals( host+":"+port ) ) {
         if ( chunkReader.isCorrupt() ) { // And if the chunk is corrupt
+          metadata.incrementVersion();
+          metadata.updateTimestamp();
           boolean repaired =
-              repairAndWriteChunk( repairMessage, chunkReader, meta );
+              repairAndWriteChunk( repairMessage, chunkReader, metadata );
           String succeeded = repaired ? "" : "NOT ";
           logger.debug(
               repairMessage.getFilename()+" was "+succeeded+"repaired." );
         }
       }
-    } else { // Try to attach uncorrupted slices and relay the message
-      contributeToChunkRepair( repairMessage, chunkReader );
-      String nextServer;
-      if ( repairMessage.allSlicesRetrieved() ||
-           !repairMessage.nextPosition() ) { // send to destination
-        nextServer = repairMessage.getDestination();
-      } else { // send to next server in chain
-        nextServer = repairMessage.getAddress();
-      }
-      // Attempt to pass on the message
-      try {
-        connectionCache.getConnection( this, nextServer, false )
-                       .getSender()
-                       .sendData( repairMessage.getBytes() );
-      } catch ( IOException ioe ) {
-        logger.debug( "Message couldn't be forwarded. "+ioe.getMessage() );
-        connectionCache.removeConnection( nextServer );
-      }
+    }
+    // Try to attach uncorrupted slices and relay the message
+    contributeToChunkRepair( repairMessage, chunkReader );
+    String nextServer;
+    if ( repairMessage.allSlicesRetrieved() ||
+         !repairMessage.nextPosition() ) { // send to destination
+      nextServer = repairMessage.getDestination();
+    } else { // send to next server in chain
+      nextServer = repairMessage.getAddress();
+    }
+    // Attempt to pass on the message
+    try {
+      connectionCache.getConnection( this, nextServer, false )
+                     .getSender()
+                     .sendData( repairMessage.getBytes() );
+    } catch ( IOException ioe ) {
+      logger.debug( "Message couldn't be forwarded. "+ioe.getMessage() );
+      connectionCache.removeConnection( nextServer );
     }
   }
 
@@ -375,10 +379,14 @@ public class ChunkServer implements Node {
   private void serveFile(Event event, TCPConnection connection) {
     String filename = (( GeneralMessage ) event).getMessage();
 
-    // Read the file, READER MIGHT BE NULL!
+    // Read the file, READER COULD BE NULL!
     FileReaderFactory factory = FileReaderFactory.getInstance();
     FileReader reader = factory.createFileReader( filename );
-    reader.readAndProcess( synchronizer );
+
+    FileMetadata metadata = files.get( filename );
+    synchronized( metadata ) {
+      reader.readAndProcess( synchronizer );
+    }
 
     // Notify Controller of corruption and deny request
     if ( reader.isCorrupt() ) {
@@ -401,7 +409,6 @@ public class ChunkServer implements Node {
       }
       return;
     }
-
     // Serve the file
     ChunkServerServesFile serveMessage =
         new ChunkServerServesFile( filename, reader.getData() );
@@ -422,11 +429,11 @@ public class ChunkServer implements Node {
     SendsFileForStorage message = ( SendsFileForStorage ) event;
 
     boolean success = false;
-    synchronized( files ) { // Add to 'files' and write to disk
-      FileMetadata meta = files.addOrUpdate( message.getFilename() );
+    FileMetadata metadata = files.get( message.getFilename() );
+    synchronized( metadata ) {
       FileWriterFactory factory = FileWriterFactory.getInstance();
-      // writer will be null if filename isn't formatted correctly
-      FileWriter writer = factory.createFileWriter( meta );
+      // Writer will be null if filename isn't formatted correctly
+      FileWriter writer = factory.createFileWriter( metadata );
       writer.setContent( message.getContent() );
       try {
         writer.prepare();
@@ -458,7 +465,6 @@ public class ChunkServer implements Node {
     // stored), could send message back to Controller that the store
     // operation failed. Then the Controller could find a suitable
     // replacement home for the file.
-
   }
 
   /**
@@ -471,21 +477,21 @@ public class ChunkServer implements Node {
   private void deleteRequestHelper(Event event, TCPConnection connection) {
     String filename = (( GeneralMessage ) event).getMessage();
     logger.debug( "Attempting to delete "+filename+" from the ChunkServer." );
-    synchronized( files ) {
-      files.deleteFile( filename );
-      try {
-        synchronizer.deleteFile( filename );
-      } catch ( IOException ioe ) {
-        logger.debug( "Could not delete file. "+ioe.getMessage() );
-      }
-      try {
-        sendGeneralMessage( Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE,
-            filename, connection );
-      } catch ( IOException ioe ) {
-        logger.debug(
-            "Unable to send acknowledgement of deletion to Controller. "+
-            ioe.getMessage() );
-      }
+
+    files.deleteFile( filename ); // delete from files
+    try { // delete from disk
+      synchronizer.deleteFile( filename );
+    } catch ( IOException ioe ) {
+      logger.debug( "Could not delete file. "+ioe.getMessage() );
+    }
+
+    try { // send response
+      sendGeneralMessage( Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE,
+          filename, connection );
+    } catch ( IOException ioe ) {
+      logger.debug(
+          "Unable to send acknowledgement of deletion to Controller. "+
+          ioe.getMessage() );
     }
   }
 
@@ -647,13 +653,11 @@ public class ChunkServer implements Node {
    * version filename" on each line.
    */
   private void listFiles() {
-    // New way to do it
-    synchronized( files ) {
-      for ( FileMetadata metadata : files.getFiles().values() ) {
-        System.out.printf( "%3s%d %d %s%n", "", metadata.getTimestamp(),
-            metadata.getVersion(), metadata.getFilename() );
-      }
-    }
+    // New way to do it using the ConcurrentHashMap
+    files.getMap()
+         .forEach(
+             (filename, metadata) -> System.out.printf( "%3s%d %d %s%n", "",
+                 metadata.getTimestamp(), metadata.getVersion(), filename ) );
   }
 
   /**

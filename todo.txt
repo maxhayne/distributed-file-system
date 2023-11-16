@@ -214,4 +214,6 @@ ANSWER: Yes, that could be done, but it takes the responsibility for maintaining
 
 - Why not use Circle Plots to visualize the data patterns for the Controller, Client, and ChunkServer during operation? // TODO MAYBE
 
-- Rewrite the readme. // TODO
+- Rewrite the readme. // DONE
+
+- Refashion the FileMap with a ConcurrentHashMap. Then, the entries of the ConcurrentMap can be used as synchronizers for file accesses. Not only will this make for faster writes (there isn't a bottleneck at the filesynchronizer), but it will solve the problem of having to synchronize on the FileMap for every heartbeat -- a forEach() can be used on the ConcurrentHashMap instead, which is thread-safe, and doesn't lock the entire object.

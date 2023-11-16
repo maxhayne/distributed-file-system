@@ -1,22 +1,28 @@
 package cs555.overlay.util;
 
+import java.util.regex.Pattern;
+
 /**
- * Functions for working with filenames with "_chunk#" and "_shard#" attached.
+ * Functions for working with filenames appended with "_chunk#" and "_shard#".
  *
  * @author hayne
  */
 public class FilenameUtilities {
+  private static final Pattern filenamePattern =
+      Pattern.compile( ".*_chunk(0|[1-9][0-9]*)(_shard[0-8])?$" );
+  private static final Pattern chunkPattern =
+      Pattern.compile( ".*_chunk(0|[1-9][0-9]*)$" );
+  private static final Pattern shardPattern =
+      Pattern.compile( ".*_chunk(0|[1-9][0-9]*)_shard[0-8]$" );
 
   /**
-   * Checks if a filename is properly formatted for a shard.
+   * Check if a filename is
    *
    * @param filename to be checked
-   * @return true if it is properly formatted, false otherwise
+   * @return if filename is properly formatted for a chunk or a shard
    */
-  public static boolean checkChunkFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk(0|[1-9][0-9]*)*$" );
-    String[] split = filename.split( "_chunk" );
-    return matches && split.length == 2;
+  public static boolean checkFilename(String filename) {
+    return filenamePattern.matcher( filename ).matches();
   }
 
   /**
@@ -25,11 +31,18 @@ public class FilenameUtilities {
    * @param filename to be checked
    * @return true if it is properly formatted, false otherwise
    */
+  public static boolean checkChunkFilename(String filename) {
+    return chunkPattern.matcher( filename ).matches();
+  }
+
+  /**
+   * Checks if a filename is properly formatted for a shard.
+   *
+   * @param filename to be checked
+   * @return true if it is properly formatted, false otherwise
+   */
   public static boolean checkShardFilename(String filename) {
-    boolean matches = filename.matches( ".*_chunk(0|[1-9][0-9]*)_shard[0-8]$" );
-    String[] split1 = filename.split( "_chunk" );
-    String[] split2 = filename.split( "_shard" );
-    return matches && split1.length == 2 && split2.length == 2;
+    return shardPattern.matcher( filename ).matches();
   }
 
   /**
@@ -40,10 +53,8 @@ public class FilenameUtilities {
    * doesn't contain "_chunk"
    */
   public static String getBaseFilename(String filename) {
-    if ( filename.contains( "_chunk" ) ) {
-      return filename.split( "_chunk" )[0];
-    }
-    return filename;
+    int lastIndex = filename.lastIndexOf( "_chunk" );
+    return lastIndex == -1 ? filename : filename.substring( 0, lastIndex );
   }
 
   /**
@@ -54,11 +65,9 @@ public class FilenameUtilities {
    * @return integer sequence number
    */
   public static int getSequence(String filename) {
-    String sequence = filename.split( "_chunk" )[1];
-    if ( sequence.contains( "_shard" ) ) {
-      sequence = sequence.split( "_shard" )[0];
-    }
-    return Integer.parseInt( sequence );
+    int lastIndex = filename.lastIndexOf( "_chunk" );
+    return Integer.parseInt(
+        filename.substring( lastIndex+6 ).split( "_" )[0] );
   }
 
   /**
@@ -68,7 +77,8 @@ public class FilenameUtilities {
    * @return integer fragment number
    */
   public static int getFragment(String filename) {
-    return Integer.parseInt( filename.split( "_shard" )[1] );
+    int lastIndex = filename.lastIndexOf( "_shard" );
+    return Integer.parseInt( filename.substring( lastIndex+6 ) );
   }
 
 }

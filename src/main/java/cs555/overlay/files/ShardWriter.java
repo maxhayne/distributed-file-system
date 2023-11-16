@@ -2,15 +2,14 @@ package cs555.overlay.files;
 
 import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FileSynchronizer;
+import cs555.overlay.util.FilenameUtilities;
 
 import java.security.NoSuchAlgorithmException;
 
 public class ShardWriter implements FileWriter {
   private final FileMetadata metadata;
   private byte[] content;
-
   private byte[] preparedShard;
-
   private byte[][] reconstructionShards;
 
   /**
@@ -50,8 +49,8 @@ public class ShardWriter implements FileWriter {
    * Prepares a new shard based on the content byte string.
    */
   private void prepareNewShard() {
-    int sequence = getSequenceFromFilename();
-    int fragment = getFragmentFromFilename();
+    int sequence = FilenameUtilities.getSequence( metadata.getFilename() );
+    int fragment = FilenameUtilities.getFragment( metadata.getFilename() );
     preparedShard = FileSynchronizer.readyShardForStorage( sequence, fragment,
         metadata.getVersion(), metadata.getTimestamp(), content );
   }
@@ -64,33 +63,14 @@ public class ShardWriter implements FileWriter {
       byte[][] reconstructedShards =
           FileSynchronizer.decodeMissingShards( reconstructionShards );
       if ( reconstructedShards != null ) {
-        int sequence = getSequenceFromFilename();
-        int fragment = getFragmentFromFilename();
+        int sequence = FilenameUtilities.getSequence( metadata.getFilename() );
+        int fragment = FilenameUtilities.getFragment( metadata.getFilename() );
         preparedShard =
             FileSynchronizer.readyShardForStorage( sequence, fragment,
                 metadata.getVersion(), metadata.getTimestamp(),
                 reconstructedShards[fragment] );
       }
     }
-  }
-
-  /**
-   * Parses the filename for its sequence number.
-   *
-   * @return sequence number of this shard
-   */
-  private int getSequenceFromFilename() {
-    return Integer.parseInt(
-        metadata.getFilename().split( "_shard" )[0].split( "_chunk" )[1] );
-  }
-
-  /**
-   * Parses the filename for its fragment number.
-   *
-   * @return fragment number of this shard
-   */
-  private int getFragmentFromFilename() {
-    return Integer.parseInt( metadata.getFilename().split( "_shard" )[1] );
   }
 
   /**
