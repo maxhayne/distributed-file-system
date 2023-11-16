@@ -160,9 +160,9 @@ public class ChunkServer implements Node {
   }
 
   /**
-   * If this ChunkServer is this message's destination, tries to repair its
-   * reconstruct its local shard from the fragments in the message. If it isn't
-   * the destination, tries to attach its own shard to the message to relay.
+   * If this ChunkServer is this message's destination, tries to reconstruct its
+   * local shard from the fragments in the message. If it isn't the destination,
+   * tries to attach its own shard to the message to relay.
    *
    * @param event message being processed
    */
@@ -176,13 +176,15 @@ public class ChunkServer implements Node {
       // If we are the target in the repair
       if ( repairMessage.getDestination().equals( host+":"+port ) ) {
         if ( shardReader.isCorrupt() ) { // And if the shard is corrupt
-          metadata.incrementVersion();
-          metadata.updateTimestamp();
+          if ( !metadata.isNew() ) {
+            metadata.update();
+          }
           boolean repaired = repairAndWriteShard( repairMessage, metadata );
           String succeeded = repaired ? "" : "NOT ";
           logger.debug(
               repairMessage.getFilename()+" was "+succeeded+"repaired." );
         }
+        metadata.notNew();
         return;
       }
     }
@@ -263,14 +265,17 @@ public class ChunkServer implements Node {
       // If we are the target for the repair
       if ( repairMessage.getDestination().equals( host+":"+port ) ) {
         if ( chunkReader.isCorrupt() ) { // And if the chunk is corrupt
-          metadata.incrementVersion();
-          metadata.updateTimestamp();
+          if ( !metadata.isNew() ) {
+            metadata.update();
+          }
           boolean repaired =
               repairAndWriteChunk( repairMessage, chunkReader, metadata );
           String succeeded = repaired ? "" : "NOT ";
           logger.debug(
               repairMessage.getFilename()+" was "+succeeded+"repaired." );
         }
+        metadata.notNew();
+        return;
       }
     }
     // Try to attach uncorrupted slices and relay the message
@@ -383,6 +388,8 @@ public class ChunkServer implements Node {
     FileReaderFactory factory = FileReaderFactory.getInstance();
     FileReader reader = factory.createFileReader( filename );
 
+    // If filename is not a key, and file doesn't exist at this server, this
+    // will create a dangling key-value pair in the map
     FileMetadata metadata = files.get( filename );
     synchronized( metadata ) {
       reader.readAndProcess( synchronizer );
@@ -441,6 +448,11 @@ public class ChunkServer implements Node {
       } catch ( NoSuchAlgorithmException nsae ) {
         logger.error( "SHA1 is not available. "+nsae.getMessage() );
       }
+      // Update the metadata
+      if ( !metadata.isNew() ) {
+        metadata.update();
+      }
+      metadata.notNew();
     }
 
     // Print debug message
@@ -478,14 +490,10 @@ public class ChunkServer implements Node {
     String filename = (( GeneralMessage ) event).getMessage();
     logger.debug( "Attempting to delete "+filename+" from the ChunkServer." );
 
-    files.deleteFile( filename ); // delete from files
-    try { // delete from disk
-      synchronizer.deleteFile( filename );
-    } catch ( IOException ioe ) {
-      logger.debug( "Could not delete file. "+ioe.getMessage() );
-    }
+    // delete from 'files', then from disk
+    synchronizer.deleteFiles( files.deleteFile( filename ) );
 
-    try { // send response
+    try { // respond
       sendGeneralMessage( Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE,
           filename, connection );
     } catch ( IOException ioe ) {

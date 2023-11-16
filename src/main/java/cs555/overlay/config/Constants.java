@@ -15,5 +15,5 @@ public class Constants {
   public static final int CHUNK_DATA_LENGTH = 65536; // 2^16 bytes
 
   // Number of milliseconds between each Heartbeat
-  public static final int HEARTRATE = 30*1000;
+  public static final int HEARTRATE = 10*1000;
 }

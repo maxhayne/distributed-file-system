@@ -469,32 +469,16 @@ public class FileSynchronizer {
   }
 
   /**
-   * Deletes a file from the server of a particular name. If the name is neither
-   * a specific chunk nor specific shard, looks for files with that basename,
-   * and deletes those.
+   * Attempts to delete a list of files from the server.
    *
-   * @param filename String filename to be deleted
-   * @throws IOException if stream couldn't be created
+   * @param filenames filenames to be deleted
    */
-  public void deleteFile(String filename) throws IOException {
-    // if filename is a specific chunk or shard, try to delete it
-    if ( FilenameUtilities.checkFilename( filename ) ) {
+  public void deleteFiles(ArrayList<String> filenames) {
+    filenames.forEach( name -> {
       try {
-        Files.deleteIfExists( getPath( filename ) );
+        Files.deleteIfExists( getPath( name ) );
       } catch ( IOException ioe ) {
         logger.debug( "Delete failed. "+ioe.getMessage() );
-      }
-      return;
-    }
-    // If filename is a base (what would come before "_chunk"), delete all
-    // chunks or shards with that base.
-    listFiles().parallelStream().forEach( (name) -> {
-      if ( FilenameUtilities.getBaseFilename( name ).equals( filename ) ) {
-        try {
-          Files.deleteIfExists( getPath( name ) );
-        } catch ( IOException ioe ) {
-          logger.debug( "Delete failed. "+ioe.getMessage() );
-        }
       }
     } );
   }

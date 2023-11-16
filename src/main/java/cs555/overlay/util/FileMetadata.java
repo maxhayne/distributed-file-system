@@ -10,11 +10,13 @@ public class FileMetadata {
   private final String filename; // includes "_chunk#" and "_shard#"
   private int version;
   private long timestamp;
+  private boolean isNew;
 
   public FileMetadata(String filename, int version, long timestamp) {
     this.filename = filename;
     this.version = version;
     this.timestamp = timestamp;
+    this.isNew = true;
   }
 
   public String getFilename() {return filename;}
@@ -27,11 +29,14 @@ public class FileMetadata {
     return timestamp;
   }
 
-  public synchronized void incrementVersion() {
-    version++;
+  public synchronized boolean isNew() {return isNew;}
+
+  public synchronized void notNew() {
+    isNew = false;
   }
 
-  public synchronized void updateTimestamp() {
+  public synchronized void update() {
+    version++;
     timestamp = System.currentTimeMillis();
   }
 }

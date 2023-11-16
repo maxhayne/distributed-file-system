@@ -1,5 +1,6 @@
 package cs555.overlay.util;
 
+import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -51,11 +52,14 @@ public class FileMap {
    *
    * @param filename basename to delete from 'files'
    */
-  public void deleteFile(String filename) {
-    files.forEach( 1000, (name, metadata) -> {
+  public ArrayList<String> deleteFile(String filename) {
+    ArrayList<String> deletedFiles = new ArrayList<>();
+    files.forEach( (name, metadata) -> {
       if ( FilenameUtilities.getBaseFilename( name ).equals( filename ) ) {
+        deletedFiles.add( name );
         files.remove( name );
       }
     } );
+    return deletedFiles;
   }
 }
