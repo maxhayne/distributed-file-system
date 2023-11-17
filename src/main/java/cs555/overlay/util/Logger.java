@@ -29,7 +29,7 @@ public class Logger {
    *
    * @param message to append to log
    */
-  public synchronized void debug(String message) {
+  public void debug(String message) {
     if ( !ApplicationProperties.logLevel.equalsIgnoreCase( "debug" ) ) {
       return;
     }
@@ -42,7 +42,7 @@ public class Logger {
    *
    * @param message to append to log
    */
-  public synchronized void info(String message) {
+  public void info(String message) {
     String[] details = details();
     System.out.printf( "%-7s %s %s %s%n", "[INFO]", details[0], details[1], message );
   }
@@ -52,7 +52,7 @@ public class Logger {
    *
    * @param message to append to log
    */
-  public synchronized void error(String message) {
+  public void error(String message) {
     String[] details = details();
     System.err.printf( "%-7s %s %s %s%n", "[ERROR]", details[0], details[1],
         message );

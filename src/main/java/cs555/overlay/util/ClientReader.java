@@ -15,6 +15,7 @@ import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,6 +40,9 @@ public class ClientReader implements Runnable {
   private byte[][][] receivedFiles = null; // set by Controller response
 
   private CountDownLatch writeLatch; // prevents writing to disk until ready
+  private volatile boolean stopRequested;
+  private final AtomicInteger batchStartIndex;
+  private static final int BATCH_SIZE = 1024;
 
   /**
    * Constructor. Creates a new ClientReader which will be ready to be passed to
@@ -55,6 +59,8 @@ public class ClientReader implements Runnable {
     this.totalChunks = new AtomicInteger( 0 );
     this.connectionCache = new TCPConnectionCache();
     this.readDirectory = Paths.get( System.getProperty( "user.dir" ), "reads" );
+    this.stopRequested = false;
+    this.batchStartIndex = new AtomicInteger( 0 );
   }
 
   /**
@@ -75,10 +81,8 @@ public class ClientReader implements Runnable {
         if ( getStorageInfo() ) { // We've retrieved the storage info
           initializeReceivedFiles();
           setTotalChunks();
-          createLatch();
-          wrangleChunks();
           channel.truncate( 0 ); // truncate the file if it exists
-          writeChunksToDisk( file );
+          batchedDownloadAndWrite( file );
         }
       } catch ( IOException|InterruptedException ioe ) {
         logger.error( "ClientReader: Exception thrown while writing '"+filename+
@@ -93,10 +97,59 @@ public class ClientReader implements Runnable {
   }
 
   /**
-   * Creates a latch based on the total number of chunks we must gather.
+   * Downloads BATCH_SIZE chunks at a time and writes them to disk repeatedly
+   * until the file has been retrieved.
+   *
+   * @param file to be written to
+   * @throws InterruptedException if writeLatch.await() throws an interrupted
+   * exception
+   * @throws IOException if writing to file fails
    */
-  private void createLatch() {
-    writeLatch = new CountDownLatch( totalChunks.get() );
+  private void batchedDownloadAndWrite(RandomAccessFile file)
+      throws InterruptedException, IOException {
+    int numberOfBatches = 1+(servers.length/BATCH_SIZE);
+    int batch = 0;
+    while ( batch < numberOfBatches && !stopRequested ) {
+      logger.debug( "Starting batch "+batch );
+      // Set new batchStartIndex
+      batchStartIndex.set( batch*BATCH_SIZE );
+      // Null out the receivedChunks of the previous batch
+      // Might have to wait for threads that are in the addFile() method to
+      // get out somehow... atomic integer, at start decrement at end?
+      freePreviousBatch(); // should give enough time to any threads
+      // Currently in the addFile() method -- ones that have gone past the if
+      // statement but haven't called countDown() yet to exit
+      // Call wrangle chunks for the batch
+      wrangleChunks();
+      // Need to make sure that incoming chunks are only added if they're
+      // part of the current batch DONE
+      // Wrangle chunks will create its own latch
+      // Then call write chunks to disk for the batch
+      writeChunksToDisk( file ); // ow should this write to disk if the
+      // chunks can't all be properly constructed?
+      batch++;
+    }
+  }
+
+  /**
+   * Frees up references to chunks or shards in the previous batch so that they
+   * may be garbage collected, and don't use excessive memory.
+   */
+  private void freePreviousBatch() {
+    int workBackwardsFrom = batchStartIndex.get()-1;
+    for ( int i = workBackwardsFrom;
+          i >= 0 && i > workBackwardsFrom-BATCH_SIZE; --i ) {
+      synchronized( receivedFiles[i] ) { // Unfortunately need this?
+        Arrays.fill( receivedFiles[i], null );
+      }
+    }
+  }
+
+  /**
+   * Creates a new latch (for the next batch).
+   */
+  private void createNewWriteLatch(int size) {
+    writeLatch = new CountDownLatch( size );
   }
 
   /**
@@ -120,27 +173,32 @@ public class ClientReader implements Runnable {
   /**
    * Adds a byte[] to the receivedFiles[][][] array. Will be called through the
    * Client's onEvent method by TCPReceiverThreads that have received messages
-   * from ChunkServers.
+   * from ChunkServers. If the file being added is not part of the current
+   * batch, it is ignored.
    *
    * @param filename contains "_chunk#" (and "_shard#" if erasure coding)
    * @param content byte[] of chunk/shard's content
    */
   public void addFile(String filename, byte[] content) {
     int sequence = FilenameUtilities.getSequence( filename );
-    int fragment = ApplicationProperties.storageType.equals( "erasure" ) ?
-                       FilenameUtilities.getFragment( filename ) : 0;
-    synchronized( receivedFiles[sequence] ) {
-      if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
-        receivedFiles[sequence][fragment] = content;
-        if ( ArrayUtilities.countNulls( receivedFiles[sequence] ) ==
-             Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
-          writeLatch.countDown();
+    if ( sequence >= batchStartIndex.get() ) { // only add if in batch
+      synchronized( receivedFiles[sequence] ) {
+        logger.debug( "Adding file "+filename );
+        if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+          receivedFiles[sequence][FilenameUtilities.getFragment( filename )] =
+              content;
+          if ( ArrayUtilities.countNulls( receivedFiles[sequence] ) ==
+               Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
+            writeLatch.countDown();
+            logger.debug( "countDown() called "+writeLatch.getCount() );
+            chunksReceived.incrementAndGet();
+          }
+        } else { // replication
+          receivedFiles[sequence][0] = content;
+          writeLatch.countDown(); // full chunk received, countdown the latch
+          logger.debug( "countDown() called "+writeLatch.getCount() );
           chunksReceived.incrementAndGet();
         }
-      } else { // replication
-        receivedFiles[sequence][0] = content;
-        writeLatch.countDown(); // full chunk received, countdown the latch
-        chunksReceived.incrementAndGet();
       }
     }
   }
@@ -155,7 +213,9 @@ public class ClientReader implements Runnable {
    */
   private void writeChunksToDisk(RandomAccessFile file) throws IOException {
     int nullChunks = 0;
-    for ( int i = 0; i < receivedFiles.length; ++i ) {
+    int localBatchStartIndex = batchStartIndex.get();
+    for ( int i = localBatchStartIndex; i < localBatchStartIndex+BATCH_SIZE &&
+                                        i < receivedFiles.length; ++i ) {
       synchronized( receivedFiles[i] ) {
         if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
           byte[][] decoded =
@@ -182,21 +242,24 @@ public class ClientReader implements Runnable {
 
   /**
    * Sends file request messages the minimum number of servers that need to be
-   * contacted to reconstruct the file. In the case of erasure coding, sends
-   * file requests to Constants.TOTAL_SHARDS servers that might hold fragments
-   * (even though only Constants.DATA_SHARDS fragments are needed). In the case
-   * of replication, sends out one request for each chunk for every iteration of
-   * the loop. When all servers have been contacted, or all servers that have
-   * been contacted have responded (whichever comes first), the function
-   * returns.
+   * contacted to reconstruct the batch. In the case of erasure coding, sends
+   * file requests to BATCH_SIZE*CONSTANTS.TOTAL_SHARDS servers that might hold
+   * fragments (even though only Constants.DATA_SHARDS fragments are needed). In
+   * the case of replication, sends out one request for each chunk for every
+   * iteration of the loop. When all servers have been contacted, or all servers
+   * that have been contacted have responded (whichever comes first), the
+   * function returns.
    *
    * @throws InterruptedException if wrangleLatch.await() is interrupted for
    * some reason
    */
   private void wrangleChunks() throws InterruptedException {
+    createNewWriteLatch( chunksToGetInBatch() ); // create current batch's latch
+    logger.debug( "writeLatch Count "+writeLatch.getCount() );
     int requests;
     do {
-      requests = requestUnaskedServers( true );
+      requests = requestUnaskedServers( true ); // way to remove?
+      logger.debug( "Requests to send "+requests );
       if ( requests == 0 ) {
         break; // stop the process if no other servers can be contacted
       } else {
@@ -206,7 +269,21 @@ public class ClientReader implements Runnable {
   }
 
   /**
-   * Sends file request messages to servers that haven't been asked yet.
+   * Returns the total number of chunks to download in this batch. Will only
+   * differ from BATCH_SIZE for the last batch.
+   *
+   * @return number of chunks to get this batch
+   */
+  private int chunksToGetInBatch() {
+    int localBatchStartIndex = batchStartIndex.get();
+    int batchEndIndex =
+        Math.min( localBatchStartIndex+BATCH_SIZE, receivedFiles.length );
+    return batchEndIndex-localBatchStartIndex;
+  }
+
+  /**
+   * Sends file request messages to servers that haven't been asked yet for the
+   * current batch.
    *
    * @param dryRun if true, the function doesn't actually send messages to the
    * servers, just counts the total number of times it would have
@@ -217,7 +294,9 @@ public class ClientReader implements Runnable {
     GeneralMessage requestMessage =
         new GeneralMessage( Protocol.REQUEST_FILE, "" );
     int askCount = 0;
-    for ( int i = 0; i < servers.length; ++i ) {
+    int localBatchStartIndex = batchStartIndex.get();
+    for ( int i = localBatchStartIndex;
+          i < localBatchStartIndex+BATCH_SIZE && i < servers.length; ++i ) {
       for ( int j = 0; j < servers[i].length; ++j ) {
         if ( servers[i][j] != null ) {
           if ( !dryRun ) {
@@ -324,21 +403,46 @@ public class ClientReader implements Runnable {
    * Controller, or when the user issues an interruption.
    *
    * @return the total number of chunks stored on the DFS,
-   * @throws InterruptedException if the waiting thread is interrupted
    */
-  private synchronized boolean getStorageInfo() throws InterruptedException {
+  private synchronized boolean getStorageInfo() {
     GeneralMessage storageInfoMessage =
         new GeneralMessage( Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO,
             filename );
     if ( sendToController( storageInfoMessage ) ) {
-      this.wait(); // wait until Controller has sent storage info
+      waitForStorageInfo();
     }
-    if ( servers != null ) {
+    if ( servers != null && !stopRequested ) {
       return true;
     } else {
-      logger.error( filename+" has zero chunks stored on the DFS." );
+      if ( stopRequested ) {
+        logger.debug( "Reader for "+filename+" stopped by user." );
+      } else {
+        logger.error( filename+" has zero chunks stored on the DFS." );
+      }
       return false;
     }
+  }
+
+  /**
+   * Waits for storage info from the Controller to arrive. If the storage info
+   * arrives, but is null, requestStop() is called, guaranteeing this function
+   * will return.
+   */
+  private void waitForStorageInfo() {
+    while ( servers == null && !stopRequested ) {
+      try {
+        this.wait( 5000 );
+      } catch ( InterruptedException ie ) {
+        logger.debug( ie.getMessage() );
+      }
+    }
+  }
+
+  /**
+   * Sets stopRequested to true;
+   */
+  public void requestStop() {
+    stopRequested = true;
   }
 
   /**

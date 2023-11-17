@@ -31,6 +31,7 @@ public class ClientWriter implements Runnable {
   private final AtomicInteger totalChunks;
   private final TCPConnectionCache connectionCache;
   private String[] servers;
+  private volatile boolean stopRequested;
 
   /**
    * Constructor. Creates a new ClientWriter which will be ready to be passed to
@@ -49,6 +50,7 @@ public class ClientWriter implements Runnable {
     this.totalChunks = new AtomicInteger( 1 );
     this.connectionCache = new TCPConnectionCache();
     this.dateAddedFilename = dateAddedFilename;
+    this.stopRequested = false;
   }
 
   /**
@@ -108,11 +110,12 @@ public class ClientWriter implements Runnable {
     ClientStore requestMessage = createNewStoreMessage(); // reusable
     byte[] chunk = new byte[Constants.CHUNK_DATA_LENGTH]; // reusable
     for ( int i = 0; i < totalChunks; ++i ) {
+      setServersAndNotify( null ); // set servers to null, notify isn't used
       byte[] chunkContent = readAndResize( file, chunk );
       if ( chunkContent != null && sendToController( requestMessage ) ) {
         logger.debug( "wait for allocated servers "+i );
-        this.wait(); // wait for Controller to send allocated servers
-        if ( servers == null ||
+        waitForServers(); // wait for Controller to send allocated servers
+        if ( servers == null || stopRequested ||
              !sendChunkToServers( requestMessage.getSequence(),
                  chunkContent ) ) { // stopped by user, or chunk not sent out
           logger.error( "Couldn't store chunk "+i+" to the DFS. Stopping." );
@@ -125,6 +128,28 @@ public class ClientWriter implements Runnable {
       chunksSent.incrementAndGet();
       requestMessage.incrementSequence(); // set sequence for next chunk
     }
+  }
+
+  /**
+   * Waits for a list of servers from the Controller. If the Controller denies
+   * the storage request, requestStop() is called, guaranteeing that this
+   * function will return.
+   */
+  private void waitForServers() {
+    while ( servers == null && !stopRequested ) {
+      try {
+        this.wait( 5000 );
+      } catch ( InterruptedException ie ) {
+        logger.debug( ie.getMessage() );
+      }
+    }
+  }
+
+  /**
+   * Sets stopRequested to true.
+   */
+  public void requestStop() {
+    stopRequested = true;
   }
 
   /**

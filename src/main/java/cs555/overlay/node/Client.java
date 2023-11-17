@@ -115,7 +115,7 @@ public class Client implements Node {
 
       case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
         logger.info( "The Controller has denied a storage request." );
-        stopWriterAndRequestDelete( (( GeneralMessage ) event).getMessage() );
+        stopWriter( (( GeneralMessage ) event).getMessage() );
         break;
 
       case Protocol.CONTROLLER_SENDS_STORAGE_LIST:
@@ -144,27 +144,27 @@ public class Client implements Node {
     }
   }
 
-  // Stopping the writer should be decoupled from request delete.
-
   /**
-   * Stops the ClientWriter writing the file with name 'filename', and sends a
-   * delete request to the Controller for that particular file.
+   * Tries to stop a ClientWriter.
    *
-   * @param filename filename to stop the writer for and request delete of
+   * @param filename filename of writer to stop
    */
-  private synchronized void stopWriterAndRequestDelete(String filename) {
+  private void stopWriter(String filename) {
     ClientWriter writer = writers.get( filename );
     if ( writer != null ) {
-      writer.setServersAndNotify( null );
+      writer.requestStop();
     }
-    GeneralMessage requestDelete =
-        new GeneralMessage( Protocol.CLIENT_REQUESTS_FILE_DELETE, filename );
-    try {
-      controllerConnection.getSender().sendData( requestDelete.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.error(
-          "Couldn't send Controller a request to delete '"+filename+"'"+
-          ioe.getMessage() );
+  }
+
+  /**
+   * Tries to stop a ClientReader.
+   *
+   * @param filename of reader to stop
+   */
+  private void stopReader(String filename) {
+    ClientReader reader = readers.get( filename );
+    if ( reader != null ) {
+      reader.requestStop();
     }
   }
 
@@ -187,7 +187,7 @@ public class Client implements Node {
    * Will be called when a message containing the storage info for a particular
    * file is received by the Client. This function sets the 'servers' member for
    * the ClientReader of a particular file, thus unlocking it start reading the
-   * file from the DFS.
+   * file from the DFS. If message.getServers() is null, stops the reader.
    *
    * @param event message being handled
    */
@@ -195,7 +195,11 @@ public class Client implements Node {
     ControllerSendsStorageList message = ( ControllerSendsStorageList ) event;
     ClientReader reader = readers.get( message.getFilename() );
     if ( reader != null ) {
-      reader.setServersAndNotify( message.getServers() );
+      if ( message.getServers() == null ) {
+        reader.requestStop();
+      } else {
+        reader.setServersAndNotify( message.getServers() );
+      }
     }
   }
 
@@ -289,15 +293,14 @@ public class Client implements Node {
   }
 
   /**
-   * Attempts to unlock the writer (assuming it is frozen) after it has set its
-   * 'servers' member to null (which instructs the writer to return
-   * immediately).
+   * Attempts to stop either a ClientWriter or ClientReader.
    *
    * @param command user input split by whitespace
    */
   private void stopHelper(String[] command) {
     if ( command.length > 1 ) {
-      stopWriterAndRequestDelete( command[1] );
+      stopReader( command[1] );
+      stopWriter( command[1] );
     } else {
       logger.error( "No filename given. Use 'help' for usage." );
     }
@@ -526,7 +529,7 @@ public class Client implements Node {
     System.out.printf( "%3s%-19s : %s%n", "", "d[elete] # [#...]",
         "request that file(s) be deleted from the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "s[top] FILENAME",
-        "stops writer for FILENAME and sends delete request" );
+        "tries to stop writer or reader for FILENAME" );
     System.out.printf( "%3s%-19s : %s%n", "", "w[riters]",
         "display list files in the process of being stored" );
     System.out.printf( "%3s%-19s : %s%n", "", "r[eaders]",

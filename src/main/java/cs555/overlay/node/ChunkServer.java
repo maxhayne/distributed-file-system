@@ -176,9 +176,7 @@ public class ChunkServer implements Node {
       // If we are the target in the repair
       if ( repairMessage.getDestination().equals( host+":"+port ) ) {
         if ( shardReader.isCorrupt() ) { // And if the shard is corrupt
-          if ( !metadata.isNew() ) {
-            metadata.update();
-          }
+          metadata.updateIfNotNew();
           boolean repaired = repairAndWriteShard( repairMessage, metadata );
           String succeeded = repaired ? "" : "NOT ";
           logger.debug(
@@ -265,9 +263,7 @@ public class ChunkServer implements Node {
       // If we are the target for the repair
       if ( repairMessage.getDestination().equals( host+":"+port ) ) {
         if ( chunkReader.isCorrupt() ) { // And if the chunk is corrupt
-          if ( !metadata.isNew() ) {
-            metadata.update();
-          }
+          metadata.updateIfNotNew();
           boolean repaired =
               repairAndWriteChunk( repairMessage, chunkReader, metadata );
           String succeeded = repaired ? "" : "NOT ";
@@ -449,10 +445,7 @@ public class ChunkServer implements Node {
         logger.error( "SHA1 is not available. "+nsae.getMessage() );
       }
       // Update the metadata
-      if ( !metadata.isNew() ) {
-        metadata.update();
-      }
-      metadata.notNew();
+      metadata.updateIfNotNew();
     }
 
     // Print debug message
@@ -490,7 +483,7 @@ public class ChunkServer implements Node {
     String filename = (( GeneralMessage ) event).getMessage();
     logger.debug( "Attempting to delete "+filename+" from the ChunkServer." );
 
-    // delete from 'files', then from disk
+    // delete from files, then from disk
     synchronizer.deleteFiles( files.deleteFile( filename ) );
 
     try { // respond
