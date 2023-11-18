@@ -122,9 +122,29 @@ public class Client implements Node {
         notifyOfStorageInfo( event );
         break;
 
+      case Protocol.CONTROLLER_SENDS_SERVER_LIST:
+        printServerList( (( GeneralMessage ) event).getMessage() );
+        break;
+
       default:
         logger.debug( "Event couldn't be processed. "+event.getType() );
         break;
+    }
+  }
+
+  /**
+   * Prints the list of servers sent by the Controller.
+   *
+   * @param serverList a string of information about servers constituting the
+   * DFS, separated by newlines.
+   */
+  private void printServerList(String serverList) {
+    if ( serverList.isEmpty() ) {
+      System.out.printf( "%3s%s%n", "", "Controller: No servers in DFS." );
+    } else {
+      for ( String serverInformation : serverList.split( "\n" ) ) {
+        System.out.printf( "%3s%s%n", "", serverInformation );
+      }
     }
   }
 
@@ -208,7 +228,7 @@ public class Client implements Node {
    *
    * @param event message being processed
    */
-  public void setFileListAndPrint(Event event) {
+  private void setFileListAndPrint(Event event) {
     ControllerSendsFileList message = ( ControllerSendsFileList ) event;
     synchronized( listLock ) {
       controllerFileList = message.getList();
@@ -250,7 +270,7 @@ public class Client implements Node {
           requestFileDelete( splitCommand );
           break;
 
-        case "s":
+        case "st":
         case "stop":
           stopHelper( splitCommand );
           break;
@@ -268,6 +288,11 @@ public class Client implements Node {
         case "f":
         case "files":
           requestFileList();
+          break;
+
+        case "s":
+        case "servers":
+          requestServerList();
           break;
 
         case "wd":
@@ -328,10 +353,13 @@ public class Client implements Node {
         for ( int i = 1; i < command.length; ++i ) {
           try {
             int fileNumber = Integer.parseInt( command[i] );
-            if ( fileNumber >= 0 && fileNumber < controllerFileList.length ) {
+            if ( fileNumber >= 0 && fileNumber < controllerFileList.length &&
+                 !readers.containsKey( controllerFileList[fileNumber] ) &&
+                 !writers.containsKey( controllerFileList[fileNumber] ) ) {
               deleteMessage.setMessage( controllerFileList[fileNumber] );
-              controllerConnection.getSender()
-                                  .sendData( deleteMessage.getBytes() );
+              controllerConnection
+                  .getSender()
+                  .sendData( deleteMessage.getBytes() );
             }
           } catch ( IOException ioe ) {
             logger.error( "Couldn't send Controller a delete request. "+
@@ -519,6 +547,21 @@ public class Client implements Node {
   }
 
   /**
+   * Sends request to the Controller for a list of the servers currently
+   * constituting the DFS.
+   */
+  private void requestServerList() {
+    GeneralMessage requestMessage =
+        new GeneralMessage( Protocol.CLIENT_REQUESTS_SERVER_LIST );
+    try {
+      controllerConnection.getSender().sendData( requestMessage.getBytes() );
+    } catch ( IOException ioe ) {
+      logger.error( "Could not send a server list request to the Controller. "+
+                    ioe.getMessage() );
+    }
+  }
+
+  /**
    * Prints a list of valid commands.
    */
   private void showHelp() {
@@ -528,7 +571,7 @@ public class Client implements Node {
         "retrieve file(s) from the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "d[elete] # [#...]",
         "request that file(s) be deleted from the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "s[top] FILENAME",
+    System.out.printf( "%3s%-19s : %s%n", "", "st[op] FILENAME",
         "tries to stop writer or reader for FILENAME" );
     System.out.printf( "%3s%-19s : %s%n", "", "w[riters]",
         "display list files in the process of being stored" );
@@ -536,6 +579,8 @@ public class Client implements Node {
         "display list files in the process of being retrieved" );
     System.out.printf( "%3s%-19s : %s%n", "", "f[iles]",
         "print a list of files stored on the DFS" );
+    System.out.printf( "%3s%-19s : %s%n", "", "s[ervers]",
+        "print the list of servers constituting the DFS" );
     System.out.printf( "%3s%-19s : %s%n", "", "wd [NEW_WORKDIR]",
         "print the current working directory or change it" );
     System.out.printf( "%3s%-19s : %s%n", "", "e[xit]",

@@ -1,6 +1,7 @@
 package cs555.overlay.wireformats;
 
 import java.io.*;
+import java.util.Objects;
 
 /**
  * General Message with variable type and message. Will be used for general
@@ -32,11 +33,7 @@ public class GeneralMessage implements Event {
   public GeneralMessage(byte type, String message) {
     this.type = type;
 
-    if ( message == null ) {
-      this.message = "";
-    } else {
-      this.message = message;
-    }
+    this.message = Objects.requireNonNullElse( message, "" );
   }
 
   public GeneralMessage(byte[] marshalledBytes) throws IOException {

@@ -131,9 +131,37 @@ public class Controller implements Node {
                       (( GeneralMessage ) event).getMessage() );
         break;
 
+      case Protocol.CLIENT_REQUESTS_SERVER_LIST:
+        serverListRequest( connection );
+        break;
+
       default:
         logger.debug( "Event couldn't be processed. "+event.getType() );
         break;
+    }
+  }
+
+  /**
+   * Respond to a request for the list of servers constituting the DFS.
+   *
+   * @param connection that produced the event
+   */
+  private synchronized void serverListRequest(TCPConnection connection) {
+    StringBuilder sb = new StringBuilder();
+    for ( ServerConnection server : information
+                                        .getRegisteredServers()
+                                        .values() ) {
+      sb.append( server.toString() ).append( '\n' );
+    }
+    GeneralMessage message =
+        new GeneralMessage( Protocol.CONTROLLER_SENDS_SERVER_LIST,
+            sb.toString() );
+    try {
+      connection.getSender().sendData( message.getBytes() );
+    } catch ( IOException ioe ) {
+      logger.debug(
+          "Unable to send response to Client containing list of servers. "+
+          ioe.getMessage() );
     }
   }
 

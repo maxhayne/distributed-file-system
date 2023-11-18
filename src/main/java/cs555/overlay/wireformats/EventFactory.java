@@ -52,6 +52,8 @@ public class EventFactory {
       case Protocol.CHUNK_SERVER_DENIES_REQUEST:
       case Protocol.CONTROLLER_REQUESTS_FILE_DELETE:
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE:
+      case Protocol.CLIENT_REQUESTS_SERVER_LIST:
+      case Protocol.CONTROLLER_SENDS_SERVER_LIST:
         return new GeneralMessage( marshalledBytes );
 
       case Protocol.CONTROLLER_SENDS_STORAGE_LIST:
