@@ -509,20 +509,24 @@ public class ControllerInformation {
    */
   public static ForwardInformation constructRepairMessage(String filename,
       String[] servers, String destination, int[] slices) {
-    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
-      if ( ArrayUtilities.countNulls( servers ) <=
-           Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
-        RepairShard repairShard =
-            new RepairShard( filename, destination, servers );
-        return new ForwardInformation( repairShard.getAddress(), repairShard );
-      }
-    } else {
-      String[] strippedServers =
-          ArrayUtilities.reduceReplicationServers( servers, destination );
-      if ( strippedServers.length != 0 ) {
-        RepairChunk repairChunk =
-            new RepairChunk( filename, destination, slices, strippedServers );
-        return new ForwardInformation( repairChunk.getAddress(), repairChunk );
+    if ( servers != null ) {
+      if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+        if ( ArrayUtilities.countNulls( servers ) <=
+             Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
+          RepairShard repairShard =
+              new RepairShard( filename, destination, servers );
+          return new ForwardInformation( repairShard.getAddress(),
+              repairShard );
+        }
+      } else {
+        String[] strippedServers =
+            ArrayUtilities.reduceReplicationServers( servers, destination );
+        if ( strippedServers.length != 0 ) {
+          RepairChunk repairChunk =
+              new RepairChunk( filename, destination, slices, strippedServers );
+          return new ForwardInformation( repairChunk.getAddress(),
+              repairChunk );
+        }
       }
     }
     return new ForwardInformation( null, null );

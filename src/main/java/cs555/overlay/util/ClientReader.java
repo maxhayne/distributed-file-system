@@ -267,7 +267,8 @@ public class ClientReader implements Runnable {
       } else {
         requestUnaskedServers( false );
       }
-    } while ( !writeLatch.await( 15000+(5L*requests), TimeUnit.MILLISECONDS ) );
+    } while ( !writeLatch.await( 128, TimeUnit.SECONDS ) );
+    // 15000+(5L*requests), TimeUnit.MILLISECONDS
   }
 
   /**
