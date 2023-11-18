@@ -3,8 +3,12 @@ package cs555.overlay.transport;
 import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.config.Constants;
 import cs555.overlay.util.ArrayUtilities;
+import cs555.overlay.util.ForwardInformation;
 import cs555.overlay.util.Logger;
-import cs555.overlay.wireformats.*;
+import cs555.overlay.wireformats.GeneralMessage;
+import cs555.overlay.wireformats.Protocol;
+import cs555.overlay.wireformats.RepairChunk;
+import cs555.overlay.wireformats.RepairShard;
 
 import java.io.IOException;
 import java.util.*;
@@ -28,10 +32,11 @@ public class ControllerInformation {
   private final Map<String, TreeMap<Integer, String[]>> fileTable;
 
   private static final Comparator<ServerConnection> serverComparator =
-      Comparator.comparingInt( ServerConnection::getUnhealthy )
-                .thenComparing( ServerConnection::getTotalChunks )
-                .thenComparing( ServerConnection::getFreeSpace,
-                    Comparator.reverseOrder() );
+      Comparator
+          .comparingInt( ServerConnection::getUnhealthy )
+          .thenComparing( ServerConnection::getTotalChunks )
+          .thenComparing( ServerConnection::getFreeSpace,
+              Comparator.reverseOrder() );
 
   /**
    * Constructor. Creates a list of available identifiers, and HashMaps for both
@@ -272,8 +277,9 @@ public class ControllerInformation {
   private void assignNullReplications(ServerConnection connection) {
     synchronized( fileTable ) {
       for ( String filename : fileTable.keySet() ) {
-        for ( Map.Entry<Integer, String[]> entry : fileTable.get( filename )
-                                                            .entrySet() ) {
+        for ( Map.Entry<Integer, String[]> entry : fileTable
+                                                       .get( filename )
+                                                       .entrySet() ) {
           String[] servers = entry.getValue();
           int nullIndex = ArrayUtilities.contains( servers, null );
           if ( nullIndex != -1 ) {
@@ -412,9 +418,9 @@ public class ControllerInformation {
    */
   public void refreshServerFiles(int identifier) {
     ServerConnection connection = registeredServers.get( identifier );
-    for ( Map.Entry<String, ArrayList<Integer>> entry :
-        connection.getStoredChunks()
-                                                                  .entrySet() ) {
+    for ( Map.Entry<String, ArrayList<Integer>> entry : connection
+                                                            .getStoredChunks()
+                                                            .entrySet() ) {
       for ( Integer sequence : entry.getValue() ) {
         boolean sent = sendReplacementMessage( entry.getKey(), sequence,
             connection.getServerAddress(),
@@ -427,7 +433,7 @@ public class ControllerInformation {
   }
 
   /**
-   * Constructs a message that will hopefully relocate a file from a server that
+   * Constructs a message that will try to relocate a file from a server that
    * has deregistered to a server that has been selected as its replacement.
    * Slightly long because it must first construct the right type of message --
    * either RepairShard or RepairChunk, and then send the message to the correct
@@ -442,35 +448,31 @@ public class ControllerInformation {
    */
   private boolean sendReplacementMessage(String filename, int sequence,
       String destination, String[] servers) {
-    String appendedFilename = filename+"_chunk"+sequence;
-    String addressToContact;
-    Event relocateMessage;
-    if ( ApplicationProperties.storageType.equals( "erasure" ) ) { // erasure
-      int fragment = ArrayUtilities.contains( servers, destination );
-      appendedFilename = appendedFilename+"_shard"+fragment;
-      RepairShard repairShard =
-          new RepairShard( appendedFilename, destination, servers );
-      addressToContact = repairShard.getAddress();
-      relocateMessage = repairShard;
-    } else { // replication
-      // Remove destination server from list of servers
-      servers = ArrayUtilities.removeFromArray( servers, destination );
-      RepairChunk repairChunk = new RepairChunk( appendedFilename, destination,
-          new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 }, servers );
-      addressToContact = repairChunk.getAddress();
-      relocateMessage = repairChunk;
+    String specificFilename = filename+"_chunk";
+    specificFilename = ApplicationProperties.storageType.equals( "erasure" ) ?
+                           specificFilename+sequence+"_shard"+
+                           ArrayUtilities.contains( servers, destination ) :
+                           specificFilename+sequence;
+
+    ForwardInformation forwardInformation =
+        constructRepairMessage( specificFilename, servers, destination,
+            new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 } );
+
+    if ( forwardInformation.firstHop() != null ) {
+      try {
+        getConnection( forwardInformation.firstHop() )
+            .getConnection()
+            .getSender()
+            .sendData( forwardInformation.repairMessage().getBytes() );
+        return true;
+      } catch ( IOException ioe ) {
+        logger.debug(
+            "Unable to send a message to "+forwardInformation.firstHop()+
+            " to replace '"+specificFilename+"' at "+destination+". "+
+            ioe.getMessage() );
+      }
     }
-    try {
-      getConnection( addressToContact ).getConnection()
-                                       .getSender()
-                                       .sendData( relocateMessage.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.debug(
-          "Unable to send a message to "+addressToContact+" to replace '"+
-          appendedFilename+"' at "+destination+". "+ioe.getMessage() );
-      return false;
-    }
-    return true;
+    return false;
   }
 
   /**
@@ -489,5 +491,40 @@ public class ControllerInformation {
         }
       }
     }
+  }
+
+  /**
+   * Constructs a repair message of the correct type if there are enough servers
+   * that might hold the file in the servers array.
+   *
+   * @param filename of file to be repaired
+   * @param servers array of servers that hold the file
+   * @param destination address of server that needs the repair
+   * @param slices specific slices that need repairing, is ignored if using
+   * erasure coding
+   * @return a ForwardInformation object containing the address of the first
+   * server to forward the message to, and the actual message to be sent, or a
+   * ForwardInformation object with null values, if message couldn't be
+   * constructed
+   */
+  public static ForwardInformation constructRepairMessage(String filename,
+      String[] servers, String destination, int[] slices) {
+    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+      if ( ArrayUtilities.countNulls( servers ) <=
+           Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
+        RepairShard repairShard =
+            new RepairShard( filename, destination, servers );
+        return new ForwardInformation( repairShard.getAddress(), repairShard );
+      }
+    } else {
+      String[] strippedServers =
+          ArrayUtilities.reduceReplicationServers( servers, destination );
+      if ( strippedServers.length != 0 ) {
+        RepairChunk repairChunk =
+            new RepairChunk( filename, destination, slices, strippedServers );
+        return new ForwardInformation( repairChunk.getAddress(), repairChunk );
+      }
+    }
+    return new ForwardInformation( null, null );
   }
 }

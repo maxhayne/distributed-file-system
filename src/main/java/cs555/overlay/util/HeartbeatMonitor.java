@@ -5,7 +5,8 @@ import cs555.overlay.config.Constants;
 import cs555.overlay.node.Controller;
 import cs555.overlay.transport.ControllerInformation;
 import cs555.overlay.transport.ServerConnection;
-import cs555.overlay.wireformats.*;
+import cs555.overlay.wireformats.GeneralMessage;
+import cs555.overlay.wireformats.Protocol;
 
 import java.io.IOException;
 import java.util.*;
@@ -169,13 +170,12 @@ public class HeartbeatMonitor extends TimerTask {
       ArrayList<FileMetadata> files) {
     ConcurrentHashMap<Map.Entry<String, Integer>, Integer> quickAddMap =
         new ConcurrentHashMap<>();
-    files.parallelStream()
-         .map( FileMetadata::getFilename )
-         .forEach( (filename) -> {
-           quickAddMap.put(
-               Map.entry( FilenameUtilities.getBaseFilename( filename ),
-                   FilenameUtilities.getSequence( filename ) ), 0 );
-         } );
+    files
+        .parallelStream()
+        .map( FileMetadata::getFilename )
+        .forEach( (filename) -> quickAddMap.put(
+            Map.entry( FilenameUtilities.getBaseFilename( filename ),
+                FilenameUtilities.getSequence( filename ) ), 0 ) );
     return quickAddMap.keySet();
   }
 
@@ -190,30 +190,25 @@ public class HeartbeatMonitor extends TimerTask {
    */
   private void dispatchRepair(String filename, int sequence,
       String destination) {
+    filename = ApplicationProperties.storageType.equals( "erasure" ) ?
+                   filename+"_chunk"+sequence :
+                   filename+"_chunk"+sequence+"_shard";
     String[] servers = information.getServers( filename, sequence );
-    Event replaceMessage;
-    String addressToContact;
-    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
-      RepairShard repairShard =
-          new RepairShard( filename+"_chunk"+sequence+"_shard", destination,
-              servers );
-      addressToContact = repairShard.getAddress();
-      replaceMessage = repairShard;
-    } else {
-      RepairChunk repairChunk =
-          new RepairChunk( filename+"_chunk"+sequence, destination,
-              new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 },
-              ArrayUtilities.removeFromArray( servers, destination ) );
-      addressToContact = repairChunk.getAddress();
-      replaceMessage = repairChunk;
-    }
-    try {
-      information.getConnection( addressToContact )
-                 .getConnection()
-                 .getSender()
-                 .sendData( replaceMessage.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.debug( "Failed to send message. "+ioe.getMessage() );
+
+    ForwardInformation forwardInformation =
+        ControllerInformation.constructRepairMessage( filename, servers,
+            destination, new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 } );
+
+    if ( forwardInformation.firstHop() != null ) {
+      try {
+        information
+            .getConnection( forwardInformation.firstHop() )
+            .getConnection()
+            .getSender()
+            .sendData( forwardInformation.repairMessage().getBytes() );
+      } catch ( IOException ioe ) {
+        logger.debug( "Failed to send message. "+ioe.getMessage() );
+      }
     }
   }
 
@@ -225,10 +220,11 @@ public class HeartbeatMonitor extends TimerTask {
    */
   private boolean pokeServer(ServerConnection connection) {
     try {
-      connection.getConnection()
-                .getSender()
-                .sendData( (new GeneralMessage(
-                    Protocol.CONTROLLER_SENDS_HEARTBEAT )).getBytes() );
+      connection
+          .getConnection()
+          .getSender()
+          .sendData( (new GeneralMessage(
+              Protocol.CONTROLLER_SENDS_HEARTBEAT )).getBytes() );
       connection.incrementPokes();
       return true;
     } catch ( IOException ioe ) {
@@ -250,8 +246,9 @@ public class HeartbeatMonitor extends TimerTask {
 
       StringBuilder sb = (new StringBuilder()).append( "\nHeartbeat Monitor:" );
       long currentTime = System.currentTimeMillis();
-      for ( ServerConnection connection : information.getRegisteredServers()
-                                                     .values() ) {
+      for ( ServerConnection connection : information
+                                              .getRegisteredServers()
+                                              .values() ) {
         if ( !pokeServer( connection ) ) {
           toDeregister.add( connection.getIdentifier() );
           continue;
@@ -260,8 +257,9 @@ public class HeartbeatMonitor extends TimerTask {
         sb.append( "\n" ).append( connection );
         HeartbeatInformation heartbeatInformation =
             connection.getHeartbeatInfo().copy();
-        sb.append( "\n" )
-          .append( createStringOfFiles( heartbeatInformation.getFiles() ) );
+        sb
+            .append( "\n" )
+            .append( createStringOfFiles( heartbeatInformation.getFiles() ) );
 
         adjustConnectionHealth(
             calculateUnhealthyScore( currentTime, connection.getStartTime(),

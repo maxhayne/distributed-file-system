@@ -42,7 +42,7 @@ public class ClientReader implements Runnable {
   private CountDownLatch writeLatch; // prevents writing to disk until ready
   private volatile boolean stopRequested;
   private final AtomicInteger batchStartIndex;
-  private static final int BATCH_SIZE = 1024;
+  private static final int BATCH_SIZE = 1024; // chunks per batch
 
   /**
    * Constructor. Creates a new ClientReader which will be ready to be passed to
@@ -115,9 +115,9 @@ public class ClientReader implements Runnable {
       batchStartIndex.set( batch*BATCH_SIZE );
       // Null out the receivedChunks of the previous batch
       // Might have to wait for threads that are in the addFile() method to
-      // get out somehow... atomic integer, at start decrement at end?
-      freePreviousBatch(); // should give enough time to any threads
-      // Currently in the addFile() method -- ones that have gone past the if
+      // get out somehow... atomic integer, increment at start decrement at end?
+      freePreviousBatch(); // Should give enough time to any threads
+      // currently in the addFile() method -- ones that have gone past the if
       // statement but haven't called countDown() yet to exit
       // Call wrangle chunks for the batch
       wrangleChunks();
@@ -125,7 +125,7 @@ public class ClientReader implements Runnable {
       // part of the current batch DONE
       // Wrangle chunks will create its own latch
       // Then call write chunks to disk for the batch
-      writeChunksToDisk( file ); // ow should this write to disk if the
+      writeChunksToDisk( file ); // How should this write to disk if the
       // chunks can't all be properly constructed?
       batch++;
     }
@@ -139,7 +139,7 @@ public class ClientReader implements Runnable {
     int workBackwardsFrom = batchStartIndex.get()-1;
     for ( int i = workBackwardsFrom;
           i >= 0 && i > workBackwardsFrom-BATCH_SIZE; --i ) {
-      synchronized( receivedFiles[i] ) { // Unfortunately need this?
+      synchronized( receivedFiles[i] ) { // Probably don't need this
         Arrays.fill( receivedFiles[i], null );
       }
     }
@@ -236,7 +236,9 @@ public class ClientReader implements Runnable {
       }
     }
     if ( nullChunks > 0 ) {
-      logger.info( nullChunks+" chunks were not received." );
+      logger.info(
+          nullChunks+" chunks were not successfully retrieved in batch "+
+          localBatchStartIndex/BATCH_SIZE+" for "+filename );
     }
   }
 
@@ -265,7 +267,7 @@ public class ClientReader implements Runnable {
       } else {
         requestUnaskedServers( false );
       }
-    } while ( !writeLatch.await( 10000+(5L*requests), TimeUnit.MILLISECONDS ) );
+    } while ( !writeLatch.await( 15000+(5L*requests), TimeUnit.MILLISECONDS ) );
   }
 
   /**
@@ -330,15 +332,32 @@ public class ClientReader implements Runnable {
     String specificFilename = appendFilename( sequence, serverPosition );
     requestMessage.setMessage( specificFilename );
     try {
-      connectionCache.getConnection( client, address, true )
-                     .getSender()
-                     .sendData( requestMessage.getBytes() );
+      connectionCache
+          .getConnection( client, address, true )
+          .getSender()
+          .sendData( requestMessage.getBytes() );
       return true; // message sent
     } catch ( IOException ioe ) {
-      logger.error(
+      logger.debug(
           specificFilename+" could not be requested from "+address+". "+
           ioe.getMessage() );
+      logger.debug( "Removing "+address+" from servers list for future chunk"+
+                    " retrievals." );
+      removeAddressFromServers( address );
       return false; // message not sent
+    }
+  }
+
+  /**
+   * Remove a server from all server arrays ahead of the batch we're currently
+   * retrieving.
+   *
+   * @param address to remove
+   */
+  private void removeAddressFromServers(String address) {
+    int nextBatchStartIndex = batchStartIndex.get()+BATCH_SIZE;
+    for ( int i = nextBatchStartIndex; i < servers.length; ++i ) {
+      ArrayUtilities.replaceArrayItem( servers[i], address, null );
     }
   }
 

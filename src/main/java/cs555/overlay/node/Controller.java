@@ -6,8 +6,8 @@ import cs555.overlay.transport.ControllerInformation;
 import cs555.overlay.transport.ServerConnection;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPServerThread;
-import cs555.overlay.util.ArrayUtilities;
 import cs555.overlay.util.FilenameUtilities;
+import cs555.overlay.util.ForwardInformation;
 import cs555.overlay.util.HeartbeatMonitor;
 import cs555.overlay.util.Logger;
 import cs555.overlay.wireformats.*;
@@ -174,8 +174,8 @@ public class Controller implements Node {
           information.getFileTable().get( filename );
       servers = new String[chunks.size()][];
       int index = 0;
-      for ( String[] chunkServers : chunks.values() ) {
-        servers[index] = chunkServers;
+      for ( String[] chunkServer : chunks.values() ) {
+        servers[index] = chunkServer;
         index++;
       }
     }
@@ -231,29 +231,22 @@ public class Controller implements Node {
       return;
     }
 
-    Event repairMessage;
-    String addressToContact;
-    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
-      RepairShard repairShard =
-          new RepairShard( report.getFilename(), destination, servers );
-      addressToContact = repairShard.getAddress();
-      repairMessage = repairShard;
-    } else {
-      RepairChunk repairChunk =
-          new RepairChunk( report.getFilename(), destination,
-              report.getSlices(),
-              ArrayUtilities.removeFromArray( servers, destination ) );
-      addressToContact = repairChunk.getAddress();
-      repairMessage = repairChunk;
-    }
+    // Construct the appropriate repair message and find out who to send the
+    // message to first
+    ForwardInformation forwardInformation =
+        ControllerInformation.constructRepairMessage( report.getFilename(),
+            servers, destination, report.getSlices() );
 
-    try {
-      information.getConnection( addressToContact )
-                 .getConnection()
-                 .getSender()
-                 .sendData( repairMessage.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.debug( "Failed to send repair message to its first hop." );
+    if ( forwardInformation.firstHop() != null ) {
+      try {
+        information
+            .getConnection( forwardInformation.firstHop() )
+            .getConnection()
+            .getSender()
+            .sendData( forwardInformation.repairMessage().getBytes() );
+      } catch ( IOException ioe ) {
+        logger.debug( "Failed to send repair message to its first hop." );
+      }
     }
   }
 
@@ -291,9 +284,10 @@ public class Controller implements Node {
                     heartbeat.getIdentifier()+"." );
       return;
     }
-    connection.getHeartbeatInfo()
-              .update( heartbeat.getBeatType(), heartbeat.getFreeSpace(),
-                  heartbeat.getTotalChunks(), heartbeat.getFiles() );
+    connection
+        .getHeartbeatInfo()
+        .update( heartbeat.getBeatType(), heartbeat.getFreeSpace(),
+            heartbeat.getTotalChunks(), heartbeat.getFiles() );
   }
 
   /**
@@ -339,8 +333,9 @@ public class Controller implements Node {
           request.getSequence() );
       if ( servers != null ) {
         for ( String address : servers ) {
-          information.getConnection( address )
-                     .addChunk( request.getFilename(), request.getSequence() );
+          information
+              .getConnection( address )
+              .addChunk( request.getFilename(), request.getSequence() );
         }
       }
     }
@@ -455,8 +450,9 @@ public class Controller implements Node {
    * Prints a list of registered ChunkServers.
    */
   private synchronized void listRegisteredChunkServers() {
-    for ( ServerConnection connection : information.getRegisteredServers()
-                                                   .values() ) {
+    for ( ServerConnection connection : information
+                                            .getRegisteredServers()
+                                            .values() ) {
       System.out.printf( "%3s%s%n", "", connection.toString() );
     }
   }

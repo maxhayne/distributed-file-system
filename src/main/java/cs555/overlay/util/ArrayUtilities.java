@@ -159,4 +159,18 @@ public class ArrayUtilities {
     }
     return count;
   }
+
+  /**
+   * Removes the destination and any null values from the array of replication
+   * servers used to repair a chunk.
+   *
+   * @param servers servers where replication might be stored
+   * @param destination destination to forward to
+   * @return a new String[] with the destination and all null values removed.
+   * Possible that that returned String[] has length of 0.
+   */
+  public static String[] reduceReplicationServers(String[] servers,
+      String destination) {
+    return removeFromArray( removeFromArray( servers, destination ), null );
+  }
 }
