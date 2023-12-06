@@ -15,12 +15,14 @@ public interface ApplicationProperties {
   int controllerPort = Integer.parseInt(
       PropertyLoader.getInstance().getProperty( "controllerPort", "46529" ) );
 
-  String storageType = PropertyLoader.getInstance()
-                                     .getProperty( "storageType",
-                                         "replication" )
-                                     .toLowerCase();
+  String storageType = PropertyLoader
+                           .getInstance()
+                           .getProperty( "storageType", "replication" )
+                           .equalsIgnoreCase( "erasure" ) ? "erasure" :
+                           "replication";
 
-  String logLevel = PropertyLoader.getInstance()
-                                  .getProperty( "logLevel", "info" )
-                                  .toLowerCase();
+  String logLevel = PropertyLoader
+                        .getInstance()
+                        .getProperty( "logLevel", "info" )
+                        .equalsIgnoreCase( "debug" ) ? "debug" : "info";
 }

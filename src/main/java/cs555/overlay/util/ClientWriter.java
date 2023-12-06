@@ -213,11 +213,18 @@ public class ClientWriter implements Runnable {
     SendsFileForStorage sendMessage =
         new SendsFileForStorage( createFilename( sequence ), contentToSend,
             servers );
+    int failedSends = 0;
     boolean sent;
     do {
       sent = sendToChunkServer( sendMessage, sendMessage.getServer() );
-    } while ( !sent && sendMessage.nextPosition() );
-    return sent;
+      if ( !sent ) {
+        failedSends++;
+        if ( ApplicationProperties.storageType.equals( "erasure" ) &&
+             failedSends > Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
+          break;
+        }
+      }
+    } while ( !sent && sendMessage.nextPosition() ); return sent;
   }
 
   /**
@@ -229,9 +236,10 @@ public class ClientWriter implements Runnable {
    */
   private boolean sendToChunkServer(Event event, String address) {
     try {
-      connectionCache.getConnection( client, address, false )
-                     .getSender()
-                     .sendData( event.getBytes() );
+      connectionCache
+          .getConnection( client, address, false )
+          .getSender()
+          .sendData( event.getBytes() );
       return true;
     } catch ( IOException ioe ) {
       logger.debug( "Couldn't send file to "+address );

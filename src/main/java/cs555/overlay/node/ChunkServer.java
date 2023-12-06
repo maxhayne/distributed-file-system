@@ -181,6 +181,7 @@ public class ChunkServer implements Node {
           String succeeded = repaired ? "" : "NOT ";
           logger.debug(
               repairMessage.getFilename()+" was "+succeeded+"repaired." );
+          // Tell Controller if the chunk couldn't be repaired?
         }
         metadata.notNew();
         return;
@@ -269,6 +270,7 @@ public class ChunkServer implements Node {
           String succeeded = repaired ? "" : "NOT ";
           logger.debug(
               repairMessage.getFilename()+" was "+succeeded+"repaired." );
+          // Tell Controller if the chunk couldn't be repaired?
         }
         metadata.notNew();
         return;

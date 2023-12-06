@@ -191,7 +191,7 @@ public class Client implements Node {
   /**
    * Will be called when a message containing addresses of ChunkServers has been
    * received by the Client. It sets the 'servers' member inside the relevant
-   * ClientWriter, and unlocks it so it may send the chunk to those servers.
+   * ClientWriter, and unlocks it, so it may send the chunk to those servers.
    *
    * @param event message being handled
    */

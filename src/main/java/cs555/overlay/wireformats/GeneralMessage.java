@@ -33,6 +33,7 @@ public class GeneralMessage implements Event {
   public GeneralMessage(byte type, String message) {
     this.type = type;
 
+    // First time using this type of call
     this.message = Objects.requireNonNullElse( message, "" );
   }
 

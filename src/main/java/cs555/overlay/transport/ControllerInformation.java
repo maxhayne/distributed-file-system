@@ -44,7 +44,7 @@ public class ControllerInformation {
    */
   public ControllerInformation() {
     this.registeredServers = new HashMap<>();
-    this.availableIdentifiers = new ArrayList<>();
+    this.availableIdentifiers = new ArrayList<>(32);
     for ( int i = 1; i <= 32; ++i ) {
       this.availableIdentifiers.add( i );
     }

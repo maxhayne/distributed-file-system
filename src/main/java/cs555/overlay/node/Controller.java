@@ -73,7 +73,6 @@ public class Controller implements Node {
       logger.error( "Controller failed to start. "+ioe.getMessage() );
       System.exit( 1 );
     }
-
   }
 
   @Override

@@ -5,11 +5,6 @@ set -e # Exit script if any command fails
 # called 'dfs', and fill the session with a Controller, ChunkServers,
 # and a Client as windows.
 #
-# A folder called 'servers' will be created in the folder from which
-# this script is being run, which will itself be populated with as
-# many folders as there are ChunkServers. ChunkServer1 will store its
-# data files in folder ./servers/server1 and so on.
-#
 # Modify the 'MULTI' variable to contain as many servers as you'd like.
 #
 # This assumes that you have some knowledge of tmux.
