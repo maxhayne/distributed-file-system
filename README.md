@@ -1,5 +1,5 @@
 # Distributed File System
-This project is an assignment from a Distributed Systems course offered through CSU. I wanted to improve my understanding of distributed applications and thought this would be a good place to start.
+This project is an assignment from a Distributed Systems course offered through my local university. I wanted to improve my understanding of distributed applications and thought this would be a good place to start.
 
 ## A quick overview
 The project focuses on three types of nodes -- a node being a computer on a network performing a specific task. They are the *Controller*, the *ChunkServer*, and the *Client*.
