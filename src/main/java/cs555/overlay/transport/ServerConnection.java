@@ -20,7 +20,7 @@ public class ServerConnection {
   private final String address;
   private final int identifier;
   private final TCPConnection connection;
-  private final Map<String, ArrayList<Integer>> storedChunks;
+  private final Map<String,ArrayList<Integer>> storedChunks;
 
   // HeartbeatInformation
   private final HeartbeatInformation heartbeatInformation;
@@ -49,7 +49,7 @@ public class ServerConnection {
    *
    * @return storedChunks HashMap
    */
-  public Map<String, ArrayList<Integer>> getStoredChunks() {
+  public Map<String,ArrayList<Integer>> getStoredChunks() {
     return storedChunks;
   }
 
@@ -61,12 +61,12 @@ public class ServerConnection {
    * @param sequence sequence number of chunk
    */
   public void addChunk(String filename, int sequence) {
-    synchronized( storedChunks ) {
-      ArrayList<Integer> sequenceNumbers = storedChunks.get( filename );
-      if ( sequenceNumbers == null ) {
-        storedChunks.put( filename, new ArrayList<>( List.of( sequence ) ) );
+    synchronized(storedChunks) {
+      ArrayList<Integer> sequenceNumbers = storedChunks.get(filename);
+      if (sequenceNumbers == null) {
+        storedChunks.put(filename, new ArrayList<>(List.of(sequence)));
       } else {
-        sequenceNumbers.add( sequence );
+        sequenceNumbers.add(sequence);
       }
     }
   }
@@ -79,37 +79,25 @@ public class ServerConnection {
    * @param sequence sequence of file to be removed
    */
   public void removeChunk(String filename, int sequence) {
-    synchronized( storedChunks ) {
-      ArrayList<Integer> sequenceNumbers = storedChunks.get( filename );
-      if ( sequenceNumbers != null ) {
-        sequenceNumbers.remove( Integer.valueOf( sequence ) );
-        if ( sequenceNumbers.isEmpty() ) {
-          deleteFile( filename );
+    synchronized(storedChunks) {
+      ArrayList<Integer> sequenceNumbers = storedChunks.get(filename);
+      if (sequenceNumbers != null) {
+        sequenceNumbers.remove(Integer.valueOf(sequence));
+        if (sequenceNumbers.isEmpty()) {
+          deleteFile(filename);
         }
       }
     }
   }
 
   /**
-   * Removes a file with filename 'filename' from the 'storedChunks' map, and
-   * clears the 'missingChunks' HashSet from the HeartbeatInformation of any
-   * chunks with that filename.
+   * Removes a file with filename from the storedChunks map.
    *
    * @param filename filename of file
    */
   public void deleteFile(String filename) {
-    ArrayList<Integer> sequences;
-    synchronized( storedChunks ) {
-      sequences = storedChunks.get( filename );
-      storedChunks.remove( filename );
-    }
-    if ( sequences != null ) {
-      synchronized( heartbeatInformation ) {
-        for ( int sequence : sequences ) {
-          heartbeatInformation.getMissingChunks()
-                              .remove( Map.entry( filename, sequence ) );
-        }
-      }
+    synchronized(storedChunks) {
+      storedChunks.remove(filename);
     }
   }
 
@@ -123,10 +111,12 @@ public class ServerConnection {
 
   // Not being used right now...
   public synchronized int pokeDiscrepancy() {
-    return (pokes-pokeReplies);
+    return (pokes - pokeReplies);
   }
 
-  public HeartbeatInformation getHeartbeatInfo() {return heartbeatInformation;}
+  public HeartbeatInformation getHeartbeatInfo() {
+    return heartbeatInformation;
+  }
 
   public long getFreeSpace() {
     return heartbeatInformation.getFreeSpace();
@@ -134,6 +124,17 @@ public class ServerConnection {
 
   public int getTotalChunks() {
     return heartbeatInformation.getTotalChunks();
+  }
+
+  // Total chunks in local storedChunks map
+  public int totalStoredChunks() {
+    int totalChunks = 0;
+    synchronized(storedChunks) {
+      for (ArrayList<Integer> fileChunks : storedChunks.values()) {
+        totalChunks += fileChunks.size();
+      }
+    }
+    return totalChunks;
   }
 
   public long getStartTime() {
@@ -152,10 +153,12 @@ public class ServerConnection {
     return unhealthy;
   }
 
-  public synchronized void incrementUnhealthy() {this.unhealthy += 1;}
+  public synchronized void incrementUnhealthy() {
+    this.unhealthy += 1;
+  }
 
   public synchronized void decrementUnhealthy() {
-    if ( unhealthy > 0 ) {
+    if (unhealthy > 0) {
       unhealthy -= 1;
     }
   }
@@ -165,11 +168,13 @@ public class ServerConnection {
   }
 
   public synchronized String toString() {
-    String info = address+", "+identifier+", "+
-                  heartbeatInformation.getFreeSpace()/(1024*1024)+"MB"+", "+
-                  heartbeatInformation.getTotalChunks()+" chunks"+", "+
-                  "health: "+unhealthy;
-    return "[ "+info+" ]";
+    StringBuilder sb = new StringBuilder();
+    sb.append(identifier).append(", ");
+    sb.append(address).append(", ");
+    sb.append(heartbeatInformation.getFreeSpace()/(1024*1024)).append("MB, ");
+    sb.append(heartbeatInformation.getTotalChunks()).append(" chunks, ");
+    sb.append("health: ").append(unhealthy);
+    return sb.toString();
   }
 
 }

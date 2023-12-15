@@ -19,19 +19,19 @@ public class ArrayUtilities {
    * @return a new array with all instances of toRemove removed
    */
   public static String[] removeFromArray(String[] array, String toRemove) {
-    if ( array == null ) {
+    if (array == null) {
       return null;
     }
     int count = 0;
-    for ( String string : array ) {
-      if ( java.util.Objects.equals( string, toRemove ) ) {
+    for (String string : array) {
+      if (java.util.Objects.equals(string, toRemove)) {
         ++count;
       }
     }
-    String[] newArray = new String[array.length-count];
+    String[] newArray = new String[array.length - count];
     int index = 0;
-    for ( String string : array ) {
-      if ( !java.util.Objects.equals( string, toRemove ) ) {
+    for (String string : array) {
+      if (!java.util.Objects.equals(string, toRemove)) {
         newArray[index] = string;
         ++index;
       }
@@ -48,8 +48,8 @@ public class ArrayUtilities {
    * @param setTo all instances of toReplace will be replaced with setTo
    */
   public static <T> void replaceArrayItem(T[] array, T toReplace, T setTo) {
-    for ( int i = 0; i < array.length; ++i ) {
-      if ( java.util.Objects.equals( array[i], toReplace ) ) {
+    for (int i = 0; i < array.length; ++i) {
+      if (java.util.Objects.equals(array[i], toReplace)) {
         array[i] = setTo;
       }
     }
@@ -64,10 +64,12 @@ public class ArrayUtilities {
    * @param setTo the item to replace it with
    */
   public static <T> void replaceFirst(T[] array, T toReplace, T setTo) {
-    for ( int i = 0; i < array.length; ++i ) {
-      if ( java.util.Objects.equals( array[i], toReplace ) ) {
-        array[i] = setTo;
-        break;
+    if (array != null) {
+      for (int i = 0; i < array.length; ++i) {
+        if (java.util.Objects.equals(array[i], toReplace)) {
+          array[i] = setTo;
+          break;
+        }
       }
     }
   }
@@ -79,7 +81,7 @@ public class ArrayUtilities {
    * @return int[] converted from ArrayList
    */
   public static int[] arrayListToArray(ArrayList<Integer> list) {
-    return list.stream().mapToInt( i -> i ).toArray();
+    return list.stream().mapToInt(i -> i).toArray();
   }
 
   /**
@@ -91,11 +93,11 @@ public class ArrayUtilities {
    * @return true if array contains value, false otherwise
    */
   public static boolean contains(int[] array, int value) {
-    if ( array == null ) {
+    if (array == null) {
       return false;
     }
-    for ( int i : array ) {
-      if ( i == value ) {
+    for (int i : array) {
+      if (i == value) {
         return true;
       }
     }
@@ -111,11 +113,11 @@ public class ArrayUtilities {
    * @return index of first occurrence of value, -1 if no occurrences
    */
   public static int contains(String[] array, String value) {
-    if ( array == null ) {
+    if (array == null) {
       return -1;
     }
-    for ( int i = 0; i < array.length; ++i ) {
-      if ( java.util.Objects.equals( array[i], value ) ) {
+    for (int i = 0; i < array.length; ++i) {
+      if (java.util.Objects.equals(array[i], value)) {
         return i;
       }
     }
@@ -129,12 +131,12 @@ public class ArrayUtilities {
    * @return number of nulls in array
    */
   public static int countNulls(byte[][] array) {
-    if ( array == null ) {
+    if (array == null) {
       return 0;
     }
     int count = 0;
-    for ( byte[] b : array ) {
-      if ( Arrays.equals( b, null ) ) {
+    for (byte[] b : array) {
+      if (Arrays.equals(b, null)) {
         ++count;
       }
     }
@@ -148,12 +150,12 @@ public class ArrayUtilities {
    * @return int number of nulls
    */
   public static int countNulls(String[] array) {
-    if ( array == null ) {
+    if (array == null) {
       return 0;
     }
     int count = 0;
-    for ( String s : array ) {
-      if ( java.util.Objects.equals( s, null ) ) {
+    for (String s : array) {
+      if (java.util.Objects.equals(s, null)) {
         ++count;
       }
     }
@@ -171,6 +173,6 @@ public class ArrayUtilities {
    */
   public static String[] reduceReplicationServers(String[] servers,
       String destination) {
-    return removeFromArray( removeFromArray( servers, destination ), null );
+    return removeFromArray(removeFromArray(servers, destination), null);
   }
 }

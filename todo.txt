@@ -235,3 +235,11 @@ ANSWER: Yes, that could be done, but it takes the responsibility for maintaining
     - Heartbeats wouldn't have to modified under this system because they don't currently have the authority to delete files, and will only send out requests to repair files if the servers array is full enough to make a repair possible.
 
     - All of what we want might be achievable without sending acks to the Controller, but just by making sure that RepairMessages that fail to repair the target file send notifications back to the Controller to make the Controller mark that particular chunk null. This would eventually cause the file/chunk to be deleted at the Controller, saving us from an endless loop of futile attempts at repair.
+
+- The locking system that the ChunkServers use needs to be overhauled. It should be a read first, update metadata later model. Only one thread being able to read or write at at time is a bottleneck. Though, there should be a way to lock the file for writes. Perhaps once there is a request to write a file, no more read requests are queued until the write request has gone through. // TODO
+
+- A message should be sent to the Controller if a ChunkServer tries and fails to repair one of its local chunks. If the repair fails, that means that there isn't enough data around to recover the chunk, as all chunkservers that can help in the repair have already been visited. // TODO
+
+- HeartbeatMonitor needs to be refactored for clarity. It's just a total jumble right now. // TODO
+
+- The ChunkServer also needs to be refactored, how the FileMap works is quite unclear. // TODO

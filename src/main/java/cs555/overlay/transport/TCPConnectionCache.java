@@ -14,7 +14,7 @@ import java.util.Map;
  */
 public class TCPConnectionCache {
 
-  private final Map<String, TCPConnection> cachedConnections;
+  private final Map<String,TCPConnection> cachedConnections;
 
   public TCPConnectionCache() {
     this.cachedConnections = new HashMap<>();
@@ -33,9 +33,12 @@ public class TCPConnectionCache {
    */
   public static TCPConnection establishConnection(Node node, String address)
       throws IOException, NumberFormatException {
-    Socket socket = new Socket( address.split( ":" )[0],
-        Integer.parseInt( address.split( ":" )[1] ) );
-    return new TCPConnection( node, socket );
+    int index = address.lastIndexOf(":");
+    String[] addressPort =
+        {address.substring(0, index), address.substring(index + 1)};
+    Socket socket =
+        new Socket(addressPort[0], Integer.parseInt(addressPort[1]));
+    return new TCPConnection(node, socket);
   }
 
   // This method should be more robust. It should make an effort to provide
@@ -57,15 +60,15 @@ public class TCPConnectionCache {
    */
   public synchronized TCPConnection getConnection(Node node, String address,
       boolean start) throws IOException {
-    synchronized( cachedConnections ) {
+    synchronized(cachedConnections) {
       TCPConnection connection;
-      if ( cachedConnections.containsKey( address ) ) {
-        connection = cachedConnections.get( address );
+      if (cachedConnections.containsKey(address)) {
+        connection = cachedConnections.get(address);
       } else {
-        connection = establishConnection( node, address );
-        cachedConnections.put( address, connection );
+        connection = establishConnection(node, address);
+        cachedConnections.put(address, connection);
       }
-      if ( start ) {
+      if (start) {
         connection.start(); // has no effect if already started
       }
       return connection;
@@ -78,14 +81,14 @@ public class TCPConnectionCache {
    * @param address of the connection to remove
    */
   public synchronized void removeConnection(String address) {
-    cachedConnections.remove( address );
+    cachedConnections.remove(address);
   }
 
   /**
    * Attempts to close all connections in 'cachedConnections'.
    */
   public synchronized void closeConnections() {
-    for ( TCPConnection connection : cachedConnections.values() ) {
+    for (TCPConnection connection : cachedConnections.values()) {
       connection.close();
     }
     cachedConnections.clear();

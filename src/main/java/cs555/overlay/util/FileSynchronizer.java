@@ -44,7 +44,7 @@ public class FileSynchronizer {
    */
   public FileSynchronizer(int identifier) throws IOException {
     this.directory =
-        Paths.get( File.separator, "tmp", "ChunkServer"+"-"+identifier );
+        Paths.get( File.separator, "tmp", "chunk-server-"+identifier );
     Files.createDirectories( directory );
   }
 

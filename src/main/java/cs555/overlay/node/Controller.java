@@ -14,9 +14,10 @@ import cs555.overlay.wireformats.*;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 import java.util.Timer;
-import java.util.TreeMap;
 
 /**
  * Controller node in the DFS. It is responsible for keeping track of registered
@@ -47,31 +48,31 @@ public class Controller implements Node {
    * @param args ignored
    */
   public static void main(String[] args) {
-    try ( ServerSocket serverSocket = new ServerSocket(
-        ApplicationProperties.controllerPort ) ) {
+    try (ServerSocket serverSocket = new ServerSocket(
+        ApplicationProperties.controllerPort)) {
 
       String host = serverSocket.getInetAddress().getHostAddress();
       Controller controller =
-          new Controller( host, ApplicationProperties.controllerPort );
+          new Controller(host, ApplicationProperties.controllerPort);
 
       // Start the ServerThread
-      (new Thread( new TCPServerThread( controller, serverSocket ) )).start();
+      (new Thread(new TCPServerThread(controller, serverSocket))).start();
 
-      logger.info( "ServerThread has started at ["+host+":"+
-                   ApplicationProperties.controllerPort+"]" );
+      logger.info("ServerThread has started at [" + host + ":" +
+                  ApplicationProperties.controllerPort + "]");
 
       // Start the HeartbeatMonitor
       HeartbeatMonitor heartbeatMonitor =
-          new HeartbeatMonitor( controller, controller.information );
+          new HeartbeatMonitor(controller, controller.information);
       Timer heartbeatTimer = new Timer();
-      heartbeatTimer.scheduleAtFixedRate( heartbeatMonitor, 0,
-          Constants.HEARTRATE );
+      heartbeatTimer.scheduleAtFixedRate(heartbeatMonitor, 0,
+          Constants.HEARTRATE);
 
       // Start looping for user interaction
       controller.interact();
-    } catch ( IOException ioe ) {
-      logger.error( "Controller failed to start. "+ioe.getMessage() );
-      System.exit( 1 );
+    } catch (IOException ioe) {
+      logger.error("Controller failed to start. " + ioe.getMessage());
+      System.exit(1);
     }
   }
 
@@ -87,55 +88,55 @@ public class Controller implements Node {
 
   @Override
   public void onEvent(Event event, TCPConnection connection) {
-    switch ( event.getType() ) {
+    switch (event.getType()) {
 
       case Protocol.CHUNK_SERVER_SENDS_REGISTRATION:
-        registrationHelper( event, connection, true );
+        registrationHelper(event, connection, true);
         break;
 
       case Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION:
-        registrationHelper( event, connection, false );
+        registrationHelper(event, connection, false);
         break;
 
       case Protocol.CLIENT_STORE:
-        storeChunk( event, connection );
+        storeChunk(event, connection);
         break;
 
       case Protocol.CLIENT_REQUESTS_FILE_DELETE:
-        deleteFile( event, connection );
+        deleteFile(event, connection);
         break;
 
       case Protocol.CHUNK_SERVER_SENDS_HEARTBEAT:
-        heartbeatHelper( event );
+        heartbeatHelper(event);
         break;
 
       case Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT:
-        pokeHelper( event );
+        pokeHelper(event);
         break;
 
       case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION:
-        corruptionHelper( event );
+        corruptionHelper(event);
         break;
 
       case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
-        clientRead( event, connection );
+        clientRead(event, connection);
         break;
 
       case Protocol.CLIENT_REQUESTS_FILE_LIST:
-        fileListRequest( connection );
+        fileListRequest(connection);
         break;
 
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE:
-        logger.debug( "ChunkServer acknowledges deletion of "+
-                      (( GeneralMessage ) event).getMessage() );
+        logger.debug("ChunkServer acknowledges deletion of " +
+                     ((GeneralMessage) event).getMessage());
         break;
 
       case Protocol.CLIENT_REQUESTS_SERVER_LIST:
-        serverListRequest( connection );
+        serverListRequest(connection);
         break;
 
       default:
-        logger.debug( "Event couldn't be processed. "+event.getType() );
+        logger.debug("Event couldn't be processed. " + event.getType());
         break;
     }
   }
@@ -145,22 +146,16 @@ public class Controller implements Node {
    *
    * @param connection that produced the event
    */
-  private synchronized void serverListRequest(TCPConnection connection) {
-    StringBuilder sb = new StringBuilder();
-    for ( ServerConnection server : information
-                                        .getRegisteredServers()
-                                        .values() ) {
-      sb.append( server.toString() ).append( '\n' );
-    }
+  private void serverListRequest(TCPConnection connection) {
+    String servers = String.join("\n", information.serverDetailsList());
     GeneralMessage message =
-        new GeneralMessage( Protocol.CONTROLLER_SENDS_SERVER_LIST,
-            sb.toString() );
+        new GeneralMessage(Protocol.CONTROLLER_SENDS_SERVER_LIST, servers);
     try {
-      connection.getSender().sendData( message.getBytes() );
-    } catch ( IOException ioe ) {
+      connection.getSender().sendData(message.getBytes());
+    } catch (IOException ioe) {
       logger.debug(
-          "Unable to send response to Client containing list of servers. "+
-          ioe.getMessage() );
+          "Unable to send response to Client containing list of servers. " +
+          ioe.getMessage());
     }
   }
 
@@ -169,51 +164,44 @@ public class Controller implements Node {
    *
    * @param connection that produced the event
    */
-  private synchronized void fileListRequest(TCPConnection connection) {
-    String[] fileList =
-        information.getFileTable().keySet().toArray( new String[0] );
-    if ( fileList.length == 0 ) {
-      fileList = null;
+  private void fileListRequest(TCPConnection connection) {
+    List<String> fileList = information.fileList();
+    String[] listToSend = null;
+    if (!fileList.isEmpty()) {
+      listToSend = new String[fileList.size()];
+      fileList.toArray(listToSend);
     }
-    ControllerSendsFileList response = new ControllerSendsFileList( fileList );
+
+    ControllerSendsFileList response = new ControllerSendsFileList(listToSend);
     try {
-      connection.getSender().sendData( response.getBytes() );
-    } catch ( IOException ioe ) {
+      connection.getSender().sendData(response.getBytes());
+    } catch (IOException ioe) {
       logger.debug(
-          "Unable to send response to Client containing list of files. "+
-          ioe.getMessage() );
+          "Unable to send response to Client containing list of files. " +
+          ioe.getMessage());
     }
   }
 
   /**
-   * Gather information about where a particular file is stored on the DFS, and
-   * send those storage details back to the Client.
+   * Gathers information about where a particular file is stored on the DFS, and
+   * sends those storage details back to the Client.
    *
    * @param event message being handled
    * @param connection that produced the event
    */
-  private synchronized void clientRead(Event event, TCPConnection connection) {
-    String filename = (( GeneralMessage ) event).getMessage();
-    // Get servers for all the file's chunks
-    String[][] servers = null;
-    if ( information.getFileTable().containsKey( filename ) ) {
-      TreeMap<Integer, String[]> chunks =
-          information.getFileTable().get( filename );
-      servers = new String[chunks.size()][];
-      int index = 0;
-      for ( String[] chunkServer : chunks.values() ) {
-        servers[index] = chunkServer;
-        index++;
-      }
-    }
+  private void clientRead(Event event, TCPConnection connection) {
+    String filename = ((GeneralMessage) event).getMessage();
+    // Get array of servers for all chunks of file
+    String[][] servers = information.getFileStorageDetails(filename);
+
     ControllerSendsStorageList response =
-        new ControllerSendsStorageList( filename, servers );
+        new ControllerSendsStorageList(filename, servers);
     try {
-      connection.getSender().sendData( response.getBytes() );
-    } catch ( IOException ioe ) {
+      connection.getSender().sendData(response.getBytes());
+    } catch (IOException ioe) {
       logger.debug(
-          "Unable to send response to Client containing storage information "+
-          "about '"+filename+"'. "+ioe.getMessage() );
+          "Unable to send response to Client containing storage information " +
+          "about '" + filename + "'. " + ioe.getMessage());
     }
   }
 
@@ -229,50 +217,51 @@ public class Controller implements Node {
   /**
    * Constructs a message which will be passed (hopefully) amongst those servers
    * that have copies of the file that needs repairing, eventually ending up at
-   * the server that produced this corruption event.
+   * the server that produced the corruption event.
    *
    * @param event message being handled
    */
   private synchronized void corruptionHelper(Event event) {
     ChunkServerReportsFileCorruption report =
-        ( ChunkServerReportsFileCorruption ) event;
+        (ChunkServerReportsFileCorruption) event;
 
     String baseFilename =
-        FilenameUtilities.getBaseFilename( report.getFilename() );
-    int sequence = FilenameUtilities.getSequence( report.getFilename() );
+        FilenameUtilities.getBaseFilename(report.getFilename());
+    int sequence = FilenameUtilities.getSequence(report.getFilename());
 
     String destination =
-        information.getChunkServerAddress( report.getIdentifier() );
-    String[] servers = information.getServers( baseFilename, sequence );
+        information.getChunkServerAddress(report.getIdentifier());
+    String[] servers = information.getServers(baseFilename, sequence);
 
     // If no servers hold this chunk, there is nothing to be done
-    if ( servers == null ) {
+    if (servers == null) {
       logger.debug(
-          "The Controller doesn't have an entry in its fileTable for '"+
-          report.getFilename()+"', so it cannot be repaired." );
+          "The Controller doesn't have an entry in its fileTable for '" +
+          report.getFilename() + "', so it cannot be repaired.");
       return;
-    } else if ( destination == null ) {
+    } else if (destination == null) {
       logger.debug(
-          "Could not fetch the destination address of the server needing the "+
-          "repair." );
+          "Could not fetch the destination address of the server needing the " +
+          "repair.");
       return;
     }
 
     // Construct the appropriate repair message and find out who to send the
     // message to first
     ForwardInformation forwardInformation =
-        ControllerInformation.constructRepairMessage( report.getFilename(),
-            servers, destination, report.getSlices() );
+        ControllerInformation.constructRepairMessage(report.getFilename(),
+            servers, destination, report.getSlices());
 
-    if ( forwardInformation.firstHop() != null ) {
+    if (forwardInformation.firstHop() != null) {
       try {
-        information
-            .getConnection( forwardInformation.firstHop() )
-            .getConnection()
-            .getSender()
-            .sendData( forwardInformation.repairMessage().getBytes() );
-      } catch ( IOException ioe ) {
-        logger.debug( "Failed to send repair message to its first hop." );
+        logger.debug("About to dispatch repair to " + destination);
+        information.getConnection(forwardInformation.firstHop())
+                   .getConnection()
+                   .getSender()
+                   .sendData(forwardInformation.repairMessage().getBytes());
+        logger.debug("Sent repair message to " + destination);
+      } catch (IOException ioe) {
+        logger.debug("Failed to send repair message to its first hop.");
       }
     }
   }
@@ -285,12 +274,12 @@ public class Controller implements Node {
    */
   private void pokeHelper(Event event) {
     ChunkServerRespondsToHeartbeat response =
-        ( ChunkServerRespondsToHeartbeat ) event;
+        (ChunkServerRespondsToHeartbeat) event;
     ServerConnection connection =
-        information.getConnection( response.getIdentifier() );
-    if ( connection == null ) {
-      logger.debug( "There is no registered ChunkServer with an identifier of "+
-                    response.getIdentifier()+"." );
+        information.getConnection(response.getIdentifier());
+    if (connection == null) {
+      logger.debug("There is no registered ChunkServer with an identifier of " +
+                   response.getIdentifier() + ".");
       return;
     }
     connection.incrementPokeReplies();
@@ -303,18 +292,17 @@ public class Controller implements Node {
    * @param event message being handled
    */
   private void heartbeatHelper(Event event) {
-    ChunkServerSendsHeartbeat heartbeat = ( ChunkServerSendsHeartbeat ) event;
+    ChunkServerSendsHeartbeat heartbeat = (ChunkServerSendsHeartbeat) event;
     ServerConnection connection =
-        information.getConnection( heartbeat.getIdentifier() );
-    if ( connection == null ) {
-      logger.debug( "There is no registered ChunkServer with an identifier of "+
-                    heartbeat.getIdentifier()+"." );
+        information.getConnection(heartbeat.getIdentifier());
+    if (connection == null) {
+      logger.debug("There is no registered ChunkServer with an identifier of " +
+                   heartbeat.getIdentifier() + ".");
       return;
     }
-    connection
-        .getHeartbeatInfo()
-        .update( heartbeat.getBeatType(), heartbeat.getFreeSpace(),
-            heartbeat.getTotalChunks(), heartbeat.getFiles() );
+    connection.getHeartbeatInfo()
+              .update(heartbeat.getBeatType(), heartbeat.getFreeSpace(),
+                  heartbeat.getTotalChunks(), heartbeat.getFiles());
   }
 
   /**
@@ -324,20 +312,19 @@ public class Controller implements Node {
    * @param connection that produced the event
    */
   private synchronized void deleteFile(Event event, TCPConnection connection) {
-    String filename = (( GeneralMessage ) event).getMessage();
+    String filename = ((GeneralMessage) event).getMessage();
 
     // Delete file from the fileTable, and send delete messages to servers too
-    information.deleteFileFromDFS( filename );
+    information.deleteFileFromDFS(filename);
 
     // Send client an acknowledgement
     GeneralMessage response =
-        new GeneralMessage( Protocol.CONTROLLER_APPROVES_FILE_DELETE,
-            filename );
+        new GeneralMessage(Protocol.CONTROLLER_APPROVES_FILE_DELETE, filename);
     try {
-      connection.getSender().sendData( response.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.debug( "Unable to acknowledge Client's request to delete file. "+
-                    ioe.getMessage() );
+      connection.getSender().sendData(response.getBytes());
+    } catch (IOException ioe) {
+      logger.debug("Unable to acknowledge Client's request to delete file. " +
+                   ioe.getMessage());
     }
   }
 
@@ -348,36 +335,34 @@ public class Controller implements Node {
    * @param connection that produced the event
    */
   private synchronized void storeChunk(Event event, TCPConnection connection) {
-    ClientStore request = ( ClientStore ) event;
+    ClientStore request = (ClientStore) event;
 
     // Check if we've already allocated that particular filename/sequence combo
     String[] servers =
-        information.getServers( request.getFilename(), request.getSequence() );
+        information.getServers(request.getFilename(), request.getSequence());
 
     // If it wasn't previously allocated, try to allocate it
-    if ( servers == null ) {
-      servers = information.allocateServers( request.getFilename(),
-          request.getSequence() );
-      if ( servers != null ) {
-        for ( String address : servers ) {
-          information
-              .getConnection( address )
-              .addChunk( request.getFilename(), request.getSequence() );
-        }
-      }
+    if (servers == null) {
+      servers = information.allocateServers(request.getFilename(),
+          request.getSequence());
     }
 
     // Choose which response to send
-    Event response = servers == null ? new GeneralMessage(
-        Protocol.CONTROLLER_DENIES_STORAGE_REQUEST, request.getFilename() ) :
-                         new ControllerReservesServers( request.getFilename(),
-                             request.getSequence(), servers );
+    Event response;
+    if (servers == null) {
+      response = new GeneralMessage(Protocol.CONTROLLER_DENIES_STORAGE_REQUEST,
+          request.getFilename());
+    } else {
+      response = new ControllerReservesServers(request.getFilename(),
+          request.getSequence(), servers);
+    }
+
     // Respond to the Client
     try {
-      connection.getSender().sendData( response.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.debug( "Unable to respond to Client's request to store chunk. "+
-                    ioe.getMessage() );
+      connection.getSender().sendData(response.getBytes());
+    } catch (IOException ioe) {
+      logger.debug("Unable to respond to Client's request to store chunk. " +
+                   ioe.getMessage());
     }
   }
 
@@ -390,30 +375,31 @@ public class Controller implements Node {
    */
   private synchronized void registrationHelper(Event event,
       TCPConnection connection, boolean type) {
-    GeneralMessage request = ( GeneralMessage ) event;
-    if ( type ) { // attempt to register
+    GeneralMessage request = (GeneralMessage) event;
+    if (type) { // attempt to register
       String address = request.getMessage();
-      int registrationStatus = information.register( address, connection );
+      int registrationStatus = information.register(address, connection);
 
       // Respond to ChunkServer
       GeneralMessage message = new GeneralMessage(
           Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS,
-          String.valueOf( registrationStatus ) );
+          String.valueOf(registrationStatus));
       try {
-        connection.getSender().sendData( message.getBytes() );
-        if ( registrationStatus != -1 ) {
+        connection.getSender().sendData(message.getBytes());
+        if (registrationStatus != -1) {
           // give new registrant the files it has been allocated, if any
-          information.refreshServerFiles( registrationStatus );
+          information.refreshServerFiles(registrationStatus);
         }
-      } catch ( IOException ioe ) {
-        logger.debug( "Failed to notify ChunkServer of registration status. "+
-                      "Deregistering. "+ioe.getMessage() );
-        if ( registrationStatus != -1 ) {
-          information.deregister( registrationStatus );
+      } catch (IOException ioe) {
+        logger.debug("Failed to notify ChunkServer of registration status. " +
+                     "Deregistering. " + ioe.getMessage());
+        if (registrationStatus != -1) {
+          deregister(new ArrayList<>(List.of(registrationStatus)));
         }
       }
     } else { // deregister
-      information.deregister( Integer.parseInt( request.getMessage() ) );
+      int id = Integer.parseInt(request.getMessage());
+      deregister(new ArrayList<>(List.of(id)));
     }
   }
 
@@ -422,10 +408,10 @@ public class Controller implements Node {
    * be deregistered. Is simple, but needed for the HeartbeatMonitor because it
    * has the proper synchronization.
    *
-   * @param identifier of the server to be deregistered
+   * @param identifiers list of the servers to be deregistered
    */
-  public synchronized void deregister(int identifier) {
-    information.deregister( identifier );
+  public synchronized void deregister(ArrayList<Integer> identifiers) {
+    information.deregister(identifiers);
   }
 
   /**
@@ -433,30 +419,27 @@ public class Controller implements Node {
    */
   private void interact() {
     System.out.println(
-        "Enter a command or use 'help' to print a list of commands." );
-    Scanner scanner = new Scanner( System.in );
-    while ( true ) {
+        "Enter a command or use 'help' to print a list of commands.");
+    Scanner scanner = new Scanner(System.in);
+    while (true) {
       String command = scanner.nextLine();
-      String[] splitCommand = command.split( "\\s+" );
-      switch ( splitCommand[0].toLowerCase() ) {
+      String[] splitCommand = command.split("\\s+");
+      switch (splitCommand[0].toLowerCase()) {
 
-        case "s":
-        case "servers":
+        case "s", "servers":
           listRegisteredChunkServers();
           break;
 
-        case "f":
-        case "files":
+        case "f", "files":
           listAllocatedFiles();
           break;
 
-        case "h":
-        case "help":
+        case "h", "help":
           showHelp();
           break;
 
         default:
-          System.err.println( "Unrecognized command. Use 'help' command." );
+          System.err.println("Unrecognized command. Use 'help' command.");
           break;
       }
     }
@@ -465,22 +448,18 @@ public class Controller implements Node {
   /**
    * Prints a list of files allocated by the Controller.
    */
-  private synchronized void listAllocatedFiles() {
-    String[] fileList =
-        information.getFileTable().keySet().toArray( new String[0] );
-    for ( String filename : fileList ) {
-      System.out.printf( "%3s%s%n", "", filename );
+  private void listAllocatedFiles() {
+    for (String filename : information.fileList()) {
+      System.out.printf("%3s%s%n", "", filename);
     }
   }
 
   /**
    * Prints a list of registered ChunkServers.
    */
-  private synchronized void listRegisteredChunkServers() {
-    for ( ServerConnection connection : information
-                                            .getRegisteredServers()
-                                            .values() ) {
-      System.out.printf( "%3s%s%n", "", connection.toString() );
+  private void listRegisteredChunkServers() {
+    for (String serverDetails : information.serverDetailsList()) {
+      System.out.printf("%3s%s%n", "", serverDetails);
     }
   }
 
@@ -488,11 +467,11 @@ public class Controller implements Node {
    * Prints a list of commands available to the user.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-9s : %s%n", "", "s[ervers]",
-        "print the addresses of all registered ChunkServers" );
-    System.out.printf( "%3s%-9s : %s%n", "", "f[iles]",
-        "print the names of all files allocated for storage" );
-    System.out.printf( "%3s%-9s : %s%n", "", "h[elp]",
-        "print a list of valid commands" );
+    System.out.printf("%3s%-9s : %s%n", "", "s[ervers]",
+        "print the addresses of all registered ChunkServers");
+    System.out.printf("%3s%-9s : %s%n", "", "f[iles]",
+        "print the names of all files allocated for storage");
+    System.out.printf("%3s%-9s : %s%n", "", "h[elp]",
+        "print a list of valid commands");
   }
 }

@@ -41,13 +41,13 @@ public class HeartbeatMonitor extends TimerTask {
    * @return String of files
    */
   private String createStringOfFiles(ArrayList<FileMetadata> files) {
-    if ( !files.isEmpty() ) {
+    if (!files.isEmpty()) {
       StringBuilder sb = new StringBuilder();
-      for ( FileMetadata newFile : files ) {
-        sb.append( newFile.getFilename() ).append( ", " );
+      for (FileMetadata newFile : files) {
+        sb.append(newFile.getFilename()).append(", ");
       }
-      sb.delete( sb.length()-2, sb.length() );
-      return "[ "+sb+" ]";
+      sb.delete(sb.length() - 2, sb.length());
+      return "[ " + sb + " ]";
     }
     return "";
   }
@@ -61,12 +61,12 @@ public class HeartbeatMonitor extends TimerTask {
    * @return 0 for minor, 1 for major, -1 for neither
    */
   private int getLastHeartbeatType(long now, HeartbeatInformation info) {
-    if ( info.getLastMinorHeartbeat() == 0 &&
-         info.getLastMajorHeartbeat() == 0 ) {
+    if (info.getLastMinorHeartbeat() == 0 &&
+        info.getLastMajorHeartbeat() == 0) {
       return -1;
     }
-    return now-info.getLastMajorHeartbeat() < now-info.getLastMinorHeartbeat() ?
-               1 : 0;
+    return now - info.getLastMajorHeartbeat() <
+           now - info.getLastMinorHeartbeat() ? 1 : 0;
   }
 
   /**
@@ -82,24 +82,24 @@ public class HeartbeatMonitor extends TimerTask {
       HeartbeatInformation info) {
     int unhealthyScore = 0;
     // ChunkServer has missed a major heartbeat
-    if ( info.getLastMajorHeartbeat() != 0 &&
-         now-info.getLastMajorHeartbeat() > (Constants.HEARTRATE*11) ) {
+    if (info.getLastMajorHeartbeat() != 0 &&
+        now - info.getLastMajorHeartbeat() > (Constants.HEARTRATE*11)) {
       unhealthyScore++;
     }
     // ChunkServer has missed a minor heartbeat
-    if ( info.getLastMinorHeartbeat() != 0 &&
-         now-info.getLastMinorHeartbeat() > (Constants.HEARTRATE*2) ) {
-      unhealthyScore += 1+( int ) (
-          (now-info.getLastMinorHeartbeat()-(Constants.HEARTRATE*2))/
+    if (info.getLastMinorHeartbeat() != 0 &&
+        now - info.getLastMinorHeartbeat() > (Constants.HEARTRATE*2)) {
+      unhealthyScore += 1 + (int) (
+          (now - info.getLastMinorHeartbeat() - (Constants.HEARTRATE*2))/
           Constants.HEARTRATE); // extra unhealthy for more
     }
     // Hasn't even sent a minor heartbeat
-    if ( now-connectionStartTime > (Constants.HEARTRATE*2) &&
-         info.getLastMinorHeartbeat() == 0 ) {
+    if (now - connectionStartTime > (Constants.HEARTRATE*2) &&
+        info.getLastMinorHeartbeat() == 0) {
       unhealthyScore += 1;
     } // Hasn't even sent a major heartbeat
-    if ( now-connectionStartTime > Constants.HEARTRATE &&
-         info.getLastMajorHeartbeat() == 0 ) {
+    if (now - connectionStartTime > Constants.HEARTRATE &&
+        info.getLastMajorHeartbeat() == 0) {
       unhealthyScore += 1;
     }
     return unhealthyScore;
@@ -114,7 +114,7 @@ public class HeartbeatMonitor extends TimerTask {
    */
   private void adjustConnectionHealth(int unhealthyScore,
       ServerConnection connection) {
-    if ( unhealthyScore >= 2 ) {
+    if (unhealthyScore >= 2) {
       connection.incrementUnhealthy();
     } else {
       connection.decrementUnhealthy();
@@ -134,26 +134,26 @@ public class HeartbeatMonitor extends TimerTask {
    */
   private void replaceMissingFiles(ServerConnection connection,
       ArrayList<FileMetadata> files,
-      HashSet<Map.Entry<String, Integer>> missingChunks) {
-    Set<Map.Entry<String, Integer>> chunksAtServer = createSetOfChunks( files );
-    Map<String, ArrayList<Integer>> storedChunks = connection.getStoredChunks();
-    for ( String filename : storedChunks.keySet() ) {
-      ArrayList<Integer> sequences = storedChunks.get( filename );
-      for ( int sequence : sequences ) {
-        Map.Entry<String, Integer> entry = Map.entry( filename, sequence );
-        if ( !chunksAtServer.contains( entry ) ) {
-          if ( !missingChunks.contains( entry ) ) {
+      HashSet<Map.Entry<String,Integer>> missingChunks) {
+    Set<Map.Entry<String,Integer>> chunksAtServer = createSetOfChunks(files);
+    Map<String,ArrayList<Integer>> storedChunks = connection.getStoredChunks();
+    for (String filename : storedChunks.keySet()) {
+      ArrayList<Integer> sequences = storedChunks.get(filename);
+      for (int sequence : sequences) {
+        Map.Entry<String,Integer> entry = Map.entry(filename, sequence);
+        if (!chunksAtServer.contains(entry)) {
+          if (!missingChunks.contains(entry)) {
             logger.debug(
-                filename+"_chunk"+sequence+" added to missingChunks." );
-            missingChunks.add( entry );
+                filename + "_chunk" + sequence + " added to missingChunks.");
+            missingChunks.add(entry);
           } else {
             logger.debug(
-                "Dispatching repair for "+filename+"_chunk"+sequence );
-            dispatchRepair( filename, sequence, connection.getServerAddress() );
-            missingChunks.remove( entry );
+                "Dispatching repair for " + filename + "_chunk" + sequence);
+            dispatchRepair(filename, sequence, connection.getServerAddress());
+            missingChunks.remove(entry);
           }
         } else { // file stored at server, remove if exists from missingChunks
-          missingChunks.remove( entry );
+          missingChunks.remove(entry);
         }
       }
     }
@@ -166,16 +166,15 @@ public class HeartbeatMonitor extends TimerTask {
    * @param files list of FileMetadatas stored at the ChunkServer
    * @return HashSet made from the list of FileMetadatas
    */
-  private Set<Map.Entry<String, Integer>> createSetOfChunks(
+  private Set<Map.Entry<String,Integer>> createSetOfChunks(
       ArrayList<FileMetadata> files) {
-    ConcurrentHashMap<Map.Entry<String, Integer>, Integer> quickAddMap =
+    ConcurrentHashMap<Map.Entry<String,Integer>,Integer> quickAddMap =
         new ConcurrentHashMap<>();
-    files
-        .parallelStream()
-        .map( FileMetadata::getFilename )
-        .forEach( (filename) -> quickAddMap.put(
-            Map.entry( FilenameUtilities.getBaseFilename( filename ),
-                FilenameUtilities.getSequence( filename ) ), 0 ) );
+    files.parallelStream()
+         .map(FileMetadata::getFilename)
+         .forEach((filename) -> quickAddMap.put(
+             Map.entry(FilenameUtilities.getBaseFilename(filename),
+                 FilenameUtilities.getSequence(filename)), 0));
     return quickAddMap.keySet();
   }
 
@@ -190,24 +189,23 @@ public class HeartbeatMonitor extends TimerTask {
    */
   private void dispatchRepair(String filename, int sequence,
       String destination) {
-    filename = ApplicationProperties.storageType.equals( "erasure" ) ?
-                   filename+"_chunk"+sequence :
-                   filename+"_chunk"+sequence+"_shard";
-    String[] servers = information.getServers( filename, sequence );
+    filename = ApplicationProperties.storageType.equals("erasure") ?
+                   filename + "_chunk" + sequence :
+                   filename + "_chunk" + sequence + "_shard";
+    String[] servers = information.getServers(filename, sequence);
 
     ForwardInformation forwardInformation =
-        ControllerInformation.constructRepairMessage( filename, servers,
-            destination, new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 } );
+        ControllerInformation.constructRepairMessage(filename, servers,
+            destination, new int[]{0, 1, 2, 3, 4, 5, 6, 7});
 
-    if ( forwardInformation.firstHop() != null ) {
+    if (forwardInformation.firstHop() != null) {
       try {
-        information
-            .getConnection( forwardInformation.firstHop() )
-            .getConnection()
-            .getSender()
-            .sendData( forwardInformation.repairMessage().getBytes() );
-      } catch ( IOException ioe ) {
-        logger.debug( "Failed to send message. "+ioe.getMessage() );
+        information.getConnection(forwardInformation.firstHop())
+                   .getConnection()
+                   .getSender()
+                   .sendData(forwardInformation.repairMessage().getBytes());
+      } catch (IOException ioe) {
+        logger.debug("Failed to send message. " + ioe.getMessage());
       }
     }
   }
@@ -220,16 +218,15 @@ public class HeartbeatMonitor extends TimerTask {
    */
   private boolean pokeServer(ServerConnection connection) {
     try {
-      connection
-          .getConnection()
-          .getSender()
-          .sendData( (new GeneralMessage(
-              Protocol.CONTROLLER_SENDS_HEARTBEAT )).getBytes() );
+      connection.getConnection()
+                .getSender()
+                .sendData((new GeneralMessage(
+                    Protocol.CONTROLLER_SENDS_HEARTBEAT)).getBytes());
       connection.incrementPokes();
       return true;
-    } catch ( IOException ioe ) {
-      logger.debug( connection.getServerAddress()+" is unreachable. Set to "+
-                    "deregister. "+ioe.getMessage() );
+    } catch (IOException ioe) {
+      logger.debug(connection.getServerAddress() + " is unreachable. Set to " +
+                   "deregister. " + ioe.getMessage());
       return false;
     }
   }
@@ -239,48 +236,44 @@ public class HeartbeatMonitor extends TimerTask {
    */
   public void run() {
     ArrayList<Integer> toDeregister = new ArrayList<>();
-    synchronized( controller ) { // to prevent modifications
-      if ( information.getRegisteredServers().isEmpty() ) {
+    synchronized(controller) { // to prevent modifications
+      if (information.getRegisteredServers().isEmpty()) {
         return;
       }
 
-      StringBuilder sb = (new StringBuilder()).append( "\nHeartbeat Monitor:" );
+      StringBuilder sb = (new StringBuilder()).append("\nHeartbeat Monitor:");
       long currentTime = System.currentTimeMillis();
-      for ( ServerConnection connection : information
-                                              .getRegisteredServers()
-                                              .values() ) {
-        if ( !pokeServer( connection ) ) {
-          toDeregister.add( connection.getIdentifier() );
+      for (ServerConnection connection : information.getRegisteredServers()
+                                                    .values()) {
+        if (!pokeServer(connection)) {
+          toDeregister.add(connection.getIdentifier());
           continue;
         }
 
-        sb.append( "\n" ).append( connection );
+        sb.append("\n").append(connection);
         HeartbeatInformation heartbeatInformation =
             connection.getHeartbeatInfo().copy();
-        sb
-            .append( "\n" )
-            .append( createStringOfFiles( heartbeatInformation.getFiles() ) );
+        sb.append("\n")
+          .append(createStringOfFiles(heartbeatInformation.getFiles()));
 
         adjustConnectionHealth(
-            calculateUnhealthyScore( currentTime, connection.getStartTime(),
-                heartbeatInformation ), connection );
-        if ( connection.getUnhealthy() > 3 ) {
-          toDeregister.add( connection.getIdentifier() );
+            calculateUnhealthyScore(currentTime, connection.getStartTime(),
+                heartbeatInformation), connection);
+        if (connection.getUnhealthy() > 3) {
+          toDeregister.add(connection.getIdentifier());
           continue;
         }
 
         // For a major heartbeat, replace missing files
-        if ( getLastHeartbeatType( currentTime, heartbeatInformation ) == 1 ) {
-          replaceMissingFiles( connection, heartbeatInformation.getFiles(),
-              heartbeatInformation.getMissingChunks() );
+        if (getLastHeartbeatType(currentTime, heartbeatInformation) == 1) {
+          replaceMissingFiles(connection, heartbeatInformation.getFiles(),
+              heartbeatInformation.getMissingChunks());
         }
       }
 
       // Print the contents of all heartbeats for registered ChunkServers
-      logger.debug( sb.toString() );
-      for ( Integer i : toDeregister ) {
-        controller.deregister( i );
-      }
+      logger.debug(sb.toString());
+      controller.deregister(toDeregister);
     }
   }
 }

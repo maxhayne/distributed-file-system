@@ -12,6 +12,7 @@ import cs555.overlay.wireformats.RepairShard;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Class to hold important information for the Controller. Contains a map of
@@ -23,32 +24,31 @@ import java.util.*;
 public class ControllerInformation {
 
   private static final Logger logger = Logger.getInstance();
-  private final ArrayList<Integer> availableIdentifiers;
-  private final Map<Integer, ServerConnection> registeredServers;
+  private final Queue<Integer> idPool;
+  private final Map<Integer,ServerConnection> servers;
 
-  // filename maps to an array list, where indices represent sequence numbers
-  // elements of the arraylist are arrays of host:port strings whose indices,
-  // in the case of erasure coding, represent the fragment number
-  private final Map<String, TreeMap<Integer, String[]>> fileTable;
+  // Filename maps to a TreeMap where keys are sequence numbers.
+  // Sequence numbers then map to arrays containing host:port addresses of
+  // the servers storing that particular chunk.
+  private final Map<String,TreeMap<Integer,String[]>> fileTable;
 
   private static final Comparator<ServerConnection> serverComparator =
-      Comparator
-          .comparingInt( ServerConnection::getUnhealthy )
-          .thenComparing( ServerConnection::getTotalChunks )
-          .thenComparing( ServerConnection::getFreeSpace,
-              Comparator.reverseOrder() );
+      Comparator.comparingInt(ServerConnection::getUnhealthy)
+                .thenComparing(ServerConnection::totalStoredChunks)
+                .thenComparing(ServerConnection::getFreeSpace,
+                    Comparator.reverseOrder());
 
   /**
    * Constructor. Creates a list of available identifiers, and HashMaps for both
    * the files and the connections to the ChunkServers.
    */
   public ControllerInformation() {
-    this.registeredServers = new HashMap<>();
-    this.availableIdentifiers = new ArrayList<>(32);
-    for ( int i = 1; i <= 32; ++i ) {
-      this.availableIdentifiers.add( i );
-    }
+    this.servers = new HashMap<>();
     this.fileTable = new HashMap<>();
+    this.idPool = new LinkedBlockingQueue<>();
+    for (int i = 1; i <= 32; ++i) {
+      this.idPool.add(i);
+    }
   }
 
   /**
@@ -56,8 +56,30 @@ public class ControllerInformation {
    *
    * @return fileTable
    */
-  public Map<String, TreeMap<Integer, String[]>> getFileTable() {
+  public Map<String,TreeMap<Integer,String[]>> getFileTable() {
     return fileTable;
+  }
+
+  public List<String> fileList() {
+    synchronized(fileTable) {
+      return fileTable.keySet().stream().toList();
+    }
+  }
+
+  public String[][] getFileStorageDetails(String filename) {
+    String[][] servers = null;
+    synchronized(fileTable) {
+      if (fileTable.containsKey(filename)) {
+        TreeMap<Integer,String[]> chunks = fileTable.get(filename);
+        servers = new String[chunks.size()][];
+        int index = 0;
+        for (String[] chunkServer : chunks.values()) {
+          servers[index] = chunkServer.clone(); // TODO is this necessary?
+          index++;
+        }
+      }
+    }
+    return servers;
   }
 
   /**
@@ -65,8 +87,14 @@ public class ControllerInformation {
    *
    * @return registeredServers
    */
-  public Map<Integer, ServerConnection> getRegisteredServers() {
-    return registeredServers;
+  public Map<Integer,ServerConnection> getRegisteredServers() {
+    return servers;
+  }
+
+  public List<String> serverDetailsList() {
+    synchronized(servers) {
+      return servers.values().stream().map(ServerConnection::toString).toList();
+    }
   }
 
   /**
@@ -77,8 +105,8 @@ public class ControllerInformation {
    * @return ServerConnection with that identifier, null if doesn't exist
    */
   public ServerConnection getConnection(int identifier) {
-    synchronized( registeredServers ) {
-      return registeredServers.get( identifier );
+    synchronized(servers) {
+      return servers.get(identifier);
     }
   }
 
@@ -90,14 +118,16 @@ public class ControllerInformation {
    * @return ServerConnection
    */
   public ServerConnection getConnection(String address) {
-    synchronized( registeredServers ) {
-      for ( ServerConnection connection : registeredServers.values() ) {
-        if ( connection.getServerAddress().equals( address ) ) {
+    logger.debug("About to acquire lock on 'servers'");
+    synchronized(servers) {
+      logger.debug("Acquired lock on 'servers'");
+      for (ServerConnection connection : servers.values()) {
+        if (connection.getServerAddress().equals(address)) {
           return connection;
         }
       }
-      return null;
     }
+    return null;
   }
 
   /**
@@ -108,13 +138,11 @@ public class ControllerInformation {
    * registered server with that identifier
    */
   public String getChunkServerAddress(int identifier) {
-    synchronized( registeredServers ) {
-      ServerConnection connection = registeredServers.get( identifier );
-      if ( connection != null ) {
-        return connection.getServerAddress();
-      }
+    ServerConnection connection;
+    synchronized(servers) {
+      connection = servers.get(identifier);
     }
-    return null; // should return null, not empty string
+    return connection != null ? connection.getServerAddress() : null;
   }
 
   /**
@@ -125,25 +153,27 @@ public class ControllerInformation {
    * @param filename filename to be deleted
    */
   public void deleteFileFromDFS(String filename) {
-    fileTable.remove( filename );
-    // Delete from the storedChunks map of all servers in registeredServers
-    for ( ServerConnection server : registeredServers.values() ) {
-      server.deleteFile( filename );
-    }
-    // Send message to all servers to delete
-    GeneralMessage deleteRequest =
-        new GeneralMessage( Protocol.CONTROLLER_REQUESTS_FILE_DELETE,
-            filename );
-    try {
-      broadcast( deleteRequest.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.debug( "Problem sending file delete request to all ChunkServers. "+
-                    ioe.getMessage() );
+    synchronized(servers) {
+      synchronized(fileTable) {
+        fileTable.remove(filename);
+        // TODO remove the step from server.deleteFile that attempts to
+        //  remove entries with that filename from missingChunks, which will,
+        //  if the HeartbeatMonitor is in progress, produce deadlock
+        servers.values().forEach(server -> server.deleteFile(filename));
+        // Send message to all servers to delete
+        GeneralMessage deleteRequest =
+            new GeneralMessage(Protocol.CONTROLLER_REQUESTS_FILE_DELETE,
+                filename);
+        try {
+          broadcast(deleteRequest.getBytes());
+        } catch (IOException ioe) {
+          logger.debug(
+              "Problem sending file delete request to all ChunkServers. " +
+              ioe.getMessage());
+        }
+      }
     }
   }
-
-  // This will be called via a synchronized method in the Controller as well,
-  // when the Client is requesting storage information.
 
   /**
    * Returns the set of servers storing the particular chunk with that filename
@@ -155,8 +185,10 @@ public class ControllerInformation {
    * particular chunk
    */
   public String[] getServers(String filename, int sequence) {
-    if ( fileTable.containsKey( filename ) ) {
-      return fileTable.get( filename ).get( sequence );
+    synchronized(fileTable) {
+      if (fileTable.containsKey(filename)) {
+        return fileTable.get(filename).get(sequence);
+      }
     }
     return null;
   }
@@ -168,22 +200,15 @@ public class ControllerInformation {
    * @return ArrayList<String> of host:port combinations of registered
    * ChunkServers
    */
-  private ArrayList<String> listSortedServers() {
-    synchronized( registeredServers ) {
-      List<ServerConnection> orderedServers =
-          new ArrayList<>( registeredServers.values() );
-      orderedServers.sort( serverComparator );
-      ArrayList<String> orderedAddresses = new ArrayList<>();
-      for ( ServerConnection server : orderedServers ) {
-        orderedAddresses.add( server.getServerAddress() );
-      }
-      return orderedAddresses;
+  private List<String> sortedServers() {
+    synchronized(servers) {
+      List<ServerConnection> sortedServers = new ArrayList<>(servers.values());
+      sortedServers.sort(serverComparator);
+      return sortedServers.stream()
+                          .map(ServerConnection::getServerAddress)
+                          .toList();
     }
   }
-
-  // Doesn't need local synchronization, will only be called via synchronized
-  // methods in the Controller (register and deregister will also be
-  // synchronized).
 
   /**
    * Allocates a set of servers to store a particular chunk of a particular
@@ -196,30 +221,29 @@ public class ControllerInformation {
    * this chunk, or null, if servers couldn't be allocated
    */
   public String[] allocateServers(String filename, int sequence) {
-    ArrayList<String> sortedServers = listSortedServers();
-
-    int serversNeeded = 3; // standard replication factor
-    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
-      serversNeeded = Constants.TOTAL_SHARDS;
-    }
-
-    if ( sortedServers.size() >= serversNeeded ) { // are enough servers
-      TreeMap<Integer, String[]> servers = fileTable.get( filename );
-      if ( servers == null ) { // case of first chunk
-        fileTable.put( filename, new TreeMap<>() );
-        servers = fileTable.get( filename );
+    String[] reservedServers = null;
+    int serversNeeded = ApplicationProperties.storageType.equals("erasure") ?
+                            Constants.TOTAL_SHARDS : 3;
+    synchronized(servers) {
+      List<String> sortedServers = sortedServers(); // reentrant
+      if (sortedServers.size() >= serversNeeded) { // are enough servers
+        synchronized(fileTable) {
+          fileTable.putIfAbsent(filename, new TreeMap<>());
+          TreeMap<Integer,String[]> fileServers = fileTable.get(filename);
+          reservedServers = new String[serversNeeded];
+          for (int i = 0; i < serversNeeded; ++i) {
+            reservedServers[i] = sortedServers.get(i);
+          }
+          fileServers.put(sequence, reservedServers);
+          // TODO figure out if this operation needs fileTable synchronization
+          // add chunk to reservedServer's storedChunks
+          for (String reservedServer : reservedServers) {
+            getConnection(reservedServer).addChunk(filename, sequence);
+          }
+        }
       }
-      String[] reservedServers = new String[serversNeeded];
-      for ( int i = 0; i < serversNeeded; ++i ) {
-        reservedServers[i] = sortedServers.get( i );
-      }
-      servers.put( sequence, reservedServers );
-      // Need to add the file to the ServerConnection instance, in a
-      // data structure that holds the list of files that should be stored at
-      // that ChunkServer
-      return reservedServers;
     }
-    return null;
+    return reservedServers;
   }
 
   /**
@@ -230,14 +254,14 @@ public class ControllerInformation {
    * @return true if registered, false if not
    */
   public boolean isRegistered(String address) {
-    synchronized( registeredServers ) {
-      for ( ServerConnection connection : registeredServers.values() ) {
-        if ( address.equals( connection.getServerAddress() ) ) {
+    synchronized(servers) {
+      for (ServerConnection connection : servers.values()) {
+        if (address.equals(connection.getServerAddress())) {
           return true;
         }
       }
-      return false;
     }
+    return false;
   }
 
   /**
@@ -251,15 +275,14 @@ public class ControllerInformation {
    */
   public int register(String address, TCPConnection connection) {
     int registrationStatus = -1; // -1 is a failure
-    synchronized( registeredServers ) {
-      synchronized( availableIdentifiers ) {
-        if ( !availableIdentifiers.isEmpty() && !isRegistered( address ) ) {
-          int identifier =
-              availableIdentifiers.remove( availableIdentifiers.size()-1 );
-          ServerConnection newConnection =
-              new ServerConnection( identifier, address, connection );
-          registeredServers.put( identifier, newConnection );
-          assignNullReplications( newConnection ); // assign server chunks
+    synchronized(servers) {
+      if (!isRegistered(address)) {
+        Integer identifier = idPool.poll();
+        if (identifier != null) {
+          ServerConnection newServer =
+              new ServerConnection(identifier, address, connection);
+          servers.put(identifier, newServer);
+          assignUnderReplicatedChunks(newServer); // assign chunks to server
           registrationStatus = identifier; // registration successful
         }
       }
@@ -272,162 +295,211 @@ public class ControllerInformation {
    * taken up by the newly registered connection. (a null value meaning that the
    * chunk isn't being stored by anyone right now, but it should be)
    *
-   * @param connection newly registered connection
+   * @param server newly registered server
    */
-  private void assignNullReplications(ServerConnection connection) {
-    synchronized( fileTable ) {
-      for ( String filename : fileTable.keySet() ) {
-        for ( Map.Entry<Integer, String[]> entry : fileTable
-                                                       .get( filename )
-                                                       .entrySet() ) {
+  private void assignUnderReplicatedChunks(ServerConnection server) {
+    String address = server.getServerAddress();
+    synchronized(fileTable) {
+      for (String filename : fileTable.keySet()) {
+        for (Map.Entry<Integer,String[]> entry : fileTable.get(filename)
+                                                          .entrySet()) {
           String[] servers = entry.getValue();
-          int nullIndex = ArrayUtilities.contains( servers, null );
-          if ( nullIndex != -1 ) {
-            servers[nullIndex] = connection.getServerAddress();
-            connection.addChunk( filename, entry.getKey() );
-            logger.debug( "Assigned "+filename+"_chunk"+entry.getKey()+" to "+
-                          connection.getServerAddress() );
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Removes the ChunkServer with a particular identifier from the
-   * ControllerInformation. Since this ChunkServer may be storing essential
-   * files for the operation of the distributed file system, files stored on the
-   * ChunkServer must be relocated to other available ChunkServers. This
-   * function should only be called if the caller holds an intrinsic lock on the
-   * Controller, otherwise, there could be collisions of behavior.
-   *
-   * @param identifier of ChunkServer to deregister
-   */
-  public void deregister(int identifier) {
-    // Remove from the registeredServers and availableIdentifiers
-    // Remove all instances of its host:port from the fileTable
-    // Find replacement servers for all of its files
-    String deregisterAddress;
-    Map<String, ArrayList<Integer>> storedChunks;
-    synchronized( registeredServers ) {
-      synchronized( availableIdentifiers ) {
-        ServerConnection connection = registeredServers.get( identifier );
-        if ( connection == null ) { // server has already been removed
-          return;
-        }
-        connection.getConnection().close(); // stop the receiver
-        registeredServers.remove( identifier );
-        availableIdentifiers.add( identifier ); // add back identifier
-        deregisterAddress = connection.getServerAddress();
-        storedChunks = connection.getStoredChunks();
-      }
-    }
-
-    // Find the best candidates for relocation
-    ArrayList<String> sortedServers = listSortedServers(); // could be empty
-
-    // Iterate through displaced replicas and relocate them to the servers
-    // that are the best candidates
-    for ( String filename : storedChunks.keySet() ) {
-      for ( int sequence : storedChunks.get( filename ) ) {
-        String[] servers = getServers( filename, sequence );
-        boolean replaced = false;
-        for ( String candidate : sortedServers ) {
-          if ( ArrayUtilities.contains( servers, candidate ) == -1 ) {
-            ArrayUtilities.replaceFirst( servers, deregisterAddress,
-                candidate );
-            ServerConnection replacement = getConnection( candidate );
-            replacement.addChunk( filename, sequence );
-            // Send replacement server the file it should now have
-            boolean sent =
-                sendReplacementMessage( filename, sequence, candidate,
-                    servers );
-            if ( !sent ) {
-              ArrayUtilities.replaceFirst( servers, candidate,
-                  deregisterAddress );
-              replacement.removeChunk( filename, sequence );
-              continue;
-            }
+          int nullIndex = ArrayUtilities.contains(servers, null);
+          if (nullIndex != -1) {
+            servers[nullIndex] = address;
+            server.addChunk(filename, entry.getKey());
             logger.debug(
-                "Moving "+filename+"_chunk"+sequence+" to "+candidate );
-            replaced = true;
-            break;
+                "Assigned " + filename + "_chunk" + entry.getKey() + " " +
+                nullIndex + " to " + address);
           }
         }
-        if ( !replaced ) { // set host:port to null in servers
-          ArrayUtilities.replaceFirst( servers, deregisterAddress, null );
-          deleteChunkIfUnrecoverable( servers, filename, sequence );
+      }
+    }
+  }
+
+  /**
+   * Deregisters ChunkServers from ControllerInformation. Since they might be
+   * storing essential files for the operation of the system, files that were
+   * stored on the deregistering ChunkServers must be relocated to other active
+   * ChunkServers, if possible. The reason the function takes a list of
+   * identifiers is to ensure that if the HeartbeatMonitor detects multiple
+   * failures, we deal with them together, which saves us from trying to
+   * relocate files to servers that we know have failed, or from thinking that
+   * files are recoverable when they aren't.
+   *
+   * @param identifiers list of ChunkServers to deregister
+   */
+  public void deregister(List<Integer> identifiers) {
+    synchronized(servers) {
+      List<ServerConnection> removedServers = removeServersAndGet(identifiers);
+      synchronized(fileTable) {
+        removeServersFromTable(removedServers);
+        removeUnrecoverableChunks();
+        deleteUnrecoverableFiles();
+        repairUnderReplicatedChunks();
+      }
+    }
+  }
+
+  private void removeUnrecoverableChunks() {
+    synchronized(fileTable) {
+      fileTable.forEach((filename, chunkMap) -> {
+        Iterator<Map.Entry<Integer,String[]>> it =
+            chunkMap.entrySet().iterator();
+        while (it.hasNext()) {
+          Map.Entry<Integer,String[]> entry = it.next();
+          Integer sequence = entry.getKey();
+          String[] servers = entry.getValue();
+          if (!isChunkRecoverable(servers)) {
+            // Remove chunk from storedChunks of servers
+            for (String server : servers) {
+              if (server != null) {
+                ServerConnection connection = getConnection(server);
+                if (connection != null) {
+                  connection.removeChunk(filename, sequence);
+                }
+              }
+            }
+            // Remove chunk from the fileTable
+            it.remove();
+          }
+        }
+      });
+    }
+  }
+
+  private void repairUnderReplicatedChunks() {
+    synchronized(servers) {
+      synchronized(fileTable) {
+        fileTable.forEach((filename, chunkMap) -> {
+          chunkMap.forEach((sequence, serverArray) -> {
+            if (isChunkRecoverable(serverArray)) {
+              List<String> bestCandidates = sortedServers();
+              repairChunk(filename, sequence, serverArray, bestCandidates);
+            }
+          });
+        });
+      }
+    }
+  }
+
+  private List<ServerConnection> removeServersAndGet(List<Integer> ids) {
+    List<ServerConnection> removedServers = new ArrayList<>();
+    synchronized(servers) {
+      for (int id : ids) {
+        ServerConnection server = servers.get(id);
+        if (server != null) { // hasn't already been deregistered
+          server.getConnection().close(); // stop the receiver
+          servers.remove(id);
+          idPool.add(id); // add id back to pool
+          removedServers.add(server);
         }
       }
     }
-    // Deletes all files that have no more recoverable chunks
-    deleteUnrecoverableFiles();
+    return removedServers;
   }
 
-  /**
-   * Checks if a chunk cannot be recovered and deletes it if it can't. If
-   * replicating, that means that a chunk no longer has any replicas. If erasure
-   * coding, that means that fewer than the needed number of fragments to
-   * recover the chunk are available.
-   *
-   * @param servers String[] servers supposedly storing the chunk
-   * @param filename base filename of the chunk
-   * @param sequence sequence number of the chunk
-   */
-  private void deleteChunkIfUnrecoverable(String[] servers, String filename,
-      int sequence) {
-    int numberOfNulls = ArrayUtilities.countNulls( servers );
-    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
-      if ( numberOfNulls > Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
-        fileTable.get( filename ).remove( sequence );
-        logger.debug(
-            "Deleting "+filename+"_chunk"+sequence+" from the fileTable." );
-      }
-    } else { // replication
-      if ( numberOfNulls == 3 ) {
-        fileTable.get( filename ).remove( sequence );
-        logger.debug(
-            "Deleting "+filename+"_chunk"+sequence+" from the fileTable." );
+  private void removeServersFromTable(List<ServerConnection> servers) {
+    synchronized(fileTable) {
+      for (ServerConnection server : servers) {
+        String address = server.getServerAddress();
+        fileTable.forEach((filename, chunkMap) -> {
+          chunkMap.forEach((sequence, serverArray) -> {
+            ArrayUtilities.replaceFirst(serverArray, address, null);
+          });
+        });
       }
     }
   }
 
+  private void repairChunk(String filename, int sequence, String[] servers,
+      List<String> candidates) {
+    for (int i = 0; i < servers.length; ++i) {
+      if (servers[i] == null) {
+        for (String candidate : candidates) {
+          if (ArrayUtilities.contains(servers, candidate) == -1) {
+            ServerConnection server = getConnection(candidate);
+            servers[i] = candidate;
+            if (sendReplacementMessage(filename, sequence, candidate,
+                servers)) {
+              logger.debug("About to add " + filename + "_chunk" + sequence +
+                           " to the storedChunks of " + candidate);
+              server.addChunk(filename, sequence); // TODO getting locked here?
+              logger.debug(
+                  "Moving " + filename + "_chunk" + sequence + " " + i +
+                  " to " + candidate);
+              break;
+            } else {
+              servers[i] = null;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private static boolean isChunkRecoverable(String[] servers) {
+    if (servers != null) {
+      int nullCount = ArrayUtilities.countNulls(servers);
+      if (ApplicationProperties.storageType.equals("erasure")) {
+        return nullCount <= Constants.TOTAL_SHARDS - Constants.DATA_SHARDS;
+      } else {
+        return nullCount < 3;
+      }
+    } else {
+      return false;
+    }
+  }
+
   /**
-   * Calls the deleteFileFromDFS() method on any file that no longer has any
-   * valid recoverable chunks.
+   * Calls deleteFileFromDFS for any file that has no recoverable chunks.
    */
   private void deleteUnrecoverableFiles() {
-    ArrayList<String> filesToDelete = new ArrayList<>();
-    for ( Map.Entry<String, TreeMap<Integer, String[]>> entry :
-        fileTable.entrySet() ) {
-      if ( entry.getValue().isEmpty() ) {
-        filesToDelete.add( entry.getKey() );
-        logger.debug( entry.getKey()+" is unrecoverable. Deleting." );
+    List<String> deletedFiles = new ArrayList<>();
+    synchronized(servers) {
+      synchronized(fileTable) {
+        fileTable.entrySet().removeIf(entry -> {
+          if (entry.getValue().isEmpty()) {
+            deletedFiles.add(entry.getKey());
+            logger.debug(entry.getKey() + " is unrecoverable. Deleting.");
+            return true;
+          }
+          return false;
+        });
+        deletedFiles.forEach(this::deleteFileFromDFS);
       }
-    }
-    for ( String filename : filesToDelete ) {
-      deleteFileFromDFS( filename );
     }
   }
 
   /**
    * Dispatch repair/replace messages for all files in a ChunkServer's
-   * 'storedChunks' map.
+   * storedChunks map.
    *
    * @param identifier of ChunkServer to refresh files for
    */
   public void refreshServerFiles(int identifier) {
-    ServerConnection connection = registeredServers.get( identifier );
-    for ( Map.Entry<String, ArrayList<Integer>> entry : connection
-                                                            .getStoredChunks()
-                                                            .entrySet() ) {
-      for ( Integer sequence : entry.getValue() ) {
-        boolean sent = sendReplacementMessage( entry.getKey(), sequence,
-            connection.getServerAddress(),
-            fileTable.get( entry.getKey() ).get( sequence ) );
-        String not = sent ? "" : "NOT ";
-        logger.debug( entry.getKey()+"_chunk"+sequence+" was "+not+"sent to "+
-                      connection.getServerAddress() );
+    synchronized(servers) {
+      synchronized(fileTable) {
+        ServerConnection connection = servers.get(identifier);
+        if (connection != null) {
+          // TODO figure this out. The getStoredChunks() is called here and
+          //  in the HeartbeatMonitor. This means that if there is nothing
+          //  preventing this function and the monitor running at the same time,
+          //  we could be iterating over it at the same time. We won't be
+          //  modifying it concurrently, though. This requires more thought.
+          String address = connection.getServerAddress();
+          connection.getStoredChunks().forEach((filename, sequences) -> {
+            sequences.forEach((sequence) -> {
+              String[] servers = fileTable.get(filename).get(sequence);
+              boolean sent =
+                  sendReplacementMessage(filename, sequence, address, servers);
+              String NOT = sent ? "" : "NOT ";
+              logger.debug(
+                  filename + "_chunk" + sequence + " was " + NOT + "sent to " +
+                  address);
+            });
+          });
+        }
       }
     }
   }
@@ -448,28 +520,31 @@ public class ControllerInformation {
    */
   private boolean sendReplacementMessage(String filename, int sequence,
       String destination, String[] servers) {
-    String specificFilename = filename+"_chunk";
-    specificFilename = ApplicationProperties.storageType.equals( "erasure" ) ?
-                           specificFilename+sequence+"_shard"+
-                           ArrayUtilities.contains( servers, destination ) :
-                           specificFilename+sequence;
+    String specificFilename = filename + "_chunk";
+    specificFilename = ApplicationProperties.storageType.equals("erasure") ?
+                           specificFilename + sequence + "_shard" +
+                           ArrayUtilities.contains(servers, destination) :
+                           specificFilename + sequence;
 
     ForwardInformation forwardInformation =
-        constructRepairMessage( specificFilename, servers, destination,
-            new int[]{ 0, 1, 2, 3, 4, 5, 6, 7 } );
+        constructRepairMessage(specificFilename, servers, destination,
+            new int[]{0, 1, 2, 3, 4, 5, 6, 7});
 
-    if ( forwardInformation.firstHop() != null ) {
+    if (forwardInformation.firstHop() != null) {
       try {
-        getConnection( forwardInformation.firstHop() )
-            .getConnection()
-            .getSender()
-            .sendData( forwardInformation.repairMessage().getBytes() );
+        String address = forwardInformation.firstHop();
+        logger.debug("About to send replacement message to " + address);
+        getConnection(address).getConnection()
+                              .getSender()
+                              .sendData(forwardInformation.repairMessage()
+                                                          .getBytes());
+        logger.debug("Sent replacement message to " + address);
         return true;
-      } catch ( IOException ioe ) {
+      } catch (IOException ioe) {
         logger.debug(
-            "Unable to send a message to "+forwardInformation.firstHop()+
-            " to replace '"+specificFilename+"' at "+destination+". "+
-            ioe.getMessage() );
+            "Unable to send a message to " + forwardInformation.firstHop() +
+            " to replace '" + specificFilename + "' at " + destination + ". " +
+            ioe.getMessage());
       }
     }
     return false;
@@ -481,13 +556,13 @@ public class ControllerInformation {
    * @param marshalledBytes message to send
    */
   public void broadcast(byte[] marshalledBytes) {
-    synchronized( registeredServers ) {
-      for ( ServerConnection connection : registeredServers.values() ) {
+    synchronized(servers) {
+      for (ServerConnection connection : servers.values()) {
         try {
-          connection.getConnection().getSender().sendData( marshalledBytes );
-        } catch ( IOException ioe ) {
-          logger.debug( "Unable to send message to ChunkServer "+
-                        connection.getIdentifier()+". "+ioe.getMessage() );
+          connection.getConnection().getSender().sendData(marshalledBytes);
+        } catch (IOException ioe) {
+          logger.debug("Unable to send message to ChunkServer " +
+                       connection.getIdentifier() + ". " + ioe.getMessage());
         }
       }
     }
@@ -509,26 +584,21 @@ public class ControllerInformation {
    */
   public static ForwardInformation constructRepairMessage(String filename,
       String[] servers, String destination, int[] slices) {
-    if ( servers != null ) {
-      if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
-        if ( ArrayUtilities.countNulls( servers ) <=
-             Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
-          RepairShard repairShard =
-              new RepairShard( filename, destination, servers );
-          return new ForwardInformation( repairShard.getAddress(),
-              repairShard );
-        }
+    if (isChunkRecoverable(servers)) {
+      if (ApplicationProperties.storageType.equals("erasure")) {
+        RepairShard repairShard =
+            new RepairShard(filename, destination, servers);
+        return new ForwardInformation(repairShard.getAddress(), repairShard);
       } else {
         String[] strippedServers =
-            ArrayUtilities.reduceReplicationServers( servers, destination );
-        if ( strippedServers.length != 0 ) {
+            ArrayUtilities.reduceReplicationServers(servers, destination);
+        if (strippedServers.length != 0) {
           RepairChunk repairChunk =
-              new RepairChunk( filename, destination, slices, strippedServers );
-          return new ForwardInformation( repairChunk.getAddress(),
-              repairChunk );
+              new RepairChunk(filename, destination, slices, strippedServers);
+          return new ForwardInformation(repairChunk.getAddress(), repairChunk);
         }
       }
     }
-    return new ForwardInformation( null, null );
+    return new ForwardInformation(null, null);
   }
 }
