@@ -34,35 +34,26 @@ public class GeneralMessage implements Event {
     this.type = type;
 
     // First time using this type of call
-    this.message = Objects.requireNonNullElse( message, "" );
+    this.message = Objects.requireNonNullElse(message, "");
   }
 
   public GeneralMessage(byte[] marshalledBytes) throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
     short len = din.readShort();
-    if ( len != 0 ) {
+    if (len != 0) {
       byte[] messageBytes = new byte[len];
-      din.readFully( messageBytes );
-      message = new String( messageBytes );
+      din.readFully(messageBytes);
+      message = new String(messageBytes);
     } else {
       message = "";
     }
 
     din.close();
     bin.close();
-  }
-
-  /**
-   * Sets a new message.
-   *
-   * @param message that 'message' will be set to
-   */
-  public void setMessage(String message) {
-    this.message = message;
   }
 
   /**
@@ -74,6 +65,15 @@ public class GeneralMessage implements Event {
     return message;
   }
 
+  /**
+   * Sets a new message.
+   *
+   * @param message that 'message' will be set to
+   */
+  public void setMessage(String message) {
+    this.message = message;
+  }
+
   @Override
   public byte getType() {
     return type;
@@ -82,16 +82,16 @@ public class GeneralMessage implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.write( type );
+    dout.write(type);
 
-    if ( !message.isEmpty() ) {
+    if (!message.isEmpty()) {
       byte[] messageBytes = message.getBytes();
-      dout.writeShort( messageBytes.length );
-      dout.write( messageBytes );
+      dout.writeShort(messageBytes.length);
+      dout.write(messageBytes);
     } else {
-      dout.writeShort( 0 );
+      dout.writeShort(0);
     }
 
     byte[] returnable = bout.toByteArray();

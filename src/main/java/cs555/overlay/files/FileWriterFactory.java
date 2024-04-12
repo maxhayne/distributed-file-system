@@ -16,7 +16,8 @@ public class FileWriterFactory {
   private static final FileWriterFactory fileWriterFactory =
       new FileWriterFactory(); // singleton factory
 
-  private FileWriterFactory() {}
+  private FileWriterFactory() {
+  }
 
   public static FileWriterFactory getInstance() {
     return fileWriterFactory;
@@ -31,13 +32,12 @@ public class FileWriterFactory {
    * type
    */
   public FileWriter createFileWriter(FileMetadata metadata) {
-    if ( FilenameUtilities.checkChunkFilename( metadata.getFilename() ) ) {
-      return new ChunkWriter( metadata );
-    } else if ( FilenameUtilities.checkShardFilename(
-        metadata.getFilename() ) ) {
-      return new ShardWriter( metadata );
+    if (FilenameUtilities.checkChunkFilename(metadata.getFilename())) {
+      return new ChunkWriter(metadata);
+    } else if (FilenameUtilities.checkShardFilename(metadata.getFilename())) {
+      return new ShardWriter(metadata);
     } else {
-      logger.error( "FileWriter couldn't be created. "+metadata.getFilename() );
+      logger.error("FileWriter couldn't be created. " + metadata.getFilename());
       return null;
     }
   }

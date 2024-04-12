@@ -36,13 +36,13 @@ public class ChunkReader implements FileReader {
    */
   @Override
   public void readAndProcess(FileSynchronizer synchronizer) {
-    chunkBytes = synchronizer.readNBytesFromFile( filename,
-        FileSynchronizer.CHUNK_FILE_LENGTH );
+    chunkBytes = synchronizer.readNBytesFromFile(filename,
+        FileSynchronizer.CHUNK_FILE_LENGTH);
     populateSlices();
     checkForCorruption();
-    if ( !corrupt ) {
-      chunkBytes = FileSynchronizer.removeHashesFromChunk( chunkBytes );
-      chunkBytes = FileSynchronizer.getDataFromChunk( chunkBytes );
+    if (!corrupt) {
+      chunkBytes = FileSynchronizer.removeHashesFromChunk(chunkBytes);
+      chunkBytes = FileSynchronizer.getDataFromChunk(chunkBytes);
     }
   }
 
@@ -53,12 +53,12 @@ public class ChunkReader implements FileReader {
    */
   private void checkForCorruption() {
     ArrayList<Integer> corruptions =
-        FileSynchronizer.checkChunkForCorruption( chunkBytes );
-    if ( corruptions.isEmpty() ) {
+        FileSynchronizer.checkChunkForCorruption(chunkBytes);
+    if (corruptions.isEmpty()) {
       corrupt = false;
     } else {
       corrupt = true;
-      corruptSlices = ArrayUtilities.arrayListToArray( corruptions );
+      corruptSlices = ArrayUtilities.arrayListToArray(corruptions);
     }
   }
 
@@ -68,9 +68,9 @@ public class ChunkReader implements FileReader {
    * necessary for making repairs.
    */
   private void populateSlices() {
-    slices = new byte[8][20+8195];
-    for ( int i = 0; i < 8; ++i ) {
-      System.arraycopy( chunkBytes, i*(20+8195), slices[i], 0, 20+8195 );
+    slices = new byte[8][20 + 8195];
+    for (int i = 0; i < 8; ++i) {
+      System.arraycopy(chunkBytes, i*(20 + 8195), slices[i], 0, 20 + 8195);
     }
   }
 

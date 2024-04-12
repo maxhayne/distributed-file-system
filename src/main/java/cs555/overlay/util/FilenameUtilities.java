@@ -9,11 +9,11 @@ import java.util.regex.Pattern;
  */
 public class FilenameUtilities {
   private static final Pattern filenamePattern =
-      Pattern.compile( ".*_chunk(0|[1-9][0-9]*)(_shard[0-8])?$" );
+      Pattern.compile(".*_chunk(0|[1-9][0-9]*)(_shard[0-8])?$");
   private static final Pattern chunkPattern =
-      Pattern.compile( ".*_chunk(0|[1-9][0-9]*)$" );
+      Pattern.compile(".*_chunk(0|[1-9][0-9]*)$");
   private static final Pattern shardPattern =
-      Pattern.compile( ".*_chunk(0|[1-9][0-9]*)_shard[0-8]$" );
+      Pattern.compile(".*_chunk(0|[1-9][0-9]*)_shard[0-8]$");
 
   /**
    * Check if a filename is
@@ -22,7 +22,7 @@ public class FilenameUtilities {
    * @return if filename is properly formatted for a chunk or a shard
    */
   public static boolean checkFilename(String filename) {
-    return filenamePattern.matcher( filename ).matches();
+    return filenamePattern.matcher(filename).matches();
   }
 
   /**
@@ -32,7 +32,7 @@ public class FilenameUtilities {
    * @return true if it is properly formatted, false otherwise
    */
   public static boolean checkChunkFilename(String filename) {
-    return chunkPattern.matcher( filename ).matches();
+    return chunkPattern.matcher(filename).matches();
   }
 
   /**
@@ -42,7 +42,7 @@ public class FilenameUtilities {
    * @return true if it is properly formatted, false otherwise
    */
   public static boolean checkShardFilename(String filename) {
-    return shardPattern.matcher( filename ).matches();
+    return shardPattern.matcher(filename).matches();
   }
 
   /**
@@ -53,8 +53,8 @@ public class FilenameUtilities {
    * doesn't contain "_chunk"
    */
   public static String getBaseFilename(String filename) {
-    int lastIndex = filename.lastIndexOf( "_chunk" );
-    return lastIndex == -1 ? filename : filename.substring( 0, lastIndex );
+    int lastIndex = filename.lastIndexOf("_chunk");
+    return lastIndex == -1 ? filename : filename.substring(0, lastIndex);
   }
 
   /**
@@ -65,9 +65,8 @@ public class FilenameUtilities {
    * @return integer sequence number
    */
   public static int getSequence(String filename) {
-    int lastIndex = filename.lastIndexOf( "_chunk" );
-    return Integer.parseInt(
-        filename.substring( lastIndex+6 ).split( "_" )[0] );
+    int lastIndex = filename.lastIndexOf("_chunk");
+    return Integer.parseInt(filename.substring(lastIndex + 6).split("_")[0]);
   }
 
   /**
@@ -77,8 +76,8 @@ public class FilenameUtilities {
    * @return integer fragment number
    */
   public static int getFragment(String filename) {
-    int lastIndex = filename.lastIndexOf( "_shard" );
-    return Integer.parseInt( filename.substring( lastIndex+6 ) );
+    int lastIndex = filename.lastIndexOf("_shard");
+    return Integer.parseInt(filename.substring(lastIndex + 6));
   }
 
 }

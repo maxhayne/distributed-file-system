@@ -21,7 +21,7 @@ public class TCPSender {
    * @throws IOException if stream can't be created
    */
   public TCPSender(Socket socket) throws IOException {
-    this.dout = new DataOutputStream( socket.getOutputStream() );
+    this.dout = new DataOutputStream(socket.getOutputStream());
   }
 
   /**
@@ -32,8 +32,8 @@ public class TCPSender {
    */
   public synchronized void sendData(byte[] data) throws IOException {
     int length = data.length;
-    dout.writeInt( length );
-    dout.write( data, 0, length );
+    dout.writeInt(length);
+    dout.write(data, 0, length);
     dout.flush();
   }
 }

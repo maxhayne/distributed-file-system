@@ -19,19 +19,19 @@ public class ChunkServerServesFile implements Event {
   }
 
   public ChunkServerServesFile(byte[] marshalledBytes) throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
     int len = din.readInt();
     byte[] array = new byte[len];
-    din.readFully( array );
-    filename = new String( array );
+    din.readFully(array);
+    filename = new String(array);
 
     len = din.readInt();
     content = new byte[len];
-    din.readFully( content );
+    din.readFully(content);
 
     din.close();
     bin.close();
@@ -40,16 +40,16 @@ public class ChunkServerServesFile implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.write( type );
+    dout.write(type);
 
     byte[] array = filename.getBytes();
-    dout.writeInt( array.length );
-    dout.write( array );
+    dout.writeInt(array.length);
+    dout.write(array);
 
-    dout.writeInt( content.length );
-    dout.write( content );
+    dout.writeInt(content.length);
+    dout.write(content);
 
     byte[] marshalledBytes = bout.toByteArray();
     dout.close();

@@ -17,7 +17,7 @@ public class HeartbeatInformation {
   private long freeSpace; // in bytes
   private int totalChunks;
   private ArrayList<FileMetadata> files;
-  private HashSet<Map.Entry<String, Integer>> missingChunks;
+  private HashSet<Map.Entry<String,Integer>> missingChunks;
 
   public HeartbeatInformation() {
     this.lastMajorHeartbeat = 0;
@@ -32,7 +32,7 @@ public class HeartbeatInformation {
       ArrayList<FileMetadata> files) {
     this.freeSpace = freeSpace;
     this.totalChunks = totalChunks;
-    if ( type == 1 ) {
+    if (type == 1) {
       lastMajorHeartbeat = System.currentTimeMillis();
     } else {
       lastMinorHeartbeat = System.currentTimeMillis();
@@ -57,10 +57,10 @@ public class HeartbeatInformation {
   }
 
   public synchronized ArrayList<FileMetadata> getFiles() {
-    return new ArrayList<>( files );
+    return new ArrayList<>(files);
   }
 
-  public synchronized HashSet<Map.Entry<String, Integer>> getMissingChunks() {
+  public synchronized HashSet<Map.Entry<String,Integer>> getMissingChunks() {
     return missingChunks;
   }
 

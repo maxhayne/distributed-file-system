@@ -25,13 +25,12 @@ public class PropertyLoader {
    */
   private PropertyLoader() {
     properties = new Properties();
-    try ( FileInputStream in = new FileInputStream(
-        ApplicationProperties.propertyFile ) ) {
-      properties.load( in );
-    } catch ( Exception e ) {
-      logger.error(
-          "'"+ApplicationProperties.propertyFile+"' file could not be loaded. "+
-          e.getMessage() );
+    try (FileInputStream in = new FileInputStream(
+        ApplicationProperties.propertyFile)) {
+      properties.load(in);
+    } catch (Exception e) {
+      logger.error("'" + ApplicationProperties.propertyFile +
+                   "' file could not be loaded. " + e.getMessage());
     }
   }
 
@@ -53,7 +52,7 @@ public class PropertyLoader {
    * @return property linked to in application.properties file
    */
   public String getProperty(String property) {
-    return properties.getProperty( property );
+    return properties.getProperty(property);
   }
 
   /**
@@ -66,7 +65,7 @@ public class PropertyLoader {
    * @return property linked to in application.properties file
    */
   public String getProperty(String property, String defaultValue) {
-    return properties.getProperty( property, defaultValue );
+    return properties.getProperty(property, defaultValue);
   }
 
 }

@@ -30,8 +30,8 @@ public class ChunkServerSendsHeartbeat implements Event {
   }
 
   public ChunkServerSendsHeartbeat(byte[] marshalledBytes) throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
@@ -45,17 +45,17 @@ public class ChunkServerSendsHeartbeat implements Event {
 
     int totalFiles = din.readInt();
     files = new ArrayList<>();
-    for ( int i = 0; i < totalFiles; ++i ) {
+    for (int i = 0; i < totalFiles; ++i) {
       int len = din.readInt();
       byte[] array = new byte[len];
-      din.readFully( array );
-      String filename = new String( array );
+      din.readFully(array);
+      String filename = new String(array);
 
       int version = din.readInt();
 
       long timestamp = din.readLong();
 
-      files.add( new FileMetadata( filename, version, timestamp ) );
+      files.add(new FileMetadata(filename, version, timestamp));
     }
 
     bin.close();
@@ -65,27 +65,27 @@ public class ChunkServerSendsHeartbeat implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( (bout) );
+    DataOutputStream dout = new DataOutputStream((bout));
 
-    dout.writeByte( type );
+    dout.writeByte(type);
 
-    dout.writeInt( identifier );
+    dout.writeInt(identifier);
 
-    dout.writeInt( beatType );
+    dout.writeInt(beatType);
 
-    dout.writeInt( totalChunks );
+    dout.writeInt(totalChunks);
 
-    dout.writeLong( freeSpace );
+    dout.writeLong(freeSpace);
 
-    dout.writeInt( files.size() );
-    for ( FileMetadata meta : files ) {
+    dout.writeInt(files.size());
+    for (FileMetadata meta : files) {
       byte[] array = meta.getFilename().getBytes();
-      dout.writeInt( array.length );
-      dout.write( array );
+      dout.writeInt(array.length);
+      dout.write(array);
 
-      dout.writeInt( meta.getVersion() );
+      dout.writeInt(meta.getVersion());
 
-      dout.writeLong( meta.getTimestamp() );
+      dout.writeLong(meta.getTimestamp());
     }
 
     byte[] marshalledBytes = bout.toByteArray();

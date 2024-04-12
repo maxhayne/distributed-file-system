@@ -18,7 +18,8 @@ public class EventFactory {
   /**
    * Private Constructor.
    */
-  private EventFactory() {}
+  private EventFactory() {
+  }
 
   /**
    * Gets instance of singleton EventFactory.
@@ -37,7 +38,7 @@ public class EventFactory {
    * @return event created by unmarshalling bytes
    */
   public Event createEvent(byte[] marshalledBytes) throws IOException {
-    switch ( marshalledBytes[0] ) {
+    switch (marshalledBytes[0]) {
       case Protocol.CHUNK_SERVER_SENDS_REGISTRATION:
       case Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION:
       case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
@@ -54,43 +55,43 @@ public class EventFactory {
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE:
       case Protocol.CLIENT_REQUESTS_SERVER_LIST:
       case Protocol.CONTROLLER_SENDS_SERVER_LIST:
-        return new GeneralMessage( marshalledBytes );
+        return new GeneralMessage(marshalledBytes);
 
       case Protocol.CONTROLLER_SENDS_STORAGE_LIST:
-        return new ControllerSendsStorageList( marshalledBytes );
+        return new ControllerSendsStorageList(marshalledBytes);
 
       case Protocol.CONTROLLER_SENDS_FILE_LIST:
-        return new ControllerSendsFileList( marshalledBytes );
+        return new ControllerSendsFileList(marshalledBytes);
 
       case Protocol.CONTROLLER_RESERVES_SERVERS:
-        return new ControllerReservesServers( marshalledBytes );
+        return new ControllerReservesServers(marshalledBytes);
 
       case Protocol.CLIENT_STORE:
-        return new ClientStore( marshalledBytes );
+        return new ClientStore(marshalledBytes);
 
       case Protocol.REPAIR_CHUNK:
-        return new RepairChunk( marshalledBytes );
+        return new RepairChunk(marshalledBytes);
 
       case Protocol.REPAIR_SHARD:
-        return new RepairShard( marshalledBytes );
+        return new RepairShard(marshalledBytes);
 
       case Protocol.SENDS_FILE_FOR_STORAGE:
-        return new SendsFileForStorage( marshalledBytes );
+        return new SendsFileForStorage(marshalledBytes);
 
       case Protocol.CHUNK_SERVER_SERVES_FILE:
-        return new ChunkServerServesFile( marshalledBytes );
+        return new ChunkServerServesFile(marshalledBytes);
 
       case Protocol.CHUNK_SERVER_SENDS_HEARTBEAT:
-        return new ChunkServerSendsHeartbeat( marshalledBytes );
+        return new ChunkServerSendsHeartbeat(marshalledBytes);
 
       case Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT:
-        return new ChunkServerRespondsToHeartbeat( marshalledBytes );
+        return new ChunkServerRespondsToHeartbeat(marshalledBytes);
 
       case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION:
-        return new ChunkServerReportsFileCorruption( marshalledBytes );
+        return new ChunkServerReportsFileCorruption(marshalledBytes);
 
       default:
-        logger.error( "Event couldn't be created. "+marshalledBytes[0] );
+        logger.error("Event couldn't be created. " + marshalledBytes[0]);
         return null;
     }
   }

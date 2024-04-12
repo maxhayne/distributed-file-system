@@ -30,12 +30,12 @@ public class ShardReader implements FileReader {
    */
   @Override
   public void readAndProcess(FileSynchronizer synchronizer) {
-    shardBytes = synchronizer.readNBytesFromFile( filename,
-        FileSynchronizer.SHARD_FILE_LENGTH );
+    shardBytes = synchronizer.readNBytesFromFile(filename,
+        FileSynchronizer.SHARD_FILE_LENGTH);
     checkForCorruption();
-    if ( !corrupt ) {
-      shardBytes = FileSynchronizer.removeHashFromShard( shardBytes );
-      shardBytes = FileSynchronizer.getDataFromShard( shardBytes );
+    if (!corrupt) {
+      shardBytes = FileSynchronizer.removeHashFromShard(shardBytes);
+      shardBytes = FileSynchronizer.getDataFromShard(shardBytes);
     }
 
   }
@@ -45,7 +45,7 @@ public class ShardReader implements FileReader {
    * the member 'corrupt' accordingly.
    */
   private void checkForCorruption() {
-    corrupt = FileSynchronizer.checkShardForCorruption( shardBytes );
+    corrupt = FileSynchronizer.checkShardForCorruption(shardBytes);
   }
 
   @Override

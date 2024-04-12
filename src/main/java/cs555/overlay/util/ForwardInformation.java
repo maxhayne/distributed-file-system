@@ -8,4 +8,4 @@ import cs555.overlay.wireformats.Event;
  *
  * @author hayne
  */
-public record ForwardInformation( String firstHop, Event repairMessage ) {}
+public record ForwardInformation(String firstHop, Event repairMessage) {}

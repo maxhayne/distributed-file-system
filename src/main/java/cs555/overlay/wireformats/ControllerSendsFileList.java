@@ -17,19 +17,19 @@ public class ControllerSendsFileList implements Event {
   }
 
   public ControllerSendsFileList(byte[] marshalledBytes) throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
     int listLength = din.readInt();
-    if ( listLength != 0 ) {
+    if (listLength != 0) {
       list = new String[listLength];
-      for ( int i = 0; i < listLength; ++i ) {
+      for (int i = 0; i < listLength; ++i) {
         int len = din.readInt();
         byte[] array = new byte[len];
-        din.readFully( array );
-        list[i] = new String( array );
+        din.readFully(array);
+        list[i] = new String(array);
       }
     }
 
@@ -40,18 +40,18 @@ public class ControllerSendsFileList implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.write( type );
+    dout.write(type);
 
-    if ( list == null ) {
-      dout.writeInt( 0 );
+    if (list == null) {
+      dout.writeInt(0);
     } else {
-      dout.writeInt( list.length );
-      for ( String s : list ) {
+      dout.writeInt(list.length);
+      for (String s : list) {
         byte[] array = s.getBytes();
-        dout.writeInt( array.length );
-        dout.write( array );
+        dout.writeInt(array.length);
+        dout.write(array);
       }
     }
 
@@ -71,5 +71,7 @@ public class ControllerSendsFileList implements Event {
    *
    * @return String[] of filenames
    */
-  public String[] getList() {return list;}
+  public String[] getList() {
+    return list;
+  }
 }

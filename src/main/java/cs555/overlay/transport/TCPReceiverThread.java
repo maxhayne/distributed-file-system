@@ -37,7 +37,7 @@ public class TCPReceiverThread implements Runnable {
     this.node = node;
     this.socket = socket;
     this.connection = connection;
-    this.din = new DataInputStream( socket.getInputStream() );
+    this.din = new DataInputStream(socket.getInputStream());
   }
 
   /**
@@ -51,17 +51,17 @@ public class TCPReceiverThread implements Runnable {
    */
   @Override
   public void run() {
-    while ( socket != null ) {
+    while (socket != null) {
       try {
         int len = din.readInt();
         byte[] marshalledBytes = new byte[len];
-        din.readFully( marshalledBytes );
+        din.readFully(marshalledBytes);
 
         EventFactory eventFactory = EventFactory.getInstance();
-        Event event = eventFactory.createEvent( marshalledBytes );
-        node.onEvent( event, connection );
-      } catch ( IOException ioe ) {
-        logger.debug("Socket connection has closed. "+ioe.getMessage());
+        Event event = eventFactory.createEvent(marshalledBytes);
+        node.onEvent(event, connection);
+      } catch (IOException ioe) {
+        logger.debug("Socket connection has closed. " + ioe.getMessage());
         break;
       }
     }

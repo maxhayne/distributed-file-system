@@ -13,10 +13,10 @@ import java.io.*;
 public class RepairShard implements Event {
   private final byte type;
   private final String filename; // full filename of shard that needs replacing
-  private int destination; // position of destination in server list
-  private int position; // current position in server list
   private final String[] servers; // array of host:port addresses to servers
   private final byte[][] fragments; // array of fragment arrays
+  private int destination; // position of destination in server list
+  private int position; // current position in server list
 
   /**
    * Default constructor. Designed to simplify call for Controller.
@@ -29,10 +29,10 @@ public class RepairShard implements Event {
    */
   public RepairShard(String filename, String destination, String[] servers) {
     this.type = Protocol.REPAIR_SHARD;
-    this.filename = filename.split( "_shard" )[0];
+    this.filename = filename.split("_shard")[0];
     this.servers = servers;
-    for ( int i = 0; i < servers.length; ++i ) {
-      if ( java.util.Objects.equals( servers[i], destination ) ) {
+    for (int i = 0; i < servers.length; ++i) {
+      if (java.util.Objects.equals(servers[i], destination)) {
         this.destination = i;
         this.position = i;
         break;
@@ -43,15 +43,15 @@ public class RepairShard implements Event {
   }
 
   public RepairShard(byte[] marshalledBytes) throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
     int len = din.readInt();
     byte[] array = new byte[len];
-    din.readFully( array );
-    filename = new String( array );
+    din.readFully(array);
+    filename = new String(array);
 
     destination = din.readInt();
 
@@ -59,27 +59,27 @@ public class RepairShard implements Event {
 
     int numberOfServers = din.readInt();
     servers = new String[numberOfServers];
-    for ( int i = 0; i < numberOfServers; ++i ) {
+    for (int i = 0; i < numberOfServers; ++i) {
       len = din.readInt();
-      if ( len == 0 ) {
+      if (len == 0) {
         servers[i] = null;
         continue;
       }
       array = new byte[len];
-      din.readFully( array );
-      servers[i] = new String( array );
+      din.readFully(array);
+      servers[i] = new String(array);
     }
 
     int numberOfFragments = din.readInt();
     fragments = new byte[numberOfFragments][];
-    for ( int i = 0; i < numberOfFragments; ++i ) {
+    for (int i = 0; i < numberOfFragments; ++i) {
       len = din.readInt();
-      if ( len == 0 ) {
+      if (len == 0) {
         fragments[i] = null;
         continue;
       }
       array = new byte[len];
-      din.readFully( array );
+      din.readFully(array);
       fragments[i] = array;
     }
 
@@ -111,7 +111,7 @@ public class RepairShard implements Event {
    * @return string filename of fragment
    */
   public String getFilename() {
-    return filename+"_shard"+position;
+    return filename + "_shard" + position;
   }
 
   /**
@@ -136,12 +136,12 @@ public class RepairShard implements Event {
    * directly to the 'destination' server.
    */
   public boolean nextPosition() {
-    int nextPosition = position+1;
-    for ( int i = 1; i < Constants.TOTAL_SHARDS; ++i ) {
+    int nextPosition = position + 1;
+    for (int i = 1; i < Constants.TOTAL_SHARDS; ++i) {
       nextPosition = nextPosition%Constants.TOTAL_SHARDS;
-      if ( nextPosition == destination ) {
+      if (nextPosition == destination) {
         return false;
-      } else if ( servers[nextPosition] != null ) {
+      } else if (servers[nextPosition] != null) {
         break;
       }
       nextPosition++;
@@ -157,8 +157,8 @@ public class RepairShard implements Event {
    */
   public int fragmentsCollected() {
     int count = 0;
-    for ( byte[] fragment : fragments ) {
-      if ( fragment != null ) {
+    for (byte[] fragment : fragments) {
+      if (fragment != null) {
         count++;
       }
     }
@@ -192,37 +192,37 @@ public class RepairShard implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.write( type );
+    dout.write(type);
 
     byte[] array = filename.getBytes();
-    dout.writeInt( array.length );
-    dout.write( array );
+    dout.writeInt(array.length);
+    dout.write(array);
 
-    dout.writeInt( destination );
+    dout.writeInt(destination);
 
-    dout.writeInt( position );
+    dout.writeInt(position);
 
-    dout.writeInt( servers.length );
-    for ( String server : servers ) {
-      if ( server == null ) {
-        dout.writeInt( 0 );
+    dout.writeInt(servers.length);
+    for (String server : servers) {
+      if (server == null) {
+        dout.writeInt(0);
         continue;
       }
       array = server.getBytes();
-      dout.writeInt( array.length );
-      dout.write( array );
+      dout.writeInt(array.length);
+      dout.write(array);
     }
 
-    dout.writeInt( fragments.length );
-    for ( byte[] fragment : fragments ) {
-      if ( fragment == null ) {
-        dout.writeInt( 0 );
+    dout.writeInt(fragments.length);
+    for (byte[] fragment : fragments) {
+      if (fragment == null) {
+        dout.writeInt(0);
         continue;
       }
-      dout.writeInt( fragment.length );
-      dout.write( fragment );
+      dout.writeInt(fragment.length);
+      dout.write(fragment);
     }
 
     byte[] marshalledBytes = bout.toByteArray();

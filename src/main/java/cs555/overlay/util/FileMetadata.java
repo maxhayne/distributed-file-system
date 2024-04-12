@@ -32,7 +32,9 @@ public class FileMetadata {
    *
    * @return filename
    */
-  public String getFilename() {return filename;}
+  public String getFilename() {
+    return filename;
+  }
 
   /**
    * Version getter.
@@ -64,7 +66,7 @@ public class FileMetadata {
    * isNew to true.
    */
   public synchronized void updateIfNotNew() {
-    if ( isNew ) {
+    if (isNew) {
       notNew();
     } else {
       update();

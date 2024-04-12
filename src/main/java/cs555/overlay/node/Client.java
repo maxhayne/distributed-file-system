@@ -28,12 +28,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Client implements Node {
 
   private static final Logger logger = Logger.getInstance();
+  private final ConcurrentHashMap<String,ClientWriter> writers;
+  private final ConcurrentHashMap<String,ClientReader> readers;
+  private final Object listLock; // protects the controllerFileList
   private TCPConnection controllerConnection;
-  private final ConcurrentHashMap<String, ClientWriter> writers;
-  private final ConcurrentHashMap<String, ClientReader> readers;
   private Path workingDirectory;
   private String[] controllerFileList;
-  private final Object listLock; // protects the controllerFileList
 
   /**
    * Default constructor.
@@ -41,8 +41,7 @@ public class Client implements Node {
   public Client() {
     this.writers = new ConcurrentHashMap<>();
     this.readers = new ConcurrentHashMap<>();
-    this.workingDirectory =
-        Paths.get( System.getProperty( "user.dir" ), "data" );
+    this.workingDirectory = Paths.get(System.getProperty("user.dir"), "data");
     this.listLock = new Object();
   }
 
@@ -56,24 +55,23 @@ public class Client implements Node {
    */
   public static void main(String[] args) {
     // Establish connection with Controller
-    try ( Socket controllerSocket = new Socket(
+    try (Socket controllerSocket = new Socket(
         ApplicationProperties.controllerHost,
-        ApplicationProperties.controllerPort ) ) {
+        ApplicationProperties.controllerPort)) {
 
       Client client = new Client();
 
       // Set Client's connection to Controller, start the receiver
-      client.controllerConnection =
-          new TCPConnection( client, controllerSocket );
+      client.controllerConnection = new TCPConnection(client, controllerSocket);
       client.controllerConnection.start();
-      logger.info( "Connected to the Controller." );
+      logger.info("Connected to the Controller.");
 
       // Loop for user interaction
       client.interact();
-    } catch ( IOException ioe ) {
-      logger.error( "Connection to the Controller couldn't be established. "+
-                    ioe.getMessage() );
-      System.exit( 1 );
+    } catch (IOException ioe) {
+      logger.error("Connection to the Controller couldn't be established. " +
+                   ioe.getMessage());
+      System.exit(1);
     }
   }
 
@@ -89,45 +87,45 @@ public class Client implements Node {
 
   @Override
   public void onEvent(Event event, TCPConnection connection) {
-    switch ( event.getType() ) {
+    switch (event.getType()) {
 
       case Protocol.CONTROLLER_APPROVES_FILE_DELETE:
-        logger.debug( "Controller approved deletion of "+
-                      (( GeneralMessage ) event).getMessage() );
+        logger.debug("Controller approved deletion of " +
+                     ((GeneralMessage) event).getMessage());
         break;
 
       case Protocol.CHUNK_SERVER_SERVES_FILE:
-        directFileToReader( event );
+        directFileToReader(event);
         break;
 
       case Protocol.CHUNK_SERVER_DENIES_REQUEST:
         logger.debug(
-            "Request denied for "+(( GeneralMessage ) event).getMessage() );
+            "Request denied for " + ((GeneralMessage) event).getMessage());
         break;
 
       case Protocol.CONTROLLER_SENDS_FILE_LIST:
-        setFileListAndPrint( event );
+        setFileListAndPrint(event);
         break;
 
       case Protocol.CONTROLLER_RESERVES_SERVERS:
-        notifyOfServers( event );
+        notifyOfServers(event);
         break;
 
       case Protocol.CONTROLLER_DENIES_STORAGE_REQUEST:
-        logger.info( "The Controller has denied a storage request." );
-        stopWriter( (( GeneralMessage ) event).getMessage() );
+        logger.info("The Controller has denied a storage request.");
+        stopWriter(((GeneralMessage) event).getMessage());
         break;
 
       case Protocol.CONTROLLER_SENDS_STORAGE_LIST:
-        notifyOfStorageInfo( event );
+        notifyOfStorageInfo(event);
         break;
 
       case Protocol.CONTROLLER_SENDS_SERVER_LIST:
-        printServerList( (( GeneralMessage ) event).getMessage() );
+        printServerList(((GeneralMessage) event).getMessage());
         break;
 
       default:
-        logger.debug( "Event couldn't be processed. "+event.getType() );
+        logger.debug("Event couldn't be processed. " + event.getType());
         break;
     }
   }
@@ -139,11 +137,11 @@ public class Client implements Node {
    * DFS, separated by newlines.
    */
   private void printServerList(String serverList) {
-    if ( serverList.isEmpty() ) {
-      System.out.printf( "%3s%s%n", "", "Controller: No servers in DFS." );
+    if (serverList.isEmpty()) {
+      System.out.printf("%3s%s%n", "", "Controller: No servers in DFS.");
     } else {
-      for ( String serverInformation : serverList.split( "\n" ) ) {
-        System.out.printf( "%3s%s%n", "", serverInformation );
+      for (String serverInformation : serverList.split("\n")) {
+        System.out.printf("%3s%s%n", "", serverInformation);
       }
     }
   }
@@ -155,12 +153,12 @@ public class Client implements Node {
    * @param event message being handled
    */
   private void directFileToReader(Event event) {
-    ChunkServerServesFile serveMessage = ( ChunkServerServesFile ) event;
+    ChunkServerServesFile serveMessage = (ChunkServerServesFile) event;
     String baseFilename =
-        FilenameUtilities.getBaseFilename( serveMessage.getFilename() );
-    ClientReader reader = readers.get( baseFilename );
-    if ( reader != null ) {
-      reader.addFile( serveMessage.getFilename(), serveMessage.getContent() );
+        FilenameUtilities.getBaseFilename(serveMessage.getFilename());
+    ClientReader reader = readers.get(baseFilename);
+    if (reader != null) {
+      reader.addFile(serveMessage.getFilename(), serveMessage.getContent());
     }
   }
 
@@ -170,8 +168,8 @@ public class Client implements Node {
    * @param filename filename of writer to stop
    */
   private void stopWriter(String filename) {
-    ClientWriter writer = writers.get( filename );
-    if ( writer != null ) {
+    ClientWriter writer = writers.get(filename);
+    if (writer != null) {
       writer.requestStop();
     }
   }
@@ -182,8 +180,8 @@ public class Client implements Node {
    * @param filename of reader to stop
    */
   private void stopReader(String filename) {
-    ClientReader reader = readers.get( filename );
-    if ( reader != null ) {
+    ClientReader reader = readers.get(filename);
+    if (reader != null) {
       reader.requestStop();
     }
   }
@@ -196,10 +194,10 @@ public class Client implements Node {
    * @param event message being handled
    */
   private void notifyOfServers(Event event) {
-    ControllerReservesServers message = ( ControllerReservesServers ) event;
-    ClientWriter writer = writers.get( message.getFilename() );
-    if ( writer != null ) {
-      writer.setServersAndNotify( message.getServers() );
+    ControllerReservesServers message = (ControllerReservesServers) event;
+    ClientWriter writer = writers.get(message.getFilename());
+    if (writer != null) {
+      writer.setServersAndNotify(message.getServers());
     }
   }
 
@@ -212,13 +210,13 @@ public class Client implements Node {
    * @param event message being handled
    */
   private void notifyOfStorageInfo(Event event) {
-    ControllerSendsStorageList message = ( ControllerSendsStorageList ) event;
-    ClientReader reader = readers.get( message.getFilename() );
-    if ( reader != null ) {
-      if ( message.getServers() == null ) {
+    ControllerSendsStorageList message = (ControllerSendsStorageList) event;
+    ClientReader reader = readers.get(message.getFilename());
+    if (reader != null) {
+      if (message.getServers() == null) {
         reader.requestStop();
       } else {
-        reader.setServersAndNotify( message.getServers() );
+        reader.setServersAndNotify(message.getServers());
       }
     }
   }
@@ -229,14 +227,14 @@ public class Client implements Node {
    * @param event message being processed
    */
   private void setFileListAndPrint(Event event) {
-    ControllerSendsFileList message = ( ControllerSendsFileList ) event;
-    synchronized( listLock ) {
+    ControllerSendsFileList message = (ControllerSendsFileList) event;
+    synchronized(listLock) {
       controllerFileList = message.getList();
-      if ( controllerFileList == null ) {
-        System.out.printf( "%3s%s%n", "", "Controller: No files stored." );
+      if (controllerFileList == null) {
+        System.out.printf("%3s%s%n", "", "Controller: No files stored.");
       } else {
-        for ( int i = 0; i < controllerFileList.length; ++i ) {
-          System.out.printf( "%3s%-3d%s%n", "", i, controllerFileList[i] );
+        for (int i = 0; i < controllerFileList.length; ++i) {
+          System.out.printf("%3s%-3d%s%n", "", i, controllerFileList[i]);
         }
       }
     }
@@ -247,32 +245,32 @@ public class Client implements Node {
    */
   private void interact() {
     System.out.println(
-        "Enter a command or use 'help' to print a list of commands." );
-    Scanner scanner = new Scanner( System.in );
+        "Enter a command or use 'help' to print a list of commands.");
+    Scanner scanner = new Scanner(System.in);
     interactLoop:
-    while ( true ) {
+    while (true) {
       String command = scanner.nextLine();
-      String[] splitCommand = command.split( "\\s+" );
-      switch ( splitCommand[0].toLowerCase() ) {
+      String[] splitCommand = command.split("\\s+");
+      switch (splitCommand[0].toLowerCase()) {
 
         case "p":
         case "put":
-          put( splitCommand );
+          put(splitCommand);
           break;
 
         case "g":
         case "get":
-          get( splitCommand );
+          get(splitCommand);
           break;
 
         case "d":
         case "delete":
-          requestFileDelete( splitCommand );
+          requestFileDelete(splitCommand);
           break;
 
         case "st":
         case "stop":
-          stopHelper( splitCommand );
+          stopHelper(splitCommand);
           break;
 
         case "r":
@@ -296,7 +294,7 @@ public class Client implements Node {
           break;
 
         case "wd":
-          printWorkingDirectory( splitCommand );
+          printWorkingDirectory(splitCommand);
           break;
 
         case "e":
@@ -309,12 +307,12 @@ public class Client implements Node {
           break;
 
         default:
-          logger.error( "Unrecognized command. Use 'help' command." );
+          logger.error("Unrecognized command. Use 'help' command.");
           break;
       }
     }
     controllerConnection.close(); // Close the controllerConnection
-    System.exit( 0 );
+    System.exit(0);
   }
 
   /**
@@ -323,11 +321,11 @@ public class Client implements Node {
    * @param command user input split by whitespace
    */
   private void stopHelper(String[] command) {
-    if ( command.length > 1 ) {
-      stopReader( command[1] );
-      stopWriter( command[1] );
+    if (command.length > 1) {
+      stopReader(command[1]);
+      stopWriter(command[1]);
     } else {
-      logger.error( "No filename given. Use 'help' for usage." );
+      logger.error("No filename given. Use 'help' for usage.");
     }
   }
 
@@ -337,39 +335,38 @@ public class Client implements Node {
    * @param command user input split by whitespace
    */
   private void requestFileDelete(String[] command) {
-    synchronized( listLock ) {
-      if ( controllerFileList == null ) {
+    synchronized(listLock) {
+      if (controllerFileList == null) {
         logger.error(
-            "Either no files are stored on the DFS or the file list hasn't "+
-            "been retrieved from the Controller yet. Use command 'files' to "+
-            "retrieve the list, then use the delete command followed by one "+
-            "or more of the numbers printed to the left of the list of files"+
-            "." );
+            "Either no files are stored on the DFS or the file list hasn't " +
+            "been retrieved from the Controller yet. Use command 'files' to " +
+            "retrieve the list, then use the delete command followed by one " +
+            "or more of the numbers printed to the left of the list of files" +
+            ".");
         return;
       }
-      if ( command.length > 1 ) {
+      if (command.length > 1) {
         GeneralMessage deleteMessage =
-            new GeneralMessage( Protocol.CLIENT_REQUESTS_FILE_DELETE );
-        for ( int i = 1; i < command.length; ++i ) {
+            new GeneralMessage(Protocol.CLIENT_REQUESTS_FILE_DELETE);
+        for (int i = 1; i < command.length; ++i) {
           try {
-            int fileNumber = Integer.parseInt( command[i] );
-            if ( fileNumber >= 0 && fileNumber < controllerFileList.length &&
-                 !readers.containsKey( controllerFileList[fileNumber] ) &&
-                 !writers.containsKey( controllerFileList[fileNumber] ) ) {
-              deleteMessage.setMessage( controllerFileList[fileNumber] );
-              controllerConnection
-                  .getSender()
-                  .sendData( deleteMessage.getBytes() );
+            int fileNumber = Integer.parseInt(command[i]);
+            if (fileNumber >= 0 && fileNumber < controllerFileList.length &&
+                !readers.containsKey(controllerFileList[fileNumber]) &&
+                !writers.containsKey(controllerFileList[fileNumber])) {
+              deleteMessage.setMessage(controllerFileList[fileNumber]);
+              controllerConnection.getSender()
+                                  .sendData(deleteMessage.getBytes());
             }
-          } catch ( IOException ioe ) {
-            logger.error( "Couldn't send Controller a delete request. "+
-                          ioe.getMessage() );
-          } catch ( NumberFormatException nfe ) {
-            logger.error( command[i]+" is not an integer." );
+          } catch (IOException ioe) {
+            logger.error("Couldn't send Controller a delete request. " +
+                         ioe.getMessage());
+          } catch (NumberFormatException nfe) {
+            logger.error(command[i] + " is not an integer.");
           }
         }
       } else {
-        logger.error( "No number given. Use 'help' for usage." );
+        logger.error("No number given. Use 'help' for usage.");
       }
     }
   }
@@ -379,8 +376,8 @@ public class Client implements Node {
    */
   private void showWriters() {
     writers.forEach(
-        (k, v) -> System.out.printf( "%3s%3d%-2s%s%n", "", v.getProgress(), "%",
-            k ) );
+        (k, v) -> System.out.printf("%3s%3d%-2s%s%n", "", v.getProgress(), "%",
+            k));
   }
 
   /**
@@ -388,8 +385,8 @@ public class Client implements Node {
    */
   private void showReaders() {
     readers.forEach(
-        (k, v) -> System.out.printf( "%3s%3d%-2s%s%n", "", v.getProgress(), "%",
-            k ) );
+        (k, v) -> System.out.printf("%3s%3d%-2s%s%n", "", v.getProgress(), "%",
+            k));
   }
 
   /**
@@ -398,12 +395,12 @@ public class Client implements Node {
    */
   private void requestFileList() {
     GeneralMessage requestMessage =
-        new GeneralMessage( Protocol.CLIENT_REQUESTS_FILE_LIST );
+        new GeneralMessage(Protocol.CLIENT_REQUESTS_FILE_LIST);
     try {
-      controllerConnection.getSender().sendData( requestMessage.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.error( "Could not send a file list request to the Controller. "+
-                    ioe.getMessage() );
+      controllerConnection.getSender().sendData(requestMessage.getBytes());
+    } catch (IOException ioe) {
+      logger.error("Could not send a file list request to the Controller. " +
+                   ioe.getMessage());
     }
   }
 
@@ -414,10 +411,10 @@ public class Client implements Node {
    * @param command String[] of command from user
    */
   private void printWorkingDirectory(String[] command) {
-    if ( command.length > 1 ) {
-      setWorkingDirectory( command[1] );
+    if (command.length > 1) {
+      setWorkingDirectory(command[1]);
     }
-    System.out.printf( "%3s%s%n", "", workingDirectory.toString() );
+    System.out.printf("%3s%s%n", "", workingDirectory.toString());
   }
 
   /**
@@ -429,15 +426,15 @@ public class Client implements Node {
    */
   private Path parsePath(String pathString) {
     Path parsedPath;
-    if ( pathString.startsWith( "~" ) ) {
-      pathString = pathString.replaceFirst( "~", "" );
-      pathString = removeLeadingFileSeparators( pathString );
-      parsedPath = Paths.get( System.getProperty( "user.home" ) );
+    if (pathString.startsWith("~")) {
+      pathString = pathString.replaceFirst("~", "");
+      pathString = removeLeadingFileSeparators(pathString);
+      parsedPath = Paths.get(System.getProperty("user.home"));
     } else {
       parsedPath = workingDirectory;
     }
-    if ( !pathString.isEmpty() ) {
-      parsedPath = parsedPath.resolve( pathString );
+    if (!pathString.isEmpty()) {
+      parsedPath = parsedPath.resolve(pathString);
     }
     return parsedPath.normalize(); // clean up path
   }
@@ -448,7 +445,7 @@ public class Client implements Node {
    * @param workdir new desired working directory
    */
   private void setWorkingDirectory(String workdir) {
-    workingDirectory = parsePath( workdir );
+    workingDirectory = parsePath(workdir);
   }
 
   /**
@@ -460,8 +457,8 @@ public class Client implements Node {
    * @return string leading file separators removed
    */
   private String removeLeadingFileSeparators(String directory) {
-    while ( !directory.isEmpty() && directory.startsWith( File.separator ) ) {
-      directory = directory.substring( 1 );
+    while (!directory.isEmpty() && directory.startsWith(File.separator)) {
+      directory = directory.substring(1);
     }
     return directory;
   }
@@ -472,20 +469,20 @@ public class Client implements Node {
    * @param command String[] of command given by user, split by space
    */
   private void put(String[] command) {
-    if ( command.length < 2 ) {
-      logger.error( "No file given. Use 'help' for usage." );
+    if (command.length < 2) {
+      logger.error("No file given. Use 'help' for usage.");
       return;
     }
-    Path pathToFile = parsePath( command[1] );
-    Boolean alreadyWriting = writers.searchValues( 10,
-        (w) -> w.getPathToFile().equals( pathToFile ) );
-    if ( alreadyWriting == null || !alreadyWriting ) {
+    Path pathToFile = parsePath(command[1]);
+    Boolean alreadyWriting =
+        writers.searchValues(10, (w) -> w.getPathToFile().equals(pathToFile));
+    if (alreadyWriting == null || !alreadyWriting) {
       String dateAddedFilename =
-          addDateToFilename( pathToFile.getFileName().toString() );
+          addDateToFilename(pathToFile.getFileName().toString());
       ClientWriter writer =
-          new ClientWriter( this, pathToFile, dateAddedFilename );
-      writers.put( dateAddedFilename, writer );
-      (new Thread( writer )).start();
+          new ClientWriter(this, pathToFile, dateAddedFilename);
+      writers.put(dateAddedFilename, writer);
+      (new Thread(writer)).start();
     }
   }
 
@@ -497,13 +494,13 @@ public class Client implements Node {
    * @return modified filename
    */
   private String addDateToFilename(String filename) {
-    SimpleDateFormat sdf = new SimpleDateFormat( "yyyy-MM-dd-HHmmss" );
-    int fileExtensionIndex = filename.lastIndexOf( '.' );
-    if ( fileExtensionIndex != -1 ) {
-      return filename.substring( 0, fileExtensionIndex )+"_"+
-             sdf.format( new Date() )+filename.substring( fileExtensionIndex );
+    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd-HHmmss");
+    int fileExtensionIndex = filename.lastIndexOf('.');
+    if (fileExtensionIndex != -1) {
+      return filename.substring(0, fileExtensionIndex) + "_" +
+             sdf.format(new Date()) + filename.substring(fileExtensionIndex);
     } else {
-      return filename+"_"+sdf.format( new Date() );
+      return filename + "_" + sdf.format(new Date());
     }
   }
 
@@ -513,34 +510,34 @@ public class Client implements Node {
    * @param command String[] of command given by user, split by space
    */
   private void get(String[] command) {
-    synchronized( listLock ) {
-      if ( controllerFileList == null ) {
+    synchronized(listLock) {
+      if (controllerFileList == null) {
         logger.error(
-            "The file list hasn't been retrieved from the Controller yet"+
-            ". Use command 'files' to retrieve the list, then use the number "+
-            "to the left of the filename in your 'get' command." );
+            "The file list hasn't been retrieved from the Controller yet" +
+            ". Use command 'files' to retrieve the list, then use the number " +
+            "to the left of the filename in your 'get' command.");
         return;
-      } else if ( command.length < 2 ) {
-        logger.error( "No number given. Use 'help' command." );
+      } else if (command.length < 2) {
+        logger.error("No number given. Use 'help' command.");
         return;
       }
-      for ( int i = 1; i < command.length; ++i ) {
+      for (int i = 1; i < command.length; ++i) {
         int fileNumber;
         try {
-          fileNumber = Integer.parseInt( command[i] );
-        } catch ( NumberFormatException nfe ) {
-          logger.error( command[i]+" isn't an integer." );
+          fileNumber = Integer.parseInt(command[i]);
+        } catch (NumberFormatException nfe) {
+          logger.error(command[i] + " isn't an integer.");
           continue;
         }
-        if ( fileNumber >= 0 && fileNumber < controllerFileList.length &&
-             !readers.containsKey( controllerFileList[fileNumber] ) ) {
+        if (fileNumber >= 0 && fileNumber < controllerFileList.length &&
+            !readers.containsKey(controllerFileList[fileNumber])) {
           ClientReader reader =
-              new ClientReader( this, controllerFileList[fileNumber] );
-          readers.put( controllerFileList[fileNumber], reader );
-          (new Thread( reader )).start();
+              new ClientReader(this, controllerFileList[fileNumber]);
+          readers.put(controllerFileList[fileNumber], reader);
+          (new Thread(reader)).start();
         } else {
           logger.error(
-              fileNumber+" is either a duplicate, or not a valid file." );
+              fileNumber + " is either a duplicate, or not a valid file.");
         }
       }
     }
@@ -552,12 +549,12 @@ public class Client implements Node {
    */
   private void requestServerList() {
     GeneralMessage requestMessage =
-        new GeneralMessage( Protocol.CLIENT_REQUESTS_SERVER_LIST );
+        new GeneralMessage(Protocol.CLIENT_REQUESTS_SERVER_LIST);
     try {
-      controllerConnection.getSender().sendData( requestMessage.getBytes() );
-    } catch ( IOException ioe ) {
-      logger.error( "Could not send a server list request to the Controller. "+
-                    ioe.getMessage() );
+      controllerConnection.getSender().sendData(requestMessage.getBytes());
+    } catch (IOException ioe) {
+      logger.error("Could not send a server list request to the Controller. " +
+                   ioe.getMessage());
     }
   }
 
@@ -565,28 +562,28 @@ public class Client implements Node {
    * Prints a list of valid commands.
    */
   private void showHelp() {
-    System.out.printf( "%3s%-19s : %s%n", "", "p[ut] PATH/FILENAME",
-        "store a local file on the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "g[et] # [#...]",
-        "retrieve file(s) from the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "d[elete] # [#...]",
-        "request that file(s) be deleted from the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "st[op] FILENAME",
-        "tries to stop writer or reader for FILENAME" );
-    System.out.printf( "%3s%-19s : %s%n", "", "w[riters]",
-        "display list files in the process of being stored" );
-    System.out.printf( "%3s%-19s : %s%n", "", "r[eaders]",
-        "display list files in the process of being retrieved" );
-    System.out.printf( "%3s%-19s : %s%n", "", "f[iles]",
-        "print a list of files stored on the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "s[ervers]",
-        "print the list of servers constituting the DFS" );
-    System.out.printf( "%3s%-19s : %s%n", "", "wd [NEW_WORKDIR]",
-        "print the current working directory or change it" );
-    System.out.printf( "%3s%-19s : %s%n", "", "e[xit]",
-        "disconnect from the Controller and shutdown the Client" );
-    System.out.printf( "%3s%-19s : %s%n", "", "h[elp]",
-        "print a list of valid commands" );
+    System.out.printf("%3s%-19s : %s%n", "", "p[ut] PATH/FILENAME",
+        "store a local file on the DFS");
+    System.out.printf("%3s%-19s : %s%n", "", "g[et] # [#...]",
+        "retrieve file(s) from the DFS");
+    System.out.printf("%3s%-19s : %s%n", "", "d[elete] # [#...]",
+        "request that file(s) be deleted from the DFS");
+    System.out.printf("%3s%-19s : %s%n", "", "st[op] FILENAME",
+        "tries to stop writer or reader for FILENAME");
+    System.out.printf("%3s%-19s : %s%n", "", "w[riters]",
+        "display list files in the process of being stored");
+    System.out.printf("%3s%-19s : %s%n", "", "r[eaders]",
+        "display list files in the process of being retrieved");
+    System.out.printf("%3s%-19s : %s%n", "", "f[iles]",
+        "print a list of files stored on the DFS");
+    System.out.printf("%3s%-19s : %s%n", "", "s[ervers]",
+        "print the list of servers constituting the DFS");
+    System.out.printf("%3s%-19s : %s%n", "", "wd [NEW_WORKDIR]",
+        "print the current working directory or change it");
+    System.out.printf("%3s%-19s : %s%n", "", "e[xit]",
+        "disconnect from the Controller and shutdown the Client");
+    System.out.printf("%3s%-19s : %s%n", "", "h[elp]",
+        "print a list of valid commands");
   }
 
   /**
@@ -596,7 +593,7 @@ public class Client implements Node {
    * @param pathToFile filename key of writer
    */
   public void removeWriter(String pathToFile) {
-    writers.remove( pathToFile );
+    writers.remove(pathToFile);
   }
 
   /**
@@ -606,7 +603,7 @@ public class Client implements Node {
    * @param filename filename key of writer
    */
   public void removeReader(String filename) {
-    readers.remove( filename );
+    readers.remove(filename);
   }
 
   /**

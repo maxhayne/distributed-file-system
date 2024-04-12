@@ -3,8 +3,8 @@ package cs555.overlay.wireformats;
 import java.io.*;
 
 /**
- * Message sent to Controller by ChunkServer whenever a corrupt chunk or
- * shard is detected.
+ * Message sent to Controller by ChunkServer whenever a corrupt chunk or shard
+ * is detected.
  *
  * @author hayne
  */
@@ -25,8 +25,8 @@ public class ChunkServerReportsFileCorruption implements Event {
 
   public ChunkServerReportsFileCorruption(byte[] marshalledBytes)
       throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
@@ -34,13 +34,13 @@ public class ChunkServerReportsFileCorruption implements Event {
 
     int len = din.readInt();
     byte[] array = new byte[len];
-    din.readFully( array );
-    filename = new String( array );
+    din.readFully(array);
+    filename = new String(array);
 
     int numSlices = din.readInt();
-    if ( numSlices > 0 ) {
+    if (numSlices > 0) {
       slices = new int[numSlices];
-      for ( int i = 0; i < numSlices; ++i ) {
+      for (int i = 0; i < numSlices; ++i) {
         slices[i] = din.readInt();
       }
     } else {
@@ -54,22 +54,22 @@ public class ChunkServerReportsFileCorruption implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.write( type );
+    dout.write(type);
 
-    dout.writeInt( identifier );
+    dout.writeInt(identifier);
 
     byte[] array = filename.getBytes();
-    dout.writeInt( array.length );
-    dout.write( array );
+    dout.writeInt(array.length);
+    dout.write(array);
 
-    if ( slices == null ) {
-      dout.writeInt( 0 );
+    if (slices == null) {
+      dout.writeInt(0);
     } else {
-      dout.writeInt( slices.length );
-      for ( int slice : slices ) {
-        dout.writeInt( slice );
+      dout.writeInt(slices.length);
+      for (int slice : slices) {
+        dout.writeInt(slice);
       }
     }
 

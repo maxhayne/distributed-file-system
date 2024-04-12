@@ -37,12 +37,12 @@ public class TCPServerThread implements Runnable {
    */
   @Override
   public void run() {
-    while ( serverSocket != null ) {
+    while (serverSocket != null) {
       try {
         Socket newSocket = serverSocket.accept();
-        (new TCPConnection( node, newSocket )).start();
-      } catch ( IOException ioe ) {
-        logger.debug( "ServerSocket has stopped. "+ioe.getMessage() );
+        (new TCPConnection(node, newSocket)).start();
+      } catch (IOException ioe) {
+        logger.debug("ServerSocket has stopped. " + ioe.getMessage());
         break;
       }
 

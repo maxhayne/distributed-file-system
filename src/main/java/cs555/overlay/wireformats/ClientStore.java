@@ -3,8 +3,8 @@ package cs555.overlay.wireformats;
 import java.io.*;
 
 /**
- * Sent by the Client to the Controller to request that servers be allocated
- * to store a particular chunk.
+ * Sent by the Client to the Controller to request that servers be allocated to
+ * store a particular chunk.
  *
  * @author hayne
  */
@@ -20,15 +20,15 @@ public class ClientStore implements Event {
   }
 
   public ClientStore(byte[] marshalledBytes) throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
     int len = din.readInt();
     byte[] array = new byte[len];
-    din.readFully( array );
-    filename = new String( array );
+    din.readFully(array);
+    filename = new String(array);
 
     sequence = din.readInt();
 
@@ -39,15 +39,15 @@ public class ClientStore implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.writeByte( type );
+    dout.writeByte(type);
 
     byte[] array = filename.getBytes();
-    dout.writeInt( array.length );
-    dout.write( array );
+    dout.writeInt(array.length);
+    dout.write(array);
 
-    dout.writeInt( sequence );
+    dout.writeInt(sequence);
 
     byte[] marshalledBytes = bout.toByteArray();
     bout.close();

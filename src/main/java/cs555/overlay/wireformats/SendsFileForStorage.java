@@ -36,34 +36,34 @@ public class SendsFileForStorage implements Event {
   }
 
   public SendsFileForStorage(byte[] marshalledBytes) throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
     int len = din.readInt();
     byte[] array = new byte[len];
-    din.readFully( array );
-    filename = new String( array );
+    din.readFully(array);
+    filename = new String(array);
 
     int numArrays = din.readInt();
     content = new byte[numArrays][];
-    for ( int i = 0; i < numArrays; ++i ) {
+    for (int i = 0; i < numArrays; ++i) {
       len = din.readInt();
-      if ( len != 0 ) {
+      if (len != 0) {
         content[i] = new byte[len];
-        din.readFully( content[i] );
+        din.readFully(content[i]);
       }
     }
 
     int numServers = din.readInt();
-    if ( numServers != 0 ) {
+    if (numServers != 0) {
       servers = new String[numServers];
-      for ( int i = 0; i < numServers; ++i ) {
+      for (int i = 0; i < numServers; ++i) {
         len = din.readInt();
         array = new byte[len];
-        din.readFully( array );
-        servers[i] = new String( array );
+        din.readFully(array);
+        servers[i] = new String(array);
       }
     }
 
@@ -76,36 +76,36 @@ public class SendsFileForStorage implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.write( type );
+    dout.write(type);
 
     byte[] array = filename.getBytes();
-    dout.writeInt( array.length );
-    dout.write( array );
+    dout.writeInt(array.length);
+    dout.write(array);
 
-    dout.writeInt( content.length );
-    for ( byte[] data : content ) {
-      if ( data == null ) {
-        dout.writeInt( 0 );
+    dout.writeInt(content.length);
+    for (byte[] data : content) {
+      if (data == null) {
+        dout.writeInt(0);
       } else {
-        dout.writeInt( data.length );
-        dout.write( data );
+        dout.writeInt(data.length);
+        dout.write(data);
       }
     }
 
-    if ( servers != null ) {
-      dout.writeInt( servers.length );
-      for ( String server : servers ) {
+    if (servers != null) {
+      dout.writeInt(servers.length);
+      for (String server : servers) {
         array = server.getBytes();
-        dout.writeInt( array.length );
-        dout.write( array );
+        dout.writeInt(array.length);
+        dout.write(array);
       }
     } else {
-      dout.writeInt( 0 );
+      dout.writeInt(0);
     }
 
-    dout.writeInt( position );
+    dout.writeInt(position);
 
     byte[] marshalledBytes = bout.toByteArray();
     dout.close();
@@ -126,8 +126,8 @@ public class SendsFileForStorage implements Event {
    * @return filename string
    */
   public String getFilename() {
-    if ( filename.contains( "shard" ) ) {
-      return filename+position;
+    if (filename.contains("shard")) {
+      return filename + position;
     } else {
       return filename;
     }
@@ -140,7 +140,7 @@ public class SendsFileForStorage implements Event {
    * @return true if there is another server to relay to, false if not
    */
   public boolean nextPosition() {
-    if ( position < servers.length-1 ) {
+    if (position < servers.length - 1) {
       position++;
       return true;
     }
@@ -155,9 +155,9 @@ public class SendsFileForStorage implements Event {
    * @return byte[] of file's content
    */
   public byte[] getContent() {
-    if ( filename.contains( "shard" ) ) {
+    if (filename.contains("shard")) {
       byte[] copy = new byte[content[position].length];
-      System.arraycopy( content[position], 0, copy, 0, copy.length );
+      System.arraycopy(content[position], 0, copy, 0, copy.length);
       content[position] = null; // So we don't relay it to the next ChunkServer
       return copy;
     } else {

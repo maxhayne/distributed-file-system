@@ -31,8 +31,8 @@ public class TCPConnection {
    */
   public TCPConnection(Node node, Socket socket) throws IOException {
     this.socket = socket;
-    this.sender = new TCPSender( socket );
-    this.receiver = new TCPReceiverThread( node, socket, this );
+    this.sender = new TCPSender(socket);
+    this.receiver = new TCPReceiverThread(node, socket, this);
     this.started = false;
   }
 
@@ -42,8 +42,8 @@ public class TCPConnection {
    * messages concurrently (if that hasn't happened already).
    */
   public synchronized void start() {
-    if ( !started ) {
-      (new Thread( receiver )).start();
+    if (!started) {
+      (new Thread(receiver)).start();
       started = true;
     }
   }
@@ -75,8 +75,8 @@ public class TCPConnection {
       sender.dout.close();
       receiver.din.close();
       socket.close();
-    } catch ( IOException ioe ) {
-      logger.error( "Problem closing socket/streams. "+ioe.getMessage() );
+    } catch (IOException ioe) {
+      logger.error("Problem closing socket/streams. " + ioe.getMessage());
     }
   }
 }

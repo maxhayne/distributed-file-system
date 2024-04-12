@@ -38,7 +38,7 @@ public class ShardWriter implements FileWriter {
    */
   @Override
   public void prepare() throws NoSuchAlgorithmException {
-    if ( content != null ) {
+    if (content != null) {
       prepareNewShard();
     } else {
       prepareShard();
@@ -49,26 +49,26 @@ public class ShardWriter implements FileWriter {
    * Prepares a new shard based on the content byte string.
    */
   private void prepareNewShard() {
-    int sequence = FilenameUtilities.getSequence( metadata.getFilename() );
-    int fragment = FilenameUtilities.getFragment( metadata.getFilename() );
-    preparedShard = FileSynchronizer.readyShardForStorage( sequence, fragment,
-        metadata.getVersion(), metadata.getTimestamp(), content );
+    int sequence = FilenameUtilities.getSequence(metadata.getFilename());
+    int fragment = FilenameUtilities.getFragment(metadata.getFilename());
+    preparedShard = FileSynchronizer.readyShardForStorage(sequence, fragment,
+        metadata.getVersion(), metadata.getTimestamp(), content);
   }
 
   /**
    * Prepares a new shard by reconstructing it from an array of other shards.
    */
   private void prepareShard() {
-    if ( reconstructionShards != null ) {
+    if (reconstructionShards != null) {
       byte[][] reconstructedShards =
-          FileSynchronizer.decodeMissingShards( reconstructionShards );
-      if ( reconstructedShards != null ) {
-        int sequence = FilenameUtilities.getSequence( metadata.getFilename() );
-        int fragment = FilenameUtilities.getFragment( metadata.getFilename() );
+          FileSynchronizer.decodeMissingShards(reconstructionShards);
+      if (reconstructedShards != null) {
+        int sequence = FilenameUtilities.getSequence(metadata.getFilename());
+        int fragment = FilenameUtilities.getFragment(metadata.getFilename());
         preparedShard =
-            FileSynchronizer.readyShardForStorage( sequence, fragment,
+            FileSynchronizer.readyShardForStorage(sequence, fragment,
                 metadata.getVersion(), metadata.getTimestamp(),
-                reconstructedShards[fragment] );
+                reconstructedShards[fragment]);
       }
     }
   }
@@ -93,9 +93,8 @@ public class ShardWriter implements FileWriter {
    */
   @Override
   public boolean write(FileSynchronizer synchronizer) {
-    if ( preparedShard != null ) {
-      return synchronizer.overwriteFile( metadata.getFilename(),
-          preparedShard );
+    if (preparedShard != null) {
+      return synchronizer.overwriteFile(metadata.getFilename(), preparedShard);
     }
     return false;
   }

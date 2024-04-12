@@ -16,7 +16,8 @@ public class FileReaderFactory {
   private static final FileReaderFactory fileReaderFactory =
       new FileReaderFactory(); // singleton factory
 
-  private FileReaderFactory() {}
+  private FileReaderFactory() {
+  }
 
   public static FileReaderFactory getInstance() {
     return fileReaderFactory;
@@ -31,12 +32,12 @@ public class FileReaderFactory {
    * type
    */
   public FileReader createFileReader(String filename) {
-    if ( FilenameUtilities.checkChunkFilename( filename ) ) {
-      return new ChunkReader( filename );
-    } else if ( FilenameUtilities.checkShardFilename( filename ) ) {
-      return new ShardReader( filename );
+    if (FilenameUtilities.checkChunkFilename(filename)) {
+      return new ChunkReader(filename);
+    } else if (FilenameUtilities.checkShardFilename(filename)) {
+      return new ShardReader(filename);
     } else {
-      logger.error( "FileReader couldn't be created. "+filename );
+      logger.error("FileReader couldn't be created. " + filename);
       return null;
     }
   }

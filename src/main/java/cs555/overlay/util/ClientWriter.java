@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author hayne
  */
 public class ClientWriter implements Runnable {
+
   private static final Logger logger = Logger.getInstance();
   private final Client client;
   private final Path pathToFile;
@@ -46,8 +47,8 @@ public class ClientWriter implements Runnable {
       String dateAddedFilename) {
     this.client = client;
     this.pathToFile = pathToFile;
-    this.chunksSent = new AtomicInteger( 0 );
-    this.totalChunks = new AtomicInteger( 1 );
+    this.chunksSent = new AtomicInteger(0);
+    this.totalChunks = new AtomicInteger(1);
     this.connectionCache = new TCPConnectionCache();
     this.dateAddedFilename = dateAddedFilename;
     this.stopRequested = false;
@@ -76,19 +77,18 @@ public class ClientWriter implements Runnable {
    */
   @Override
   public synchronized void run() {
-    try ( RandomAccessFile file = new RandomAccessFile( pathToFile.toString(),
-        "r" ); FileChannel channel = file.getChannel();
-          FileLock fileLock = channel.lock( 0, file.length(), true ) ) {
-      chunkizeFileAndStore( file, setTotalChunks( file.length() ) );
-    } catch ( IOException|InterruptedException e ) {
-      logger.error(
-          "Exception thrown while writing "+dateAddedFilename+" to the DFS. "+
-          e.getMessage() );
+    try (RandomAccessFile file = new RandomAccessFile(pathToFile.toString(),
+        "r"); FileChannel channel = file.getChannel();
+         FileLock fileLock = channel.lock(0, file.length(), true)) {
+      chunkizeFileAndStore(file, setTotalChunks(file.length()));
+    } catch (IOException|InterruptedException e) {
+      logger.error("Exception thrown while writing " + dateAddedFilename +
+                   " to the DFS. " + e.getMessage());
     }
     try {
       cleanup();
-    } catch ( InterruptedException ie ) {
-      logger.error( dateAddedFilename+" cleanup() interrupted." );
+    } catch (InterruptedException ie) {
+      logger.error(dateAddedFilename + " cleanup() interrupted.");
     }
   }
 
@@ -109,19 +109,19 @@ public class ClientWriter implements Runnable {
       throws IOException, InterruptedException {
     ClientStore requestMessage = createNewStoreMessage(); // reusable
     byte[] chunk = new byte[Constants.CHUNK_DATA_LENGTH]; // reusable
-    for ( int i = 0; i < totalChunks; ++i ) {
-      setServersAndNotify( null ); // set servers to null, notify isn't used
-      byte[] chunkContent = readAndResize( file, chunk );
-      if ( chunkContent != null && sendToController( requestMessage ) ) {
-        logger.debug( "wait for allocated servers "+i );
+    for (int i = 0; i < totalChunks; ++i) {
+      setServersAndNotify(null); // set servers to null, notify isn't used
+      byte[] chunkContent = readAndResize(file, chunk);
+      if (chunkContent != null && sendToController(requestMessage)) {
+        logger.debug("wait for allocated servers " + i);
         waitForServers(); // wait for Controller to send allocated servers
-        if ( servers == null || stopRequested ||
-             !sendChunkToServers( requestMessage.getSequence(),
-                 chunkContent ) ) { // stopped by user, or chunk not sent out
-          logger.error( "Couldn't store chunk "+i+" to the DFS. Stopping." );
+        if (servers == null || stopRequested ||
+            !sendChunkToServers(requestMessage.getSequence(),
+                chunkContent)) { // stopped by user, or chunk not sent out
+          logger.error("Couldn't store chunk " + i + " to the DFS. Stopping.");
           break;
         }
-        logger.debug( "allocated servers "+i+" arrived and not null" );
+        logger.debug("allocated servers " + i + " arrived and not null");
       } else {
         break;
       }
@@ -136,11 +136,11 @@ public class ClientWriter implements Runnable {
    * function will return.
    */
   private void waitForServers() {
-    while ( servers == null && !stopRequested ) {
+    while (servers == null && !stopRequested) {
       try {
-        this.wait( 5000 );
-      } catch ( InterruptedException ie ) {
-        logger.debug( ie.getMessage() );
+        this.wait(5000);
+      } catch (InterruptedException ie) {
+        logger.debug(ie.getMessage());
       }
     }
   }
@@ -156,10 +156,11 @@ public class ClientWriter implements Runnable {
    * Cleans up this ClientReader.
    */
   private void cleanup() throws InterruptedException {
-    client.removeWriter( dateAddedFilename ); // remove self
-    Thread.sleep( 1000 );
+    client.removeWriter(dateAddedFilename); // remove self
+    Thread.sleep(1000);
     connectionCache.closeConnections(); // shutdown connections
-    logger.info( "The ClientWriter for "+dateAddedFilename+" has cleaned up." );
+    logger.info(
+        "The ClientWriter for " + dateAddedFilename + " has cleaned up.");
   }
 
   /**
@@ -174,13 +175,13 @@ public class ClientWriter implements Runnable {
    */
   private byte[] readAndResize(RandomAccessFile file, byte[] chunk)
       throws IOException {
-    Arrays.fill( chunk, ( byte ) 0 );
-    int bytesRead = file.read( chunk ); // doesn't read fully
-    if ( bytesRead == -1 ) {
+    Arrays.fill(chunk, (byte) 0);
+    int bytesRead = file.read(chunk); // doesn't read fully
+    if (bytesRead == -1) {
       return null;
     }
     return bytesRead > 0 && bytesRead < 65536 ?
-               Arrays.copyOfRange( chunk, 0, bytesRead ) : chunk;
+               Arrays.copyOfRange(chunk, 0, bytesRead) : chunk;
   }
 
   /**
@@ -191,10 +192,10 @@ public class ClientWriter implements Runnable {
    */
   private boolean sendToController(Event event) {
     try {
-      client.getControllerConnection().getSender().sendData( event.getBytes() );
+      client.getControllerConnection().getSender().sendData(event.getBytes());
       return true;
-    } catch ( IOException ioe ) {
-      logger.error( "Couldn't send message to Controller." );
+    } catch (IOException ioe) {
+      logger.error("Couldn't send message to Controller.");
       return false;
     }
   }
@@ -209,22 +210,23 @@ public class ClientWriter implements Runnable {
    * sent
    */
   private boolean sendChunkToServers(int sequence, byte[] content) {
-    byte[][] contentToSend = createContentToSend( content );
+    byte[][] contentToSend = createContentToSend(content);
     SendsFileForStorage sendMessage =
-        new SendsFileForStorage( createFilename( sequence ), contentToSend,
-            servers );
+        new SendsFileForStorage(createFilename(sequence), contentToSend,
+            servers);
     int failedSends = 0;
     boolean sent;
     do {
-      sent = sendToChunkServer( sendMessage, sendMessage.getServer() );
-      if ( !sent ) {
+      sent = sendToChunkServer(sendMessage, sendMessage.getServer());
+      if (!sent) {
         failedSends++;
-        if ( ApplicationProperties.storageType.equals( "erasure" ) &&
-             failedSends > Constants.TOTAL_SHARDS-Constants.DATA_SHARDS ) {
+        if (ApplicationProperties.storageType.equals("erasure") &&
+            failedSends > Constants.TOTAL_SHARDS - Constants.DATA_SHARDS) {
           break;
         }
       }
-    } while ( !sent && sendMessage.nextPosition() ); return sent;
+    } while (!sent && sendMessage.nextPosition());
+    return sent;
   }
 
   /**
@@ -236,13 +238,12 @@ public class ClientWriter implements Runnable {
    */
   private boolean sendToChunkServer(Event event, String address) {
     try {
-      connectionCache
-          .getConnection( client, address, false )
-          .getSender()
-          .sendData( event.getBytes() );
+      connectionCache.getConnection(client, address, false)
+                     .getSender()
+                     .sendData(event.getBytes());
       return true;
-    } catch ( IOException ioe ) {
-      logger.debug( "Couldn't send file to "+address );
+    } catch (IOException ioe) {
+      logger.debug("Couldn't send file to " + address);
       return false;
     }
   }
@@ -257,12 +258,12 @@ public class ClientWriter implements Runnable {
    * message
    */
   private byte[][] createContentToSend(byte[] content) {
-    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+    if (ApplicationProperties.storageType.equals("erasure")) {
       int length = content.length;
-      content = standardizeLength( content );
-      return FileSynchronizer.makeShardsFromContent( length, content );
+      content = standardizeLength(content);
+      return FileSynchronizer.makeShardsFromContent(length, content);
     } else { // replication
-      return new byte[][]{ content };
+      return new byte[][]{content};
     }
   }
 
@@ -275,11 +276,11 @@ public class ClientWriter implements Runnable {
    * @return byte[] of length Constants.CHUNK_DATA_LENGTH with copied content
    */
   private byte[] standardizeLength(byte[] content) {
-    if ( content.length == Constants.CHUNK_DATA_LENGTH ) {
+    if (content.length == Constants.CHUNK_DATA_LENGTH) {
       return content;
     } else {
       byte[] buf = new byte[Constants.CHUNK_DATA_LENGTH];
-      System.arraycopy( content, 0, buf, 0, content.length );
+      System.arraycopy(content, 0, buf, 0, content.length);
       return buf;
     }
   }
@@ -292,8 +293,8 @@ public class ClientWriter implements Runnable {
    * @return number of chunks to read
    */
   private int setTotalChunks(long fileSize) {
-    int total = ( int ) Math.ceil( ( double ) fileSize/( double ) 65536 );
-    totalChunks.set( total );
+    int total = (int) Math.ceil((double) fileSize/(double) 65536);
+    totalChunks.set(total);
     return total;
   }
 
@@ -304,8 +305,7 @@ public class ClientWriter implements Runnable {
    * @return percentage of file written to DFS
    */
   public int getProgress() {
-    return ( int ) ((( double ) chunksSent.get()/( double ) totalChunks.get())*
-                    100.0);
+    return (int) (((double) chunksSent.get()/(double) totalChunks.get())*100.0);
   }
 
   /**
@@ -315,7 +315,7 @@ public class ClientWriter implements Runnable {
    * of 0
    */
   private ClientStore createNewStoreMessage() {
-    return new ClientStore( dateAddedFilename, 0 );
+    return new ClientStore(dateAddedFilename, 0);
   }
 
   /**
@@ -326,8 +326,8 @@ public class ClientWriter implements Runnable {
    * @return filename
    */
   private String createFilename(int sequence) {
-    String filename = dateAddedFilename+"_chunk"+sequence;
-    if ( ApplicationProperties.storageType.equals( "erasure" ) ) {
+    String filename = dateAddedFilename + "_chunk" + sequence;
+    if (ApplicationProperties.storageType.equals("erasure")) {
       filename += "_shard";
     }
     return filename;

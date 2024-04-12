@@ -24,11 +24,10 @@ public class ServerConnection {
 
   // HeartbeatInformation
   private final HeartbeatInformation heartbeatInformation;
+  private final long startTime;
   private int unhealthy;
   private int pokes;
   private int pokeReplies;
-
-  private final long startTime;
 
   public ServerConnection(int identifier, String address,
       TCPConnection connection) {
@@ -168,13 +167,11 @@ public class ServerConnection {
   }
 
   public synchronized String toString() {
-    StringBuilder sb = new StringBuilder();
-    sb.append(identifier).append(", ");
-    sb.append(address).append(", ");
-    sb.append(heartbeatInformation.getFreeSpace()/(1024*1024)).append("MB, ");
-    sb.append(heartbeatInformation.getTotalChunks()).append(" chunks, ");
-    sb.append("health: ").append(unhealthy);
-    return sb.toString();
+    String sb = identifier + ", " + address + ", " +
+                heartbeatInformation.getFreeSpace()/(1024*1024) + "MB, " +
+                heartbeatInformation.getTotalChunks() + " chunks, " +
+                "health: " + unhealthy;
+    return sb;
   }
 
 }

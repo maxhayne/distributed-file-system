@@ -7,22 +7,20 @@ package cs555.overlay.config;
  */
 public interface ApplicationProperties {
   String propertyFile =
-      System.getProperty( "user.dir" )+"/config/application.properties";
+      System.getProperty("user.dir") + "/config/application.properties";
 
   String controllerHost =
-      PropertyLoader.getInstance().getProperty( "controllerHost", "localhost" );
+      PropertyLoader.getInstance().getProperty("controllerHost", "localhost");
 
   int controllerPort = Integer.parseInt(
-      PropertyLoader.getInstance().getProperty( "controllerPort", "46529" ) );
+      PropertyLoader.getInstance().getProperty("controllerPort", "46529"));
 
-  String storageType = PropertyLoader
-                           .getInstance()
-                           .getProperty( "storageType", "replication" )
-                           .equalsIgnoreCase( "erasure" ) ? "erasure" :
+  String storageType = PropertyLoader.getInstance()
+                                     .getProperty("storageType", "replication")
+                                     .equalsIgnoreCase("erasure") ? "erasure" :
                            "replication";
 
-  String logLevel = PropertyLoader
-                        .getInstance()
-                        .getProperty( "logLevel", "info" )
-                        .equalsIgnoreCase( "debug" ) ? "debug" : "info";
+  String logLevel = PropertyLoader.getInstance()
+                                  .getProperty("logLevel", "info")
+                                  .equalsIgnoreCase("debug") ? "debug" : "info";
 }

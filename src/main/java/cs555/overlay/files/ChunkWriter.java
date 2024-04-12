@@ -29,7 +29,7 @@ public class ChunkWriter implements FileWriter {
 
   public ChunkWriter(FileMetadata metadata, FileReader reader) {
     this.metadata = metadata;
-    this.reader = ( ChunkReader ) reader;
+    this.reader = (ChunkReader) reader;
   }
 
   /**
@@ -48,7 +48,7 @@ public class ChunkWriter implements FileWriter {
    */
   @Override
   public void prepare() throws NoSuchAlgorithmException {
-    if ( content != null ) {
+    if (content != null) {
       prepareNewChunk();
     } else {
       prepareChunk();
@@ -60,10 +60,10 @@ public class ChunkWriter implements FileWriter {
    * 'content'.
    */
   private void prepareNewChunk() {
-    int sequence = FilenameUtilities.getSequence( metadata.getFilename() );
+    int sequence = FilenameUtilities.getSequence(metadata.getFilename());
     preparedChunk =
-        FileSynchronizer.readyChunkForStorage( sequence, metadata.getVersion(),
-            metadata.getTimestamp(), content );
+        FileSynchronizer.readyChunkForStorage(sequence, metadata.getVersion(),
+            metadata.getTimestamp(), content);
   }
 
   /**
@@ -75,10 +75,10 @@ public class ChunkWriter implements FileWriter {
    */
   private void prepareChunk() throws NoSuchAlgorithmException {
     byte[][] slices = replaceSlices();
-    updateMetadata( slices[0] );
+    updateMetadata(slices[0]);
     preparedChunk = new byte[FileSynchronizer.CHUNK_FILE_LENGTH];
-    for ( int i = 0; i < 8; ++i ) {
-      System.arraycopy( slices[i], 0, preparedChunk, i*(20+8195), 20+8195 );
+    for (int i = 0; i < 8; ++i) {
+      System.arraycopy(slices[i], 0, preparedChunk, i*(20 + 8195), 20 + 8195);
     }
   }
 
@@ -91,9 +91,9 @@ public class ChunkWriter implements FileWriter {
    */
   private byte[][] replaceSlices() {
     byte[][] slices = reader.getSlices();
-    if ( slicesToRepair != null && replacementSlices != null &&
-         slicesToRepair.length == replacementSlices.length ) {
-      for ( int i = 0; i < slicesToRepair.length; ++i ) {
+    if (slicesToRepair != null && replacementSlices != null &&
+        slicesToRepair.length == replacementSlices.length) {
+      for (int i = 0; i < slicesToRepair.length; ++i) {
         slices[slicesToRepair[i]] = replacementSlices[i];
       }
     }
@@ -111,16 +111,16 @@ public class ChunkWriter implements FileWriter {
    */
   private void updateMetadata(byte[] firstSlice)
       throws NoSuchAlgorithmException {
-    ByteBuffer firstSliceBuffer = ByteBuffer.wrap( firstSlice );
-    updateVersion( firstSliceBuffer );
-    updateTimestamp( firstSliceBuffer );
+    ByteBuffer firstSliceBuffer = ByteBuffer.wrap(firstSlice);
+    updateVersion(firstSliceBuffer);
+    updateTimestamp(firstSliceBuffer);
 
-    byte[] updatedSliceData = new byte[firstSlice.length-20];
-    firstSliceBuffer.get( 20, updatedSliceData );
+    byte[] updatedSliceData = new byte[firstSlice.length - 20];
+    firstSliceBuffer.get(20, updatedSliceData);
 
-    byte[] recomputedHash = FileSynchronizer.SHA1FromBytes( updatedSliceData );
+    byte[] recomputedHash = FileSynchronizer.SHA1FromBytes(updatedSliceData);
 
-    firstSliceBuffer.put( 0, recomputedHash );
+    firstSliceBuffer.put(0, recomputedHash);
   }
 
   /**
@@ -129,7 +129,7 @@ public class ChunkWriter implements FileWriter {
    * @param firstSliceBuffer ByteBuffer of first slice of chunk
    */
   private void updateVersion(ByteBuffer firstSliceBuffer) {
-    firstSliceBuffer.putInt( 28, metadata.getVersion() );
+    firstSliceBuffer.putInt(28, metadata.getVersion());
   }
 
   /**
@@ -138,7 +138,7 @@ public class ChunkWriter implements FileWriter {
    * @param firstSliceBuffer ByteBuffer of first slice of chunk
    */
   private void updateTimestamp(ByteBuffer firstSliceBuffer) {
-    firstSliceBuffer.putLong( 36, metadata.getTimestamp() );
+    firstSliceBuffer.putLong(36, metadata.getTimestamp());
   }
 
   /**
@@ -163,9 +163,8 @@ public class ChunkWriter implements FileWriter {
    */
   @Override
   public boolean write(FileSynchronizer synchronizer) {
-    if ( preparedChunk != null ) {
-      return synchronizer.overwriteFile( metadata.getFilename(),
-          preparedChunk );
+    if (preparedChunk != null) {
+      return synchronizer.overwriteFile(metadata.getFilename(), preparedChunk);
     }
     return false;
   }

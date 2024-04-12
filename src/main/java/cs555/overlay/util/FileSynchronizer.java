@@ -30,7 +30,7 @@ public class FileSynchronizer {
   private static final Logger logger = Logger.getInstance();
   public static int CHUNK_FILE_LENGTH = 65720;
   public static int SHARD_FILE_LENGTH =
-      10924+20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG;
+      10924 + 20 + (3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG;
 
   private final Path directory; // directory the server is storing files into
 
@@ -44,8 +44,8 @@ public class FileSynchronizer {
    */
   public FileSynchronizer(int identifier) throws IOException {
     this.directory =
-        Paths.get( File.separator, "tmp", "chunk-server-"+identifier );
-    Files.createDirectories( directory );
+        Paths.get(File.separator, "tmp", "chunk-server-" + identifier);
+    Files.createDirectories(directory);
   }
 
   /**
@@ -57,8 +57,8 @@ public class FileSynchronizer {
    */
   public static byte[] SHA1FromBytes(byte[] array)
       throws NoSuchAlgorithmException {
-    MessageDigest digest = MessageDigest.getInstance( "SHA1" );
-    return digest.digest( array );
+    MessageDigest digest = MessageDigest.getInstance("SHA1");
+    return digest.digest(array);
   }
 
   /**
@@ -70,20 +70,20 @@ public class FileSynchronizer {
    * @return byte[TOTAL_SHARDS][] of shards
    */
   public static byte[][] makeShardsFromContent(int length, byte[] content) {
-    int storedSize = Constants.BYTES_IN_INT+Constants.CHUNK_DATA_LENGTH;
-    int shardSize = (storedSize+8)/Constants.DATA_SHARDS;
+    int storedSize = Constants.BYTES_IN_INT + Constants.CHUNK_DATA_LENGTH;
+    int shardSize = (storedSize + 8)/Constants.DATA_SHARDS;
     int bufferSize = shardSize*Constants.DATA_SHARDS;
     byte[] allBytes = new byte[bufferSize];
-    ByteBuffer allBytesBuffer = ByteBuffer.wrap( allBytes );
-    allBytesBuffer.putInt( length );
-    allBytesBuffer.put( content );
+    ByteBuffer allBytesBuffer = ByteBuffer.wrap(allBytes);
+    allBytesBuffer.putInt(length);
+    allBytesBuffer.put(content);
     byte[][] shards = new byte[Constants.TOTAL_SHARDS][shardSize];
-    for ( int i = 0; i < Constants.DATA_SHARDS; ++i ) {
-      System.arraycopy( allBytes, i*shardSize, shards[i], 0, shardSize );
+    for (int i = 0; i < Constants.DATA_SHARDS; ++i) {
+      System.arraycopy(allBytes, i*shardSize, shards[i], 0, shardSize);
     }
     ReedSolomon rs =
-        new ReedSolomon( Constants.DATA_SHARDS, Constants.PARITY_SHARDS );
-    rs.encodeParity( shards, 0, shardSize );
+        new ReedSolomon(Constants.DATA_SHARDS, Constants.PARITY_SHARDS);
+    rs.encodeParity(shards, 0, shardSize);
     return shards;
   }
 
@@ -96,30 +96,30 @@ public class FileSynchronizer {
    * data couldn't be reconstructed
    */
   public static byte[][] decodeMissingShards(byte[][] shards) {
-    if ( shards.length != Constants.TOTAL_SHARDS ) {
+    if (shards.length != Constants.TOTAL_SHARDS) {
       return null;
     }
     boolean[] shardPresent = new boolean[Constants.TOTAL_SHARDS];
     int shardCount = 0;
     int shardSize = 0;
-    for ( int i = 0; i < Constants.TOTAL_SHARDS; i++ ) {
-      if ( shards[i] != null ) {
+    for (int i = 0; i < Constants.TOTAL_SHARDS; i++) {
+      if (shards[i] != null) {
         shardPresent[i] = true;
         shardCount++;
         shardSize = shards[i].length;
       }
     }
-    if ( shardCount < Constants.DATA_SHARDS ) {
+    if (shardCount < Constants.DATA_SHARDS) {
       return null;
     }
-    for ( int i = 0; i < Constants.TOTAL_SHARDS; i++ ) {
-      if ( !shardPresent[i] ) {
+    for (int i = 0; i < Constants.TOTAL_SHARDS; i++) {
+      if (!shardPresent[i]) {
         shards[i] = new byte[shardSize];
       }
     }
     ReedSolomon rs =
-        new ReedSolomon( Constants.DATA_SHARDS, Constants.PARITY_SHARDS );
-    rs.decodeMissing( shards, shardPresent, 0, shardSize );
+        new ReedSolomon(Constants.DATA_SHARDS, Constants.PARITY_SHARDS);
+    rs.decodeMissing(shards, shardPresent, 0, shardSize);
     return shards;
   }
 
@@ -135,12 +135,12 @@ public class FileSynchronizer {
   public static byte[] getContentFromShards(byte[][] shards) {
     int shardSize = shards[0].length;
     byte[] decodedChunk = new byte[shardSize*Constants.DATA_SHARDS];
-    for ( int i = 0; i < Constants.DATA_SHARDS; i++ ) {
-      System.arraycopy( shards[i], 0, decodedChunk, shardSize*i, shardSize );
+    for (int i = 0; i < Constants.DATA_SHARDS; i++) {
+      System.arraycopy(shards[i], 0, decodedChunk, shardSize*i, shardSize);
     }
     // first four bytes contains the length (hopefully)
-    int length = ByteBuffer.wrap( decodedChunk ).getInt();
-    return Arrays.copyOfRange( decodedChunk, 4, 4+length );
+    int length = ByteBuffer.wrap(decodedChunk).getInt();
+    return Arrays.copyOfRange(decodedChunk, 4, 4 + length);
   }
 
   /**
@@ -157,48 +157,48 @@ public class FileSynchronizer {
     int contentRemaining = content.length;
     byte[] chunkToFileArray = new byte[65720]; // total size of stored chunk
     byte[] sliceArray = new byte[8195];
-    ByteBuffer chunkToFileBuffer = ByteBuffer.wrap( chunkToFileArray );
-    ByteBuffer sliceBuffer = ByteBuffer.wrap( sliceArray );
-    sliceBuffer.putInt( 0 ); // padding
-    sliceBuffer.putInt( sequence );
-    sliceBuffer.putInt( version );
-    sliceBuffer.putInt( contentRemaining );
-    sliceBuffer.putLong( timestamp );
+    ByteBuffer chunkToFileBuffer = ByteBuffer.wrap(chunkToFileArray);
+    ByteBuffer sliceBuffer = ByteBuffer.wrap(sliceArray);
+    sliceBuffer.putInt(0); // padding
+    sliceBuffer.putInt(sequence);
+    sliceBuffer.putInt(version);
+    sliceBuffer.putInt(contentRemaining);
+    sliceBuffer.putLong(timestamp);
     int position = 0;
-    if ( contentRemaining >= 8195-24 ) {
-      sliceBuffer.put( content, position, 8195-24 );
-      contentRemaining -= (8195-24);
-      position += (8195-24);
+    if (contentRemaining >= 8195 - 24) {
+      sliceBuffer.put(content, position, 8195 - 24);
+      contentRemaining -= (8195 - 24);
+      position += (8195 - 24);
     } else {
-      sliceBuffer.put( content, 0, contentRemaining );
+      sliceBuffer.put(content, 0, contentRemaining);
       contentRemaining = 0;
     }
     try {
-      byte[] hash = SHA1FromBytes( sliceArray );
-      chunkToFileBuffer.put( hash );
-      chunkToFileBuffer.put( sliceArray );
+      byte[] hash = SHA1FromBytes(sliceArray);
+      chunkToFileBuffer.put(hash);
+      chunkToFileBuffer.put(sliceArray);
       sliceBuffer.clear();
-      Arrays.fill( sliceArray, ( byte ) 0 );
-      for ( int i = 0; i < 7; i++ ) {
-        if ( contentRemaining == 0 ) {
-          hash = SHA1FromBytes( sliceArray );
-        } else if ( contentRemaining < 8195 ) {
-          sliceBuffer.put( content, position, contentRemaining );
+      Arrays.fill(sliceArray, (byte) 0);
+      for (int i = 0; i < 7; i++) {
+        if (contentRemaining == 0) {
+          hash = SHA1FromBytes(sliceArray);
+        } else if (contentRemaining < 8195) {
+          sliceBuffer.put(content, position, contentRemaining);
           contentRemaining = 0;
-          hash = SHA1FromBytes( sliceArray );
+          hash = SHA1FromBytes(sliceArray);
         } else {
-          sliceBuffer.put( content, position, 8195 );
+          sliceBuffer.put(content, position, 8195);
           contentRemaining -= 8195;
           position += 8195;
-          hash = SHA1FromBytes( sliceArray );
+          hash = SHA1FromBytes(sliceArray);
         }
-        chunkToFileBuffer.put( hash );
-        chunkToFileBuffer.put( sliceArray );
+        chunkToFileBuffer.put(hash);
+        chunkToFileBuffer.put(sliceArray);
         sliceBuffer.clear();
-        Arrays.fill( sliceArray, ( byte ) 0 );
+        Arrays.fill(sliceArray, (byte) 0);
       }
-    } catch ( NoSuchAlgorithmException nsae ) {
-      logger.error( "Can't access algorithm for SHA1."+nsae.getMessage() );
+    } catch (NoSuchAlgorithmException nsae) {
+      logger.error("Can't access algorithm for SHA1." + nsae.getMessage());
       return null;
     }
     return chunkToFileArray;
@@ -217,25 +217,25 @@ public class FileSynchronizer {
   public static byte[] readyShardForStorage(int sequence, int fragment,
       int version, long timestamp, byte[] content) {
     byte[] shardToFileArray =
-        new byte[20+(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+
+        new byte[20 + (3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG +
                  10924]; // Hash+Sequence
     // +Fragment+Version+Timestamp+Data, 10964 bytes in total
     byte[] shardWithMetaData =
-        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10924];
-    ByteBuffer shardMetaWrap = ByteBuffer.wrap( shardWithMetaData );
-    shardMetaWrap.putInt( sequence );
-    shardMetaWrap.putInt( fragment );
-    shardMetaWrap.putInt( version );
-    shardMetaWrap.putLong( timestamp );
-    shardMetaWrap.put( content );
+        new byte[(3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG + 10924];
+    ByteBuffer shardMetaWrap = ByteBuffer.wrap(shardWithMetaData);
+    shardMetaWrap.putInt(sequence);
+    shardMetaWrap.putInt(fragment);
+    shardMetaWrap.putInt(version);
+    shardMetaWrap.putLong(timestamp);
+    shardMetaWrap.put(content);
     try {
-      byte[] hash = SHA1FromBytes( shardWithMetaData );
-      ByteBuffer shardFileArrayWrap = ByteBuffer.wrap( shardToFileArray );
-      shardFileArrayWrap.put( hash );
-      shardFileArrayWrap.put( shardWithMetaData );
+      byte[] hash = SHA1FromBytes(shardWithMetaData);
+      ByteBuffer shardFileArrayWrap = ByteBuffer.wrap(shardToFileArray);
+      shardFileArrayWrap.put(hash);
+      shardFileArrayWrap.put(shardWithMetaData);
       return shardToFileArray;
-    } catch ( NoSuchAlgorithmException nsae ) {
-      logger.error( "Can't access algorithm for SHA1. "+nsae.getMessage() );
+    } catch (NoSuchAlgorithmException nsae) {
+      logger.error("Can't access algorithm for SHA1. " + nsae.getMessage());
       return null;
     }
   }
@@ -249,31 +249,31 @@ public class FileSynchronizer {
    */
   public static ArrayList<Integer> checkChunkForCorruption(byte[] chunkBytes) {
     ArrayList<Integer> corrupt = new ArrayList<>();
-    for ( int i = 0; i < 8; ++i ) {
-      corrupt.add( i );
+    for (int i = 0; i < 8; ++i) {
+      corrupt.add(i);
     }
-    if ( chunkBytes == null ) {
+    if (chunkBytes == null) {
       return corrupt;
     }
-    ByteBuffer chunk = ByteBuffer.wrap( chunkBytes );
+    ByteBuffer chunk = ByteBuffer.wrap(chunkBytes);
     byte[] hash = new byte[20];
     byte[] slice = new byte[8195];
     try {
-      for ( int i = 0; i < 8; i++ ) {
-        chunk.get( hash );
-        chunk.get( slice );
-        byte[] computedHash = SHA1FromBytes( slice );
-        if ( Arrays.equals( hash, computedHash ) ) {
-          corrupt.remove( Integer.valueOf( i ) );
+      for (int i = 0; i < 8; i++) {
+        chunk.get(hash);
+        chunk.get(slice);
+        byte[] computedHash = SHA1FromBytes(slice);
+        if (Arrays.equals(hash, computedHash)) {
+          corrupt.remove(Integer.valueOf(i));
         }
-        Arrays.fill( hash, ( byte ) 0 );
-        Arrays.fill( slice, ( byte ) 0 );
+        Arrays.fill(hash, (byte) 0);
+        Arrays.fill(slice, (byte) 0);
       }
-    } catch ( BufferUnderflowException bue ) {
+    } catch (BufferUnderflowException bue) {
       // The array wasn't the correct length for a chunk
-      logger.debug( "Byte array wasn't formatted properly." );
-    } catch ( NoSuchAlgorithmException nsae ) {
-      logger.error( "Couldn't use SHA1. "+nsae.getMessage() );
+      logger.debug("Byte array wasn't formatted properly.");
+    } catch (NoSuchAlgorithmException nsae) {
+      logger.error("Couldn't use SHA1. " + nsae.getMessage());
     }
     // The array could pass all the tests and still be corrupt, if any
     // information was added to the end of the file storing the chunk.
@@ -288,24 +288,24 @@ public class FileSynchronizer {
    * @return true if corrupt, false if not
    */
   public static boolean checkShardForCorruption(byte[] shardBytes) {
-    if ( shardBytes == null ) {
+    if (shardBytes == null) {
       return true;
     }
-    ByteBuffer shardArrayBuffer = ByteBuffer.wrap( shardBytes );
+    ByteBuffer shardArrayBuffer = ByteBuffer.wrap(shardBytes);
     byte[] hash = new byte[20];
     byte[] shard =
-        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10924];
+        new byte[(3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG + 10924];
     try {
-      shardArrayBuffer.get( hash );
-      shardArrayBuffer.get( shard );
-      byte[] computedHash = SHA1FromBytes( shard );
-      if ( Arrays.equals( hash, computedHash ) ) {
+      shardArrayBuffer.get(hash);
+      shardArrayBuffer.get(shard);
+      byte[] computedHash = SHA1FromBytes(shard);
+      if (Arrays.equals(hash, computedHash)) {
         return false;
       }
-    } catch ( BufferUnderflowException bue ) {
+    } catch (BufferUnderflowException bue) {
       return true;
-    } catch ( NoSuchAlgorithmException nsae ) {
-      logger.error( "Couldn't use SHA1. "+nsae.getMessage() );
+    } catch (NoSuchAlgorithmException nsae) {
+      logger.error("Couldn't use SHA1. " + nsae.getMessage());
       return true;
     }
     return true;
@@ -319,11 +319,11 @@ public class FileSynchronizer {
    * @return a new byte[] with hashes removed
    */
   public static byte[] removeHashesFromChunk(byte[] chunkArray) {
-    ByteBuffer chunk = ByteBuffer.wrap( chunkArray );
+    ByteBuffer chunk = ByteBuffer.wrap(chunkArray);
     byte[] cleanedChunk = new byte[65560];
-    for ( int i = 0; i < 8; i++ ) {
-      chunk.position( chunk.position()+20 );
-      chunk.get( cleanedChunk, i*8195, 8195 );
+    for (int i = 0; i < 8; i++) {
+      chunk.position(chunk.position() + 20);
+      chunk.get(cleanedChunk, i*8195, 8195);
     }
     return cleanedChunk;
     // cleanedChunk will start like this:
@@ -341,11 +341,11 @@ public class FileSynchronizer {
    * @return a new byte[] with hash removed
    */
   public static byte[] removeHashFromShard(byte[] shardArray) {
-    ByteBuffer shard = ByteBuffer.wrap( shardArray );
+    ByteBuffer shard = ByteBuffer.wrap(shardArray);
     byte[] cleanedShard =
-        new byte[(3*Constants.BYTES_IN_INT)+Constants.BYTES_IN_LONG+10924];
-    shard.position( shard.position()+20 );
-    shard.get( cleanedShard, 0, cleanedShard.length );
+        new byte[(3*Constants.BYTES_IN_INT) + Constants.BYTES_IN_LONG + 10924];
+    shard.position(shard.position() + 20);
+    shard.get(cleanedShard, 0, cleanedShard.length);
     return cleanedShard;
     // cleanedShard will start like this:
     // Sequence (int)
@@ -363,11 +363,11 @@ public class FileSynchronizer {
    * @return a new byte[] with metadata removed
    */
   public static byte[] getDataFromChunk(byte[] chunkArray) {
-    ByteBuffer chunk = ByteBuffer.wrap( chunkArray );
-    int chunkLength = chunk.getInt( 12 );
-    chunk.position( 24 );
+    ByteBuffer chunk = ByteBuffer.wrap(chunkArray);
+    int chunkLength = chunk.getInt(12);
+    chunk.position(24);
     byte[] data = new byte[chunkLength];
-    chunk.get( data );
+    chunk.get(data);
     return data;
   }
 
@@ -378,10 +378,10 @@ public class FileSynchronizer {
    * @return a new byte[] with metadata removed
    */
   public static byte[] getDataFromShard(byte[] shardArray) {
-    ByteBuffer shard = ByteBuffer.wrap( shardArray );
-    shard.position( 20 );
+    ByteBuffer shard = ByteBuffer.wrap(shardArray);
+    shard.position(20);
     byte[] data = new byte[10924];
-    shard.get( data );
+    shard.get(data);
     return data;
   }
 
@@ -393,7 +393,7 @@ public class FileSynchronizer {
    * @return path to filename
    */
   public Path getPath(String filename) {
-    return directory.resolve( filename );
+    return directory.resolve(filename);
   }
 
   /**
@@ -402,7 +402,7 @@ public class FileSynchronizer {
    * @return usable space in bytes
    */
   public long getUsableSpace() {
-    return (new File( directory.toString() )).getUsableSpace();
+    return (new File(directory.toString())).getUsableSpace();
   }
 
   /**
@@ -414,12 +414,12 @@ public class FileSynchronizer {
    * doesn't exist
    */
   public List<String> listFiles() throws IOException {
-    try ( Stream<Path> stream = Files.list( directory ) ) {
+    try (Stream<Path> stream = Files.list(directory)) {
       return stream.parallel()
-                   .filter( file -> !Files.isDirectory( file ) )
-                   .map( Path::getFileName )
-                   .map( Path::toString )
-                   .filter( FilenameUtilities::checkFilename )
+                   .filter(file -> !Files.isDirectory(file))
+                   .map(Path::getFileName)
+                   .map(Path::toString)
+                   .filter(FilenameUtilities::checkFilename)
                    .toList();
     }
   }
@@ -433,15 +433,15 @@ public class FileSynchronizer {
    * entire file has been read
    */
   public byte[] readNBytesFromFile(String filename, int N) {
-    String fileWithPath = directory.resolve( filename ).toString();
+    String fileWithPath = directory.resolve(filename).toString();
     byte[] fileBytes = new byte[N];
-    try ( RandomAccessFile file = new RandomAccessFile( fileWithPath, "r" );
-          FileChannel channel = file.getChannel();
-          FileLock lock = channel.lock( 0, N, true ) ) {
-      file.read( fileBytes );
-    } catch ( IOException ioe ) {
-      logger.debug(
-          "Unable to read "+N+" bytes of '"+filename+"'. "+ioe.getMessage() );
+    try (RandomAccessFile file = new RandomAccessFile(fileWithPath, "r");
+         FileChannel channel = file.getChannel();
+         FileLock lock = channel.lock(0, N, true)) {
+      file.read(fileBytes);
+    } catch (IOException ioe) {
+      logger.debug("Unable to read " + N + " bytes of '" + filename + "'. " +
+                   ioe.getMessage());
     }
     return fileBytes;
   }
@@ -454,16 +454,15 @@ public class FileSynchronizer {
    * @return true if write succeeded, false if it didn't
    */
   public boolean overwriteFile(String filename, byte[] content) {
-    String filenameWithPath = directory.resolve( filename ).toString();
-    try (
-        RandomAccessFile file = new RandomAccessFile( filenameWithPath, "rw" );
-        FileChannel channel = file.getChannel();
-        FileLock lock = channel.lock() ) {
-      channel.truncate( 0 );
-      file.write( content );
-      logger.debug( content.length+" bytes written to "+filename );
+    String filenameWithPath = directory.resolve(filename).toString();
+    try (RandomAccessFile file = new RandomAccessFile(filenameWithPath, "rw");
+         FileChannel channel = file.getChannel();
+         FileLock lock = channel.lock()) {
+      channel.truncate(0);
+      file.write(content);
+      logger.debug(content.length + " bytes written to " + filename);
       return true;
-    } catch ( IOException ioe ) {
+    } catch (IOException ioe) {
       return false;
     }
   }
@@ -474,12 +473,12 @@ public class FileSynchronizer {
    * @param filenames filenames to be deleted
    */
   public void deleteFiles(ArrayList<String> filenames) {
-    filenames.forEach( name -> {
+    filenames.forEach(name -> {
       try {
-        Files.deleteIfExists( getPath( name ) );
-      } catch ( IOException ioe ) {
-        logger.debug( "Delete failed. "+ioe.getMessage() );
+        Files.deleteIfExists(getPath(name));
+      } catch (IOException ioe) {
+        logger.debug("Delete failed. " + ioe.getMessage());
       }
-    } );
+    });
   }
 }

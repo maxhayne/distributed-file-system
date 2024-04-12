@@ -24,19 +24,17 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class ControllerInformation {
 
   private static final Logger logger = Logger.getInstance();
-  private final Queue<Integer> idPool;
-  private final Map<Integer,ServerConnection> servers;
-
-  // Filename maps to a TreeMap where keys are sequence numbers.
-  // Sequence numbers then map to arrays containing host:port addresses of
-  // the servers storing that particular chunk.
-  private final Map<String,TreeMap<Integer,String[]>> fileTable;
-
   private static final Comparator<ServerConnection> serverComparator =
       Comparator.comparingInt(ServerConnection::getUnhealthy)
                 .thenComparing(ServerConnection::totalStoredChunks)
                 .thenComparing(ServerConnection::getFreeSpace,
                     Comparator.reverseOrder());
+  private final Queue<Integer> idPool;
+  private final Map<Integer,ServerConnection> servers;
+  // Filename maps to a TreeMap where keys are sequence numbers.
+  // Sequence numbers then map to arrays containing host:port addresses of
+  // the servers storing that particular chunk.
+  private final Map<String,TreeMap<Integer,String[]>> fileTable;
 
   /**
    * Constructor. Creates a list of available identifiers, and HashMaps for both
@@ -49,6 +47,53 @@ public class ControllerInformation {
     for (int i = 1; i <= 32; ++i) {
       this.idPool.add(i);
     }
+  }
+
+  private static boolean isChunkRecoverable(String[] servers) {
+    if (servers != null) {
+      int nullCount = ArrayUtilities.countNulls(servers);
+      if (ApplicationProperties.storageType.equals("erasure")) {
+        return nullCount <= Constants.TOTAL_SHARDS - Constants.DATA_SHARDS;
+      } else {
+        return nullCount < 3;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  /**
+   * Constructs a repair message of the correct type if there are enough servers
+   * that might hold the file in the servers array.
+   *
+   * @param filename of file to be repaired
+   * @param servers array of servers that hold the file
+   * @param destination address of server that needs the repair
+   * @param slices specific slices that need repairing, is ignored if using
+   * erasure coding
+   * @return a ForwardInformation object containing the address of the first
+   * server to forward the message to, and the actual message to be sent, or a
+   * ForwardInformation object with null values, if message couldn't be
+   * constructed
+   */
+  public static ForwardInformation constructRepairMessage(String filename,
+      String[] servers, String destination, int[] slices) {
+    if (isChunkRecoverable(servers)) {
+      if (ApplicationProperties.storageType.equals("erasure")) {
+        RepairShard repairShard =
+            new RepairShard(filename, destination, servers);
+        return new ForwardInformation(repairShard.getAddress(), repairShard);
+      } else {
+        String[] strippedServers =
+            ArrayUtilities.reduceReplicationServers(servers, destination);
+        if (strippedServers.length != 0) {
+          RepairChunk repairChunk =
+              new RepairChunk(filename, destination, slices, strippedServers);
+          return new ForwardInformation(repairChunk.getAddress(), repairChunk);
+        }
+      }
+    }
+    return new ForwardInformation(null, null);
   }
 
   /**
@@ -438,19 +483,6 @@ public class ControllerInformation {
     }
   }
 
-  private static boolean isChunkRecoverable(String[] servers) {
-    if (servers != null) {
-      int nullCount = ArrayUtilities.countNulls(servers);
-      if (ApplicationProperties.storageType.equals("erasure")) {
-        return nullCount <= Constants.TOTAL_SHARDS - Constants.DATA_SHARDS;
-      } else {
-        return nullCount < 3;
-      }
-    } else {
-      return false;
-    }
-  }
-
   /**
    * Calls deleteFileFromDFS for any file that has no recoverable chunks.
    */
@@ -566,39 +598,5 @@ public class ControllerInformation {
         }
       }
     }
-  }
-
-  /**
-   * Constructs a repair message of the correct type if there are enough servers
-   * that might hold the file in the servers array.
-   *
-   * @param filename of file to be repaired
-   * @param servers array of servers that hold the file
-   * @param destination address of server that needs the repair
-   * @param slices specific slices that need repairing, is ignored if using
-   * erasure coding
-   * @return a ForwardInformation object containing the address of the first
-   * server to forward the message to, and the actual message to be sent, or a
-   * ForwardInformation object with null values, if message couldn't be
-   * constructed
-   */
-  public static ForwardInformation constructRepairMessage(String filename,
-      String[] servers, String destination, int[] slices) {
-    if (isChunkRecoverable(servers)) {
-      if (ApplicationProperties.storageType.equals("erasure")) {
-        RepairShard repairShard =
-            new RepairShard(filename, destination, servers);
-        return new ForwardInformation(repairShard.getAddress(), repairShard);
-      } else {
-        String[] strippedServers =
-            ArrayUtilities.reduceReplicationServers(servers, destination);
-        if (strippedServers.length != 0) {
-          RepairChunk repairChunk =
-              new RepairChunk(filename, destination, slices, strippedServers);
-          return new ForwardInformation(repairChunk.getAddress(), repairChunk);
-        }
-      }
-    }
-    return new ForwardInformation(null, null);
   }
 }

@@ -19,8 +19,8 @@ public class ChunkServerRespondsToHeartbeat implements Event {
 
   public ChunkServerRespondsToHeartbeat(byte[] marshalledBytes)
       throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
@@ -33,11 +33,11 @@ public class ChunkServerRespondsToHeartbeat implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.write( type );
+    dout.write(type);
 
-    dout.writeInt( identifier );
+    dout.writeInt(identifier);
 
     byte[] returnable = bout.toByteArray();
     dout.close();

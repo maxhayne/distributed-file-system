@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author hayne
  */
 public class FileMap {
-  private final ConcurrentHashMap<String, FileMetadata> files;
+  private final ConcurrentHashMap<String,FileMetadata> files;
 
   public FileMap() {
     this.files = new ConcurrentHashMap<>();
@@ -22,7 +22,7 @@ public class FileMap {
    *
    * @return files
    */
-  public ConcurrentHashMap<String, FileMetadata> getMap() {
+  public ConcurrentHashMap<String,FileMetadata> getMap() {
     return files;
   }
 
@@ -37,10 +37,10 @@ public class FileMap {
    * @return FileMetadata object stored in the files map
    */
   public FileMetadata get(String filename) {
-    FileMetadata meta = files.get( filename );
-    if ( meta == null ) {
-      meta = new FileMetadata( filename, 0, System.currentTimeMillis() );
-      FileMetadata put = files.putIfAbsent( filename, meta );
+    FileMetadata meta = files.get(filename);
+    if (meta == null) {
+      meta = new FileMetadata(filename, 0, System.currentTimeMillis());
+      FileMetadata put = files.putIfAbsent(filename, meta);
       return put == null ? meta : put;
     } else {
       return meta;
@@ -54,12 +54,12 @@ public class FileMap {
    */
   public ArrayList<String> deleteFile(String filename) {
     ArrayList<String> deletedFiles = new ArrayList<>();
-    files.forEach( (name, metadata) -> {
-      if ( FilenameUtilities.getBaseFilename( name ).equals( filename ) ) {
-        deletedFiles.add( name );
-        files.remove( name );
+    files.forEach((name, metadata) -> {
+      if (FilenameUtilities.getBaseFilename(name).equals(filename)) {
+        deletedFiles.add(name);
+        files.remove(name);
       }
-    } );
+    });
     return deletedFiles;
   }
 }

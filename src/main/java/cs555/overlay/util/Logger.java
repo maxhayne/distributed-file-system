@@ -15,14 +15,17 @@ public class Logger {
   /**
    * Private Constructor.
    */
-  private Logger() {}
+  private Logger() {
+  }
 
   /**
    * Get instance of singleton Logger
    *
    * @return logger singleton
    */
-  public static Logger getInstance() {return logger;}
+  public static Logger getInstance() {
+    return logger;
+  }
 
   /**
    * Print DEBUG log message.
@@ -30,11 +33,12 @@ public class Logger {
    * @param message to append to log
    */
   public void debug(String message) {
-    if ( !ApplicationProperties.logLevel.equalsIgnoreCase( "debug" ) ) {
+    if (!ApplicationProperties.logLevel.equalsIgnoreCase("debug")) {
       return;
     }
     String[] details = details();
-    System.out.printf( "%-7s %s %s %s%n", "[DEBUG]", details[0], details[1], message );
+    System.out.printf("%-7s %s %s %s%n", "[DEBUG]", details[0], details[1],
+        message);
   }
 
   /**
@@ -44,7 +48,8 @@ public class Logger {
    */
   public void info(String message) {
     String[] details = details();
-    System.out.printf( "%-7s %s %s %s%n", "[INFO]", details[0], details[1], message );
+    System.out.printf("%-7s %s %s %s%n", "[INFO]", details[0], details[1],
+        message);
   }
 
   /**
@@ -54,8 +59,8 @@ public class Logger {
    */
   public void error(String message) {
     String[] details = details();
-    System.err.printf( "%-7s %s %s %s%n", "[ERROR]", details[0], details[1],
-        message );
+    System.err.printf("%-7s %s %s %s%n", "[ERROR]", details[0], details[1],
+        message);
   }
 
   /**
@@ -69,7 +74,7 @@ public class Logger {
     details[0] = Thread.currentThread().getStackTrace()[3].getClassName();
     details[1] = Thread.currentThread().getStackTrace()[3].getMethodName();
     details[2] = Integer.toString(
-        Thread.currentThread().getStackTrace()[3].getLineNumber() );
+        Thread.currentThread().getStackTrace()[3].getLineNumber());
     return details;
   }
 }

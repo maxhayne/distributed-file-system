@@ -31,12 +31,11 @@ public class ChunkServer implements Node {
   private static final Logger logger = Logger.getInstance();
   private final String host;
   private final int port;
-  private TCPConnection controllerConnection;
   private final TCPConnectionCache connectionCache;
   private final FileMap files; // map of files stored by server
-
   // These are set in the registrationSetup() method:
   private final AtomicBoolean isRegistered;
+  private TCPConnection controllerConnection;
   private int identifier;
   private FileSynchronizer synchronizer;
   private Timer heartbeatTimer;

@@ -31,46 +31,46 @@ public class RepairChunk implements Event {
   }
 
   public RepairChunk(byte[] marshalledBytes) throws IOException {
-    ByteArrayInputStream bin = new ByteArrayInputStream( marshalledBytes );
-    DataInputStream din = new DataInputStream( bin );
+    ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
+    DataInputStream din = new DataInputStream(bin);
 
     type = din.readByte();
 
     int len = din.readInt();
     byte[] array = new byte[len];
-    din.readFully( array );
-    filename = new String( array );
+    din.readFully(array);
+    filename = new String(array);
 
     len = din.readInt();
     array = new byte[len];
-    din.readFully( array );
-    destination = new String( array );
+    din.readFully(array);
+    destination = new String(array);
 
     int numberOfSlices = din.readInt();
     slicesToRepair = new int[numberOfSlices];
-    for ( int i = 0; i < numberOfSlices; ++i ) {
+    for (int i = 0; i < numberOfSlices; ++i) {
       slicesToRepair[i] = din.readInt();
     }
 
     int numberOfServers = din.readInt();
     servers = new String[numberOfServers];
-    for ( int i = 0; i < numberOfServers; ++i ) {
+    for (int i = 0; i < numberOfServers; ++i) {
       len = din.readInt();
       array = new byte[len];
-      din.readFully( array );
-      servers[i] = new String( array );
+      din.readFully(array);
+      servers[i] = new String(array);
     }
 
     int numberOfReplacementSlices = din.readInt();
     replacementSlices = new byte[numberOfReplacementSlices][];
-    for ( int i = 0; i < numberOfReplacementSlices; ++i ) {
+    for (int i = 0; i < numberOfReplacementSlices; ++i) {
       len = din.readInt();
-      if ( len == 0 ) {
+      if (len == 0) {
         replacementSlices[i] = null;
         continue;
       }
       array = new byte[len];
-      din.readFully( array );
+      din.readFully(array);
       replacementSlices[i] = array;
     }
 
@@ -106,8 +106,8 @@ public class RepairChunk implements Event {
    * @param sliceBytes the replacement slice byte string
    */
   public void attachSlice(int sliceIndex, byte[] sliceBytes) {
-    for ( int i = 0; i < slicesToRepair.length; ++i ) {
-      if ( slicesToRepair[i] == sliceIndex ) {
+    for (int i = 0; i < slicesToRepair.length; ++i) {
+      if (slicesToRepair[i] == sliceIndex) {
         replacementSlices[i] = sliceBytes;
         return;
       }
@@ -121,8 +121,8 @@ public class RepairChunk implements Event {
    * otherwise
    */
   public boolean allSlicesRetrieved() {
-    for ( byte[] replacementSlice : replacementSlices ) {
-      if ( replacementSlice == null ) {
+    for (byte[] replacementSlice : replacementSlices) {
+      if (replacementSlice == null) {
         return false;
       }
     }
@@ -139,7 +139,7 @@ public class RepairChunk implements Event {
    * 'destination' server.
    */
   public boolean nextPosition() {
-    if ( position < servers.length-1 ) {
+    if (position < servers.length - 1) {
       position++;
       return true;
     }
@@ -166,15 +166,15 @@ public class RepairChunk implements Event {
    */
   public int[] slicesStillNeedingRepair() {
     int count = 0;
-    for ( byte[] replacementSlice : replacementSlices ) {
-      if ( replacementSlice == null ) {
+    for (byte[] replacementSlice : replacementSlices) {
+      if (replacementSlice == null) {
         count++;
       }
     }
     int[] slicesNeedingRepair = new int[count];
     int index = 0;
-    for ( int i = 0; i < replacementSlices.length; ++i ) {
-      if ( replacementSlices[i] == null ) {
+    for (int i = 0; i < replacementSlices.length; ++i) {
+      if (replacementSlices[i] == null) {
         slicesNeedingRepair[index] = slicesToRepair[i];
         index++;
       }
@@ -191,18 +191,18 @@ public class RepairChunk implements Event {
    */
   public int[] getRepairedIndices() {
     int totalSlicesRetrieved = 0;
-    for ( byte[] replacementSlice : replacementSlices ) {
-      if ( replacementSlice != null ) {
+    for (byte[] replacementSlice : replacementSlices) {
+      if (replacementSlice != null) {
         totalSlicesRetrieved++;
       }
     }
-    if ( totalSlicesRetrieved == 0 ) {
+    if (totalSlicesRetrieved == 0) {
       return null;
     }
     int[] repairedSlices = new int[totalSlicesRetrieved];
     int index = 0;
-    for ( int i = 0; i < replacementSlices.length; ++i ) {
-      if ( replacementSlices[i] != null ) {
+    for (int i = 0; i < replacementSlices.length; ++i) {
+      if (replacementSlices[i] != null) {
         repairedSlices[index] = slicesToRepair[i];
         index++;
       }
@@ -217,18 +217,18 @@ public class RepairChunk implements Event {
    */
   public byte[][] getReplacedSlices() {
     int totalSlicesRetrieved = 0;
-    for ( byte[] replacementSlice : replacementSlices ) {
-      if ( replacementSlice != null ) {
+    for (byte[] replacementSlice : replacementSlices) {
+      if (replacementSlice != null) {
         totalSlicesRetrieved++;
       }
     }
-    if ( totalSlicesRetrieved == 0 ) {
+    if (totalSlicesRetrieved == 0) {
       return null;
     }
     byte[][] slicesRetrieved = new byte[totalSlicesRetrieved][];
     int index = 0;
-    for ( byte[] replacementSlice : replacementSlices ) {
-      if ( replacementSlice != null ) {
+    for (byte[] replacementSlice : replacementSlices) {
+      if (replacementSlice != null) {
         slicesRetrieved[index] = replacementSlice;
         index++;
       }
@@ -244,41 +244,41 @@ public class RepairChunk implements Event {
   @Override
   public byte[] getBytes() throws IOException {
     ByteArrayOutputStream bout = new ByteArrayOutputStream();
-    DataOutputStream dout = new DataOutputStream( bout );
+    DataOutputStream dout = new DataOutputStream(bout);
 
-    dout.write( type );
+    dout.write(type);
 
     byte[] array = filename.getBytes();
-    dout.writeInt( array.length );
-    dout.write( array );
+    dout.writeInt(array.length);
+    dout.write(array);
 
     array = destination.getBytes();
-    dout.writeInt( array.length );
-    dout.write( array );
+    dout.writeInt(array.length);
+    dout.write(array);
 
-    dout.writeInt( slicesToRepair.length );
-    for ( int sliceIndex : slicesToRepair ) {
-      dout.writeInt( sliceIndex );
+    dout.writeInt(slicesToRepair.length);
+    for (int sliceIndex : slicesToRepair) {
+      dout.writeInt(sliceIndex);
     }
 
-    dout.writeInt( servers.length );
-    for ( String server : servers ) {
+    dout.writeInt(servers.length);
+    for (String server : servers) {
       array = server.getBytes();
-      dout.writeInt( array.length );
-      dout.write( array );
+      dout.writeInt(array.length);
+      dout.write(array);
     }
 
-    dout.writeInt( replacementSlices.length );
-    for ( byte[] replacementSlice : replacementSlices ) {
-      if ( replacementSlice == null ) {
-        dout.writeInt( 0 );
+    dout.writeInt(replacementSlices.length);
+    for (byte[] replacementSlice : replacementSlices) {
+      if (replacementSlice == null) {
+        dout.writeInt(0);
         continue;
       }
-      dout.writeInt( replacementSlice.length );
-      dout.write( replacementSlice );
+      dout.writeInt(replacementSlice.length);
+      dout.write(replacementSlice);
     }
 
-    dout.writeInt( position );
+    dout.writeInt(position);
 
     byte[] marshalledBytes = bout.toByteArray();
     dout.close();
