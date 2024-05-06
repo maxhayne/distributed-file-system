@@ -49,7 +49,7 @@ public class ClientWriter implements Runnable {
     this.pathToFile = pathToFile;
     this.chunksSent = new AtomicInteger(0);
     this.totalChunks = new AtomicInteger(1);
-    this.connectionCache = new TCPConnectionCache();
+    this.connectionCache = new TCPConnectionCache(client);
     this.dateAddedFilename = dateAddedFilename;
     this.stopRequested = false;
   }
@@ -193,11 +193,11 @@ public class ClientWriter implements Runnable {
   private boolean sendToController(Event event) {
     try {
       client.getControllerConnection().getSender().sendData(event.getBytes());
-      return true;
     } catch (IOException ioe) {
       logger.error("Couldn't send message to Controller.");
       return false;
     }
+    return true;
   }
 
   /**
@@ -237,15 +237,7 @@ public class ClientWriter implements Runnable {
    * @return true if sent, false if not
    */
   private boolean sendToChunkServer(Event event, String address) {
-    try {
-      connectionCache.getConnection(client, address, false)
-                     .getSender()
-                     .sendData(event.getBytes());
-      return true;
-    } catch (IOException ioe) {
-      logger.debug("Couldn't send file to " + address);
-      return false;
-    }
+    return connectionCache.send(address, event, false, false);
   }
 
   /**
@@ -261,7 +253,7 @@ public class ClientWriter implements Runnable {
     if (ApplicationProperties.storageType.equals("erasure")) {
       int length = content.length;
       content = standardizeLength(content);
-      return FileSynchronizer.makeShardsFromContent(length, content);
+      return FileUtilities.makeShardsFromContent(length, content);
     } else { // replication
       return new byte[][]{content};
     }

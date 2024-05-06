@@ -2,7 +2,8 @@ package cs555.overlay.node;
 
 import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.config.Constants;
-import cs555.overlay.files.*;
+import cs555.overlay.files.ChunkProcessor;
+import cs555.overlay.files.ShardProcessor;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.transport.TCPServerThread;
@@ -12,11 +13,9 @@ import cs555.overlay.wireformats.*;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.net.Socket;
 import java.security.NoSuchAlgorithmException;
 import java.util.Scanner;
 import java.util.Timer;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -33,25 +32,27 @@ public class ChunkServer implements Node {
   private final int port;
   private final TCPConnectionCache connectionCache;
   private final FileMap files; // map of files stored by server
-  // These are set in the registrationSetup() method:
+
+  // Assigned in registrationSetup()
   private final AtomicBoolean isRegistered;
-  private TCPConnection controllerConnection;
   private int identifier;
-  private FileSynchronizer synchronizer;
-  private Timer heartbeatTimer;
+  private Timer heartbeat;
+  private FileStreamer streamer;
+
+  record ProcessedFile(String filename, byte[] content, int[] corrupt) {}
 
   public ChunkServer(String host, int port) {
     this.host = host;
     this.port = port;
-    this.connectionCache = new TCPConnectionCache();
+    this.connectionCache = new TCPConnectionCache(this); // TODO Dangerous?
     this.files = new FileMap();
     this.isRegistered = new AtomicBoolean(false);
   }
 
   /**
-   * Entry point for the ChunkServer. Creates a ServerSocket with optional port
-   * as a command line argument, connects to the Controller, sends the
-   * Controller a registration request, and then loops for user commands.
+   * Creates a ServerSocket with an optional port command line argument,
+   * connects to the Controller, sends the Controller a registration request,
+   * then loops for user commands.
    *
    * @param args port for ServerSocket (optional)
    */
@@ -59,19 +60,12 @@ public class ChunkServer implements Node {
     // Start the TCPServerThread, so that when we try to register with
     // the Controller, we can guarantee it is already running.
 
-    // Taking the storage directory was fine for testing purposes, but
-    // let's convert ChunkServers to store their files in the /tmp
-    // directory.
-
     // If an argument is provided by the user, interpret it as a custom
     // port for the TCPServerThread to run on, and try to use it. Will
     // throw an Exception if the argument is not an integer.
     int serverPort = args.length > 0 ? Integer.parseInt(args[0]) : 0;
 
-    try (ServerSocket serverSocket = new ServerSocket(serverPort);
-         Socket controllerSocket = new Socket(
-             ApplicationProperties.controllerHost,
-             ApplicationProperties.controllerPort)) {
+    try (ServerSocket serverSocket = new ServerSocket(serverPort)) {
 
       String host = InetAddress.getLocalHost().getHostAddress();
       ChunkServer chunkServer =
@@ -84,20 +78,14 @@ public class ChunkServer implements Node {
           "ServerThread has started at [" + chunkServer.getHost() + ":" +
           chunkServer.getPort() + "]");
 
-      // Establish socket connection with controller, send a registration
-      // request, and start the TCPReceiverThread
-      chunkServer.controllerConnection =
-          new TCPConnection(chunkServer, controllerSocket);
-      chunkServer.sendGeneralMessage(Protocol.CHUNK_SERVER_SENDS_REGISTRATION,
-          host + ":" + serverSocket.getLocalPort(),
-          chunkServer.controllerConnection);
-      logger.info("A registration request has been sent to the Controller.");
-      chunkServer.controllerConnection.start();
-
-      // Loop for user interaction
-      chunkServer.interact();
-    } catch (IOException ioe) {
-      logger.error("ChunkServer failed to start. " + ioe.getMessage());
+      if (chunkServer.registerWithController()) {
+        logger.info("Registration request sent to the Controller.");
+        // Loop for user commands
+        chunkServer.interact();
+      }
+    } catch (IOException e) {
+      logger.error("ChunkServer failed to start. " + e.getMessage());
+    } finally {
       System.exit(1);
     }
   }
@@ -114,16 +102,6 @@ public class ChunkServer implements Node {
 
   @Override
   public void onEvent(Event event, TCPConnection connection) {
-    // If the event being processed wasn't sent by the Controller, check
-    // to make sure that the ChunkServer is registered. If not, don't
-    // process the Event.
-    if (connection != controllerConnection && !isRegistered.get()) {
-      logger.debug(
-          "onEvent: Event wasn't be processed because the ChunkServer " +
-          "isn't registered. " + event.getType());
-      return;
-    }
-
     switch (event.getType()) {
       case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS:
         registrationInterpreter(event);
@@ -134,11 +112,19 @@ public class ChunkServer implements Node {
         break;
 
       case Protocol.SENDS_FILE_FOR_STORAGE:
-        storeAndRelay(event);
+        try {
+          storeAndRelay(event);
+        } catch (NoSuchAlgorithmException e) {
+          logger.error("SHA1 unavailable. " + e.getMessage());
+        }
         break;
 
       case Protocol.REQUEST_FILE:
-        serveFile(event, connection);
+        try {
+          serveFile(event, connection);
+        } catch (NoSuchAlgorithmException e) {
+          logger.error("SHA1 unavailable. " + e.getMessage());
+        }
         break;
 
       case Protocol.CONTROLLER_SENDS_HEARTBEAT:
@@ -146,11 +132,19 @@ public class ChunkServer implements Node {
         break;
 
       case Protocol.REPAIR_CHUNK:
-        repairChunkHelper(event);
+        try {
+          repairChunkHelper(event);
+        } catch (NoSuchAlgorithmException e) {
+          logger.error("SHA1 unavailable. " + e.getMessage());
+        }
         break;
 
       case Protocol.REPAIR_SHARD:
-        repairShardHelper(event);
+        try {
+          repairShardHelper(event);
+        } catch (NoSuchAlgorithmException e) {
+          logger.error("SHA1 unavailable. " + e.getMessage());
+        }
         break;
 
       default:
@@ -160,275 +154,261 @@ public class ChunkServer implements Node {
   }
 
   /**
-   * If this ChunkServer is this message's destination, tries to reconstruct its
-   * local shard from the fragments in the message. If it isn't the destination,
-   * tries to attach its own shard to the message to relay.
+   * Sends a registration request to the Controller.
    *
-   * @param event message being processed
+   * @return true if request was sent, false otherwise
    */
-  private void repairShardHelper(Event event) {
-    logger.debug("Dealing with shard repair event.");
-    RepairShard repairMessage = (RepairShard) event;
-
-    ShardReader shardReader = new ShardReader(repairMessage.getFilename());
-    FileMetadata metadata = files.get(repairMessage.getFilename());
-    logger.debug(
-        "About to acquire lock on metadata for " + repairMessage.getFilename());
-    synchronized(metadata) { // Only we can read this particular filename
-      logger.debug(
-          "Acquired lock on metadata for " + repairMessage.getFilename());
-      shardReader.readAndProcess(synchronizer);
-      // If we are the target in the repair
-      if (repairMessage.getDestination().equals(host + ":" + port)) {
-        if (shardReader.isCorrupt()) { // And if the shard is corrupt
-          metadata.updateIfNotNew();
-          boolean repaired = repairAndWriteShard(repairMessage, metadata);
-          String succeeded = repaired ? "" : "NOT ";
-          logger.debug(
-              repairMessage.getFilename() + " was " + succeeded + "repaired.");
-          // Tell Controller if the chunk couldn't be repaired?
-        }
-        metadata.notNew();
-        return;
-      }
-    }
-    logger.debug("About to contributed to shardRepair");
-    // Try to attach fragment to message and send along
-    contributeToShardRepair(repairMessage, shardReader);
-    String nextServer;
-    if (repairMessage.fragmentsCollected() >= Constants.DATA_SHARDS ||
-        !repairMessage.nextPosition()) {
-      nextServer = repairMessage.getDestination();
-      repairMessage.setPositionToDestination(); // new, and necessary
-    } else {
-      nextServer = repairMessage.getAddress();
-    }
-    try {
-      logger.debug("About to relay to next server " + nextServer);
-      connectionCache.getConnection(this, nextServer, false)
-                     .getSender()
-                     .sendData(repairMessage.getBytes());
-      logger.debug("Relayed to next server " + nextServer);
-    } catch (IOException ioe) {
-      logger.debug("Message couldn't be forwarded. " + ioe.getMessage());
-      connectionCache.removeConnection(nextServer);
-    }
+  private boolean registerWithController() {
+    GeneralMessage registration =
+        new GeneralMessage(Protocol.CHUNK_SERVER_SENDS_REGISTRATION,
+            host + ":" + port);
+    return connectionCache.send(controllerAddress(), registration, false, true);
   }
 
   /**
-   * Attaches local fragment to the repair message if the fragment isn't
-   * corrupt.
-   *
-   * @param repairMessage to attach our fragment to
-   * @param shardReader that was used to read the local fragment
-   */
-  private void contributeToShardRepair(RepairShard repairMessage,
-      ShardReader shardReader) {
-    if (!shardReader.isCorrupt()) { // if our own shard isn't corrupt
-      int fragmentIndex =
-          FilenameUtilities.getFragment(shardReader.getFilename());
-      // attach local fragment to correct fragment index (parsed from filename)
-      repairMessage.attachFragment(fragmentIndex, shardReader.getData());
-    }
-  }
-
-  /**
-   * Uses the shard fragments attached to the message to attempt to repair the
-   * local corrupt fragment, and write it to disk.
-   *
-   * @param repairMessage received from another ChunkServer
-   * @param metadata associated with the shard
-   * @return true if repaired fragment was written to disk, false otherwise
-   */
-  private boolean repairAndWriteShard(RepairShard repairMessage,
-      FileMetadata metadata) {
-    ShardWriter shardWriter = new ShardWriter(metadata);
-    shardWriter.setReconstructionShards(repairMessage.getFragments());
-    try {
-      shardWriter.prepare();
-      return shardWriter.write(synchronizer);
-    } catch (NoSuchAlgorithmException nsae) {
-      logger.error("SHA1 unavailable. '" + repairMessage.getFilename() +
-                   "' could not be repaired." + nsae.getMessage());
-    }
-    return false;
-  }
-
-  /**
-   * If this ChunkServer is this message's destination, tries to repair its
-   * local chunk with the replacement slices in the message. If it isn't the
-   * destination, tries to add its local non-corrupt chunk slices to the message
+   * Either repairs the local shard or attaches the local shard to the message
    * to be relayed.
    *
    * @param event message being processed
    */
-  private void repairChunkHelper(Event event) {
-    RepairChunk repairMessage = (RepairChunk) event;
+  private void repairShardHelper(Event event) throws NoSuchAlgorithmException {
+    RepairShard repairMessage = (RepairShard) event;
+    String filename = repairMessage.getFilename();
 
-    ChunkReader chunkReader = new ChunkReader(repairMessage.getFilename());
-    FileMetadata metadata = files.get(repairMessage.getFilename());
-    synchronized(metadata) {
-      chunkReader.readAndProcess(synchronizer);
-      // If we are the target for the repair
-      if (repairMessage.getDestination().equals(host + ":" + port)) {
-        if (chunkReader.isCorrupt()) { // And if the chunk is corrupt
-          metadata.updateIfNotNew();
-          boolean repaired =
-              repairAndWriteChunk(repairMessage, chunkReader, metadata);
-          String succeeded = repaired ? "" : "NOT ";
-          logger.debug(
-              repairMessage.getFilename() + " was " + succeeded + "repaired.");
-          // Tell Controller if the chunk couldn't be repaired?
-        }
-        metadata.notNew();
-        return;
+    // Process the file
+    // Either tack the file onto the repair message, or repair the local file
+    // Unlock the file for other threads to use
+
+    FileMap.MetaRecord record = files.get(filename); // record is locked
+    byte[] fileBytes = streamer.read(filename); // read file
+    ShardProcessor processor = new ShardProcessor(fileBytes); // process file
+
+    // repair if we're the destination
+    if (repairMessage.getDestination().equals(host + ":" + port)) {
+      if (processor.isCorrupt()) {
+        boolean repaired = repairAndWriteShard(repairMessage, record.md());
+        String success = repaired ? "" : "NOT ";
+        logger.debug(filename + " was " + success + "repaired.");
       }
+      record.lock().unlock(); // unlock the record
+      return;
     }
-    // Try to attach uncorrupted slices and relay the message
-    contributeToChunkRepair(repairMessage, chunkReader);
-    String nextServer;
-    if (repairMessage.allSlicesRetrieved() ||
-        !repairMessage.nextPosition()) { // send to destination
-      nextServer = repairMessage.getDestination();
-    } else { // send to next server in chain
-      nextServer = repairMessage.getAddress();
-    }
-    // Attempt to pass on the message
-    try {
-      connectionCache.getConnection(this, nextServer, false)
-                     .getSender()
-                     .sendData(repairMessage.getBytes());
-    } catch (IOException ioe) {
-      logger.debug("Message couldn't be forwarded. " + ioe.getMessage());
-      connectionCache.removeConnection(nextServer);
-    }
+
+    record.lock().unlock(); // no longer doing any writing to the file
+
+    // Attach local shard to message
+    attachShardToMessage(filename, repairMessage, processor);
+
+    // Relay message to next server
+    // TODO Keep trying to forward message if sending to next server fails?
+    String nextServer = repairMessage.nextServer();
+    connectionCache.send(nextServer, repairMessage, true, false);
   }
 
   /**
-   * Adds local non-corrupt slices of the chunk read by the ChunkReader into the
-   * RepairMessage.
+   * Uses the shards attached to the message to attempt to repair the locally
+   * corrupt shard, and write it to disk.
    *
-   * @param repairMessage being added to
-   * @param chunkReader that non-corrupt slices are being taken from
+   * @param message received from another ChunkServer
+   * @param md shard's in-memory metadata
+   * @return true if repaired shard was written to disk, false otherwise
    */
-  private void contributeToChunkRepair(RepairChunk repairMessage,
-      ChunkReader chunkReader) {
-    int[] localCorruptSlices = chunkReader.getCorruption(); // will be null
-    // if no slices are corrupt
-    byte[][] localSlices = chunkReader.getSlices();
-    int[] slicesNeedingRepair = repairMessage.slicesStillNeedingRepair();
-    for (int index : slicesNeedingRepair) {
-      // 'contains' function always returns false if localCorruptSlices=null
-      if (!ArrayUtilities.contains(localCorruptSlices, index)) {
-        logger.debug("Adding slice " + index + " to message.");
-        repairMessage.attachSlice(index, localSlices[index]);
-      }
-    }
-  }
-
-  /**
-   * Replaces any corrupt slices of a chunk that has been read from the disk
-   * with non-corrupt replacement slices from the RepairMessage. Then attempts
-   * to write the repaired chunk to disk.
-   *
-   * @param repairMessage received from another ChunkServer
-   * @param chunkReader used to read the Chunk that needs repairing
-   * @return true if successfully wrote repaired chunk to disk, false otherwise
-   */
-  private boolean repairAndWriteChunk(RepairChunk repairMessage,
-      ChunkReader chunkReader, FileMetadata metadata) {
-    ChunkWriter chunkWriter = new ChunkWriter(metadata, chunkReader);
-    if (repairMessage.getRepairedIndices() == null) {
-      logger.debug("Repaired indices is null.");
-    }
-    chunkWriter.setReplacementSlices(repairMessage.getRepairedIndices(),
-        repairMessage.getReplacedSlices());
-    try {
-      chunkWriter.prepare();
-      return chunkWriter.write(synchronizer);
-    } catch (NoSuchAlgorithmException nsae) {
-      logger.error("SHA1 unavailable. '" + repairMessage.getFilename() +
-                   "' could not be repaired." + nsae.getMessage());
+  private boolean repairAndWriteShard(RepairShard message, FileMetadata md)
+      throws NoSuchAlgorithmException {
+    ShardProcessor processor = new ShardProcessor(md, message.getFragments());
+    if (!processor.isCorrupt()) {
+      return streamer.write(md.getFilename(), processor.getBytes());
     }
     return false;
   }
 
   /**
-   * Responds to Controller's heartbeat message. In the Controller, these
-   * messages it sends to ChunkServers are called 'pokes', and the responses it
-   * receives are called 'pokeReplies'. A count of each is kept in the
-   * ServerConnection of every registrant, and if the discrepancy between the
-   * two counts becomes too great, the ChunkServer is automatically
-   * deregistered.
+   * Attaches local shard to the repair message if the shard isn't corrupt.
    *
-   * @param connection that sent the message (should be controllerConnection)
+   * @param message to attach our shard to
+   * @param processor that was used to read the local fragment
+   */
+  private void attachShardToMessage(String filename, RepairShard message,
+      ShardProcessor processor) {
+    if (!processor.isCorrupt()) { // if our own shard isn't corrupt
+      int shardIndex = FilenameUtilities.getFragment(filename);
+      message.attachFragment(shardIndex, processor.getContent());
+    }
+  }
+
+  /**
+   * Either repairs the local chunk or attaches healthy local slices to the
+   * message to be relayed.
+   *
+   * @param event message being processed
+   */
+  private void repairChunkHelper(Event event) throws NoSuchAlgorithmException {
+    RepairChunk repairMessage = (RepairChunk) event;
+    String filename = repairMessage.getFilename();
+
+    FileMap.MetaRecord record = files.get(filename); // record is locked
+    byte[] fileBytes = streamer.read(filename); // read file
+    ChunkProcessor processor = new ChunkProcessor(fileBytes); // process file
+
+    // Process the file
+    // Either tack the file onto the repair message, or repair the local file
+    // Unlock the record for other threads to use
+
+    // repair if we're the destination
+    if (repairMessage.getDestination().equals(host + ":" + port)) {
+      if (processor.isCorrupt()) { // And if the chunk is corrupt
+        boolean repaired =
+            repairAndWriteChunk(repairMessage, processor, record.md());
+        String succeeded = repaired ? "" : "NOT ";
+        logger.debug(filename + " was " + succeeded + "repaired.");
+      }
+      record.lock().unlock();
+      return;
+    }
+
+    record.lock().unlock(); // no longer writing to the file
+
+    // Attach non-corrupt slices and relay the message
+    contributeToChunkRepair(repairMessage, processor);
+
+    // Relay message to next server
+    // TODO Keep trying to forward message if sending to next server fails
+    String nextServer = repairMessage.nextServer();
+    connectionCache.send(nextServer, repairMessage,true, false);
+  }
+
+  /**
+   * Uses slices attached to the message to attempt to repair the locally
+   * corrupt chunk, and write it to disk.
+   *
+   * @param message received from another ChunkServer
+   * @param processor used to for processing the chunk
+   * @param md chunk's in-memory metadata
+   * @return true if successfully wrote repaired chunk to disk, false otherwise
+   */
+  private boolean repairAndWriteChunk(RepairChunk message,
+      ChunkProcessor processor, FileMetadata md)
+      throws NoSuchAlgorithmException {
+    boolean modified = processor.repair(md, message.getReplacedSlices(),
+        message.getRepairedIndices());
+    if (modified) {
+      return streamer.write(md.getFilename(), processor.getBytes());
+    }
+    return false;
+  }
+
+  /**
+   * Attaches local non-corrupt slices of the chunk to the repair message.
+   *
+   * @param message being added to
+   * @param processor that non-corrupt slices are being taken from
+   */
+  private void contributeToChunkRepair(RepairChunk message,
+      ChunkProcessor processor) {
+    int[] localCorruptIndices = processor.getCorruptIndices(); // null if none
+    byte[][] localSlices = processor.getSlices();
+    int[] slicesNeedingRepair = message.slicesStillNeedingRepair();
+    for (int index : slicesNeedingRepair) {
+      // 'contains' function always returns false if localCorruptSlices is null
+      if (!ArrayUtilities.contains(localCorruptIndices, index)) {
+        message.attachSlice(index, localSlices[index]);
+      }
+    }
+  }
+
+  /**
+   * Acknowledges the Controller's 'poke' heartbeat.
+   *
+   * @param connection that sent the message (should be the Controller)
    */
   private void acknowledgeHeartbeat(TCPConnection connection) {
-    if (connection == controllerConnection) {
-      ChunkServerRespondsToHeartbeat ack =
-          new ChunkServerRespondsToHeartbeat(identifier);
-      try {
-        connection.getSender().sendData(ack.getBytes());
-      } catch (IOException ioe) {
-        logger.debug("Unable to send response to Controller's heartbeat. " +
-                     ioe.getMessage());
-      }
-    } else {
-      logger.debug("Received a heartbeat, but it wasn't from the" +
-                   " Controller. Ignoring.");
+    ChunkServerRespondsToHeartbeat ack =
+        new ChunkServerRespondsToHeartbeat(identifier);
+    try {
+      connection.getSender().queueSend(ack.getBytes());
+    } catch (IOException e) {
+      logger.debug("Can't acknowledge heartbeat. " + e.getMessage());
     }
   }
 
   /**
    * Attempts to read the requested file from disk, and serves it if it isn't
-   * corrupt. If it is corrupt, contacts the Controller, and denies the
-   * request.
+   * corrupt. If it is corrupt, the Controller is notified, and the request is
+   * denied.
    *
    * @param event message being processed
    * @param connection that sent the message
    */
-  private void serveFile(Event event, TCPConnection connection) {
+  private void serveFile(Event event, TCPConnection connection)
+      throws NoSuchAlgorithmException {
     String filename = ((GeneralMessage) event).getMessage();
 
-    // Read the file, READER COULD BE NULL!
-    FileReaderFactory factory = FileReaderFactory.getInstance();
-    FileReader reader = factory.createFileReader(filename);
+    FileMap.MetaRecord record = files.getIfExists(filename); // lock is held
 
-    // If filename is not a key, and file doesn't exist at this server, this
-    // will create a dangling key-value pair in the map
-    FileMetadata metadata = files.get(filename);
-    synchronized(metadata) {
-      reader.readAndProcess(synchronizer);
-    }
-
-    // Notify Controller of corruption and deny request
-    if (reader.isCorrupt()) {
-      ChunkServerReportsFileCorruption corruptionMessage =
-          new ChunkServerReportsFileCorruption(identifier, filename,
-              reader.getCorruption());
+    if (record == null) { // we don't store that file
       try {
-        controllerConnection.getSender().sendData(corruptionMessage.getBytes());
-      } catch (IOException ioe) {
-        logger.debug("Controller could not be notified of corruption. " +
-                     ioe.getMessage());
-      }
-      try {
-        sendGeneralMessage(Protocol.CHUNK_SERVER_DENIES_REQUEST, filename,
-            connection);
-      } catch (IOException ioe) {
-        logger.debug("Connection could not be notified of of denial. " +
-                     ioe.getMessage());
+        byte messageType = Protocol.CHUNK_SERVER_DENIES_REQUEST;
+        sendGeneralMessage(messageType, filename, connection);
+      } catch (IOException e) {
+        logger.debug("Connection not told of denial. " + e.getMessage());
       }
       return;
     }
-    // Serve the file
-    ChunkServerServesFile serveMessage =
-        new ChunkServerServesFile(filename, reader.getData());
-    try {
-      connection.getSender().sendData(serveMessage.getBytes());
-    } catch (IOException ioe) {
-      logger.debug("Unable to serve file to connection. " + ioe.getMessage());
+
+    byte[] fileBytes = streamer.read(filename); // read the file
+    record.lock().unlock(); // unlock the record
+    ProcessedFile processedFile = processFile(filename, fileBytes);
+
+    if (processedFile.content() == null) { // file is corrupt
+      ChunkServerReportsFileCorruption message =
+          new ChunkServerReportsFileCorruption(identifier, filename,
+              processedFile.corrupt());
+
+      connectionCache.send(controllerAddress(), message,true, true);
+      try {
+        byte messageType = Protocol.CHUNK_SERVER_DENIES_REQUEST;
+        sendGeneralMessage(messageType, filename, connection);
+      } catch (IOException e) {
+        logger.debug("Connection not told of denial. " + e.getMessage());
+      }
+      return;
     }
+
+    // Since file isn't corrupt, serve it
+    ChunkServerServesFile serveMessage =
+        new ChunkServerServesFile(filename, processedFile.content());
+    try {
+      connection.getSender().queueSend(serveMessage.getBytes());
+    } catch (IOException e) {
+      logger.debug("Unable to serve file to connection. " + e.getMessage());
+    }
+  }
+
+  /**
+   * Processes the fileBytes read from disk either using a Chunk- or
+   * ShardProcessor.
+   *
+   * @param filename name of the file
+   * @param fileBytes raw byte[] of file read from disk
+   * @return ProcessedFile record containing information about the corruption of
+   * the file and the content
+   */
+  private ProcessedFile processFile(String filename, byte[] fileBytes)
+      throws NoSuchAlgorithmException {
+    if (FilenameUtilities.checkChunkFilename(filename)) {
+      ChunkProcessor processor = new ChunkProcessor(fileBytes);
+      if (processor.isCorrupt()) {
+        return new ProcessedFile(filename, null, processor.getCorruptIndices());
+      }
+      return new ProcessedFile(filename, processor.getContent(), null);
+    } else if (FilenameUtilities.checkShardFilename(filename)) {
+      ShardProcessor processor = new ShardProcessor(fileBytes);
+      if (processor.isCorrupt()) {
+        return new ProcessedFile(filename, null, null);
+      }
+      return new ProcessedFile(filename, processor.getContent(), null);
+    }
+    return new ProcessedFile(filename, null, null);
   }
 
   /**
@@ -437,80 +417,92 @@ public class ChunkServer implements Node {
    *
    * @param event message being processed
    */
-  private void storeAndRelay(Event event) {
+  private void storeAndRelay(Event event) throws NoSuchAlgorithmException {
     SendsFileForStorage message = (SendsFileForStorage) event;
+    String filename = message.getFilename();
 
-    boolean success = false;
-    FileMetadata metadata = files.get(message.getFilename());
-    synchronized(metadata) {
-      FileWriterFactory factory = FileWriterFactory.getInstance();
-      // Writer will be null if filename isn't formatted correctly
-      FileWriter writer = factory.createFileWriter(metadata);
-      writer.setContent(message.getContent());
-      try {
-        writer.prepare();
-        success = writer.write(synchronizer);
-      } catch (NoSuchAlgorithmException nsae) {
-        logger.error("SHA1 is not available. " + nsae.getMessage());
-      }
-      // Update the metadata
-      metadata.updateIfNotNew();
-    }
+    FileMap.MetaRecord record = files.get(filename); // lock is held
+    boolean success = writeFile(record.md(), message); // write the file
+    record.lock().unlock(); // unlock the record/file
 
-    // Print debug message
+    // TODO Should the FileMetadata be deleted if the storage operation
+    //  failed? No, because the file is intended to be here...
+
     String not = success ? "" : "NOT ";
-    logger.debug(message.getFilename() + " was " + not + "stored.");
+    logger.debug(filename + " was " + not + "stored.");
 
-    // While there are still servers to forward to, tries to pass on the message
+    // Forward the message to next available server
     while (message.nextPosition()) {
-      try {
-        connectionCache.getConnection(this, message.getServer(), true)
-                       .getSender()
-                       .sendData(message.getBytes());
+      if (connectionCache.send(message.getServer(), message,true, true)) {
         break;
-      } catch (IOException ioe) {
-        logger.debug(
-            "Unable to relay message to next ChunkServer. " + ioe.getMessage());
-        connectionCache.removeConnection(message.getServer());
       }
     }
-
-    // If boolean 'writtenSuccessfully ' is false (the file could not be
-    // stored), could send message back to Controller that the store
-    // operation failed. Then the Controller could find a suitable
-    // replacement home for the file.
+    // TODO Notify the Controller if the file couldn't be stored?
   }
 
   /**
-   * Attempts to delete a file from this ChunkServer apropos a request from the
-   * Controller.
+   * Formats the file content as either a chunk or a shard, and attempts to
+   * write it to disk.
+   *
+   * @param md in-memory metadata of file
+   * @param message storage request message
+   * @return true if success, false if failure
+   */
+  private boolean writeFile(FileMetadata md, SendsFileForStorage message)
+      throws NoSuchAlgorithmException {
+    byte[] preparedBytes;
+    String filename = message.getFilename();
+    int sequence = FilenameUtilities.getSequence(filename);
+    if (FilenameUtilities.checkChunkFilename(filename)) {
+      preparedBytes =
+          FileUtilities.readyChunkForStorage(sequence, md.getVersion(),
+              md.getTimestamp(), message.getContent());
+    } else if (FilenameUtilities.checkShardFilename(message.getFilename())) {
+      int fragment = FilenameUtilities.getFragment(filename);
+      preparedBytes = FileUtilities.readyShardForStorage(sequence, fragment,
+          md.getVersion(), md.getTimestamp(), message.getContent());
+    } else {
+      return false;
+    }
+    boolean success = streamer.write(filename, preparedBytes);
+    if (success) {
+      md.updateIfWritten(); // update the metadata
+    }
+    return success;
+  }
+
+  /**
+   * Attempts to delete a file with a particular base name from this
+   * ChunkServer.
    *
    * @param event message being processed
    * @param connection that sent the message
    */
   private void deleteRequestHelper(Event event, TCPConnection connection) {
-    String filename = ((GeneralMessage) event).getMessage();
-    logger.debug("Attempting to delete " + filename + " from the ChunkServer.");
+    String nameToDelete = ((GeneralMessage) event).getMessage();
 
-    // delete from files, then from disk
-    synchronizer.deleteFiles(files.deleteFile(filename));
+    files.getMap().forEachKey(100, (filename) -> {
+      if (FilenameUtilities.getBaseFilename(filename).equals(nameToDelete)) {
+        files.getMap().computeIfPresent(filename, (name, record) -> {
+          record.lock().lock(); // get lock for file
+          streamer.delete(name); // delete the file
+          // don't need to unlock, the record is no longer in use
+          return null; // remove the mapping
+        });
+      }
+    });
 
-    try { // respond
+    try { // acknowledge request
       sendGeneralMessage(Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_DELETE,
-          filename, connection);
-    } catch (IOException ioe) {
-      logger.debug(
-          "Unable to send acknowledgement of deletion to Controller. " +
-          ioe.getMessage());
+          nameToDelete, connection);
+    } catch (IOException e) {
+      logger.debug("Controller not told of deletion. " + e.getMessage());
     }
   }
 
   /**
-   * Interprets the Controller's response to the registration request. In a
-   * successful registration, the ChunkServer's 'identifier' member will be set
-   * to the one given by the Controller, the directory into which the
-   * ChunkServer will store files will be created, and the HeartbeatService will
-   * be started.
+   * Either sets up the ChunkServer, or notifies the user of unsuccessful
+   * registration.
    *
    * @param event message being processed
    */
@@ -520,56 +512,41 @@ public class ChunkServer implements Node {
     if (status == -1) {
       logger.info("Controller denied the registration request.");
     } else {
-      if (registrationSetup(status)) {
-        logger.info(
-            "Controller has approved the registration request. Our identifier" +
-            " is " + status + ".");
+      boolean setupSuccess = registrationSetup(status);
+      if (setupSuccess) {
+        logger.info("Controller approved registration. ID: " + status);
       } else {
-        logger.info("Though the Controller approved our " +
-                    "registration request, there was a problem setting up " +
-                    "the FileSynchronizer and HeartbeatService. Sending " +
-                    "deregistration back to Controller.");
-        try {
-          sendGeneralMessage(Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION,
-              String.valueOf(status), controllerConnection);
-        } catch (IOException ioe) {
-          logger.debug("Unable to send deregistration request to Controller. " +
-                       ioe.getMessage());
-        }
+        logger.info("Failed to set up FileStreamer and HeartbeatService, " +
+                    "deregistering.");
+        connectionCache.send(controllerAddress(),
+            new GeneralMessage(Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION,
+                String.valueOf(status)), false, false);
       }
     }
   }
 
   /**
-   * After receiving a successful registration response from the Controller,
-   * creates the FileSynchronizer and starts the HeartbeatService in a unique
-   * directory in the file system's /tmp folder.
+   * Sets up the ChunkServer.
    *
-   * @param identifier controller has assigned this ChunkServer
+   * @param id identifier the Controller has assigned this ChunkServer
    * @return true if all actions completed successfully, false otherwise
    */
-  private boolean registrationSetup(int identifier) {
+  private boolean registrationSetup(int id) {
     try {
-      this.identifier = identifier;
-      synchronizer = new FileSynchronizer(identifier);
+      identifier = id;
+      streamer = new FileStreamer(identifier);
       HeartbeatService heartbeatService = new HeartbeatService(this);
-      // create timer to schedule heartbeatService to run once every
-      // Constants.HEARTRATE milliseconds, give it a random offset to start
-      heartbeatTimer = new Timer();
-      long randomOffset = ThreadLocalRandom.current()
-                                           .nextInt(2,
-                                               (Constants.HEARTRATE/2000) + 1);
-      heartbeatTimer.scheduleAtFixedRate(heartbeatService, randomOffset*1000L,
+      heartbeat = new Timer();
+      long offset = (long) ((Math.random()*(Constants.HEARTRATE/2000)) + 2);
+      heartbeat.scheduleAtFixedRate(heartbeatService, offset*1000L,
           Constants.HEARTRATE);
       isRegistered.set(true); // set the registered status
     } catch (Exception e) {
-      logger.info(
-          "There was a problem setting up the ChunkServer for operation after" +
-          " it had been registered. " + e.getMessage());
-      synchronizer = null;
-      if (heartbeatTimer != null) {
-        heartbeatTimer.cancel();
-        heartbeatTimer = null;
+      logger.info("Problem setting up the ChunkServer. " + e.getMessage());
+      streamer = null;
+      if (heartbeat != null) {
+        heartbeat.cancel();
+        heartbeat = null;
       }
       isRegistered.set(false);
       return false;
@@ -589,7 +566,7 @@ public class ChunkServer implements Node {
   private void sendGeneralMessage(byte type, String message,
       TCPConnection connection) throws IOException {
     GeneralMessage generalMessage = new GeneralMessage(type, message);
-    connection.getSender().sendData(generalMessage.getBytes());
+    connection.getSender().queueSend(generalMessage.getBytes());
   }
 
   /**
@@ -630,7 +607,7 @@ public class ChunkServer implements Node {
     // Close all TCPConnections
     // Cancel the heartbeat timer
     connectionCache.closeConnections();
-    heartbeatTimer.cancel();
+    heartbeat.cancel();
     System.exit(0);
   }
 
@@ -638,20 +615,16 @@ public class ChunkServer implements Node {
    * Print server address of this ChunkServer.
    */
   private void info() {
-    System.out.printf("%3s%s%n", "", host + ":" + port);
+    System.out.printf("%3s%s <- %s%n", "", identifier, host + ":" + port);
   }
 
   /**
    * Send deregistration request to the Controller.
    */
   private void deregister() {
-    try {
-      sendGeneralMessage(Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION,
-          String.valueOf(identifier), controllerConnection);
-    } catch (IOException ioe) {
-      logger.error("Couldn't send deregistration request to the Controller. " +
-                   ioe.getMessage());
-    }
+    connectionCache.send(controllerAddress(),
+        new GeneralMessage(Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION,
+            String.valueOf(identifier)), false, false);
   }
 
   /**
@@ -659,10 +632,10 @@ public class ChunkServer implements Node {
    * version filename" on each line.
    */
   private void listFiles() {
-    // New way to do it using the ConcurrentHashMap
-    files.getMap()
-         .forEach((filename, metadata) -> System.out.printf("%3s%d %d %s%n", "",
-             metadata.getTimestamp(), metadata.getVersion(), filename));
+    files.getMap().forEach((name, record) -> {
+      System.out.printf("%3s%d %d %s%n", "", record.md().getTimestamp(),
+          record.md().getVersion(), name);
+    });
   }
 
   /**
@@ -689,15 +662,6 @@ public class ChunkServer implements Node {
   }
 
   /**
-   * Returns the synchronizer running on this ChunkServer.
-   *
-   * @return synchronizer (FileSynchronizer)
-   */
-  public FileSynchronizer getFileSynchronizer() {
-    return synchronizer;
-  }
-
-  /**
    * Returns FileMap of files for this ChunkServer.
    *
    * @return files
@@ -707,11 +671,16 @@ public class ChunkServer implements Node {
   }
 
   /**
-   * Returns the TCPConnection associated with the Controller.
+   * Returns FileStreamer for this ChunkServer.
    *
-   * @return TCPConnection with Controller
+   * @return streamer¬
    */
-  public TCPConnection getControllerConnection() {
-    return controllerConnection;
+  public FileStreamer getStreamer() {
+    return streamer;
+  }
+
+  public String controllerAddress() {
+    return ApplicationProperties.controllerHost + ":" +
+           ApplicationProperties.controllerPort;
   }
 }

@@ -19,7 +19,6 @@ public class ServerConnection {
   // Identifying/Connection information
   private final String address;
   private final int identifier;
-  private final TCPConnection connection;
   private final Map<String,ArrayList<Integer>> storedChunks;
 
   // HeartbeatInformation
@@ -29,11 +28,9 @@ public class ServerConnection {
   private int pokes;
   private int pokeReplies;
 
-  public ServerConnection(int identifier, String address,
-      TCPConnection connection) {
+  public ServerConnection(int identifier, String address) {
     this.identifier = identifier;
     this.address = address;
-    this.connection = connection;
     this.storedChunks = new HashMap<>();
     this.heartbeatInformation = new HeartbeatInformation();
     this.unhealthy = 0;
@@ -108,7 +105,6 @@ public class ServerConnection {
     pokeReplies++;
   }
 
-  // Not being used right now...
   public synchronized int pokeDiscrepancy() {
     return (pokes - pokeReplies);
   }
@@ -162,16 +158,11 @@ public class ServerConnection {
     }
   }
 
-  public TCPConnection getConnection() {
-    return connection;
-  }
-
   public synchronized String toString() {
-    String sb = identifier + ", " + address + ", " +
-                heartbeatInformation.getFreeSpace()/(1024*1024) + "MB, " +
-                heartbeatInformation.getTotalChunks() + " chunks, " +
-                "health: " + unhealthy;
-    return sb;
+    return identifier + ", " + address + ", " +
+           heartbeatInformation.getFreeSpace()/(1024*1024) + "MB, " +
+           heartbeatInformation.getTotalChunks() + " chunks, " + "health: " +
+           unhealthy;
   }
 
 }

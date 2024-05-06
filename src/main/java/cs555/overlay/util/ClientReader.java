@@ -57,7 +57,7 @@ public class ClientReader implements Runnable {
     this.filename = filename;
     this.totalChunksReceived = new AtomicInteger(0);
     this.totalChunks = new AtomicInteger(0);
-    this.connectionCache = new TCPConnectionCache();
+    this.connectionCache = new TCPConnectionCache(client);
     this.readDirectory = Paths.get(System.getProperty("user.dir"), "reads");
     this.stopRequested = false;
     this.batchStartIndex = new AtomicInteger(0);
@@ -206,9 +206,9 @@ public class ClientReader implements Runnable {
       synchronized(receivedFiles[i]) {
         if (ApplicationProperties.storageType.equals("erasure")) {
           byte[][] decoded =
-              FileSynchronizer.decodeMissingShards(receivedFiles[i]);
+              FileUtilities.decodeMissingShards(receivedFiles[i]);
           if (decoded != null) {
-            byte[] content = FileSynchronizer.getContentFromShards(decoded);
+            byte[] content = FileUtilities.getContentFromShards(decoded);
             file.write(content);
           } else {
             nullChunks++;
@@ -290,7 +290,7 @@ public class ClientReader implements Runnable {
           }
           askCount++;
           if (!ApplicationProperties.storageType.equals("erasure")) {
-            // only ask one when replicating
+            // only ask one if replicating
             break;
           }
         }
@@ -314,21 +314,14 @@ public class ClientReader implements Runnable {
       int serverPosition, GeneralMessage requestMessage) {
     String specificFilename = appendFilename(sequence, serverPosition);
     requestMessage.setMessage(specificFilename);
-    try {
-      connectionCache.getConnection(client, address, true)
-                     .getSender()
-                     .sendData(requestMessage.getBytes());
-      return true; // message sent
-    } catch (IOException ioe) {
-      logger.debug(
-          specificFilename + " could not be requested from " + address + ". " +
-          ioe.getMessage());
-      logger.debug(
-          "Removing " + address + " from servers list for future chunk" +
-          " retrievals.");
-      removeAddressFromServers(address);
-      return false; // message not sent
+    if (connectionCache.send(address, requestMessage, false, true)) {
+      return true;
     }
+    logger.debug(specificFilename + " could not be requested from " + address);
+    logger.debug("Removing " + address + " from servers list for future chunk" +
+                 " retrievals.");
+    removeAddressFromServers(address);
+    return false;
   }
 
   /**
@@ -456,11 +449,11 @@ public class ClientReader implements Runnable {
   private boolean sendToController(Event event) {
     try {
       client.getControllerConnection().getSender().sendData(event.getBytes());
-      return true;
     } catch (IOException ioe) {
       System.err.println("Couldn't send message to Controller.");
       return false;
     }
+    return true;
   }
 
   /**

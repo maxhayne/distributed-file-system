@@ -1,6 +1,8 @@
 package cs555.overlay.wireformats;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Collections;
 
 /**
  * Dispatched by the Controller to be relayed between ChunkServers with
@@ -12,12 +14,11 @@ public class RepairChunk implements Event {
   private final byte type;
   private final String filename; // including _chunk#
   private final String destination; // host:port of server that needs repair
-  private final int[] slicesToRepair;
-  // array of slice numbers that need repairing
+  private final int[] slicesToRepair;// slice numbers needing repair
   private final String[] servers; // array of host:port addresses to servers
-  private final byte[][] replacementSlices; // array for chunk slices that have
-  // been retrieved so far, will have hashes attached
-  private int position; // current position in server list
+  private final byte[][] replacementSlices; // slices retrieved so far w/ hashes
+
+  private final ArrayList<String> repairRoute; // route the message should take
 
   public RepairChunk(String filename, String destination, int[] slicesToRepair,
       String[] servers) {
@@ -27,7 +28,15 @@ public class RepairChunk implements Event {
     this.slicesToRepair = slicesToRepair;
     this.servers = servers;
     this.replacementSlices = new byte[slicesToRepair.length][];
-    this.position = 0;
+
+    // Generate route for message
+    this.repairRoute = new ArrayList<>();
+    for (String server : servers) {
+      if (server != null && !java.util.Objects.equals(server, destination)) {
+        repairRoute.add(server);
+      }
+    }
+    Collections.shuffle(repairRoute); // balance the load
   }
 
   public RepairChunk(byte[] marshalledBytes) throws IOException {
@@ -74,7 +83,14 @@ public class RepairChunk implements Event {
       replacementSlices[i] = array;
     }
 
-    position = din.readInt();
+    int remainingServers = din.readInt();
+    repairRoute = new ArrayList<>(remainingServers);
+    for (int i = 0; i < remainingServers; ++i) {
+      len = din.readInt();
+      array = new byte[len];
+      din.readFully(array);
+      repairRoute.add(new String(array));
+    }
 
     din.close();
     bin.close();
@@ -117,7 +133,7 @@ public class RepairChunk implements Event {
   /**
    * Checks if replacements to all slices have been added.
    *
-   * @return true if all slots in "replacementSlices' are non-null, false
+   * @return true if all slots in 'replacementSlices' are non-null, false
    * otherwise
    */
   public boolean allSlicesRetrieved() {
@@ -130,30 +146,30 @@ public class RepairChunk implements Event {
   }
 
   /**
-   * Moves the 'position' integer to the next server in the 'servers' array and
-   * returns true. If the end of the array has already been reached, returns
-   * false.
+   * Returns the address of the next server the message should be forwarded to.
    *
-   * @return true if there's another server to visit, false if there isn't.
-   * False implies that the message should be forwarded directly to the
-   * 'destination' server.
+   * @return host:port address of next server
    */
-  public boolean nextPosition() {
-    if (position < servers.length - 1) {
-      position++;
-      return true;
+  public String nextServer() {
+    if (!repairRoute.isEmpty()) {
+      repairRoute.remove(0);
     }
-    return false;
+    if (allSlicesRetrieved() || repairRoute.isEmpty()) {
+      return destination;
+    }
+    return repairRoute.get(0);
   }
 
   /**
-   * Returns the host:port address specified at the index 'position' in the
-   * 'servers' array.
+   * Returns the address of the current server on the route.
    *
-   * @return host:port address specified at servers[position]
+   * @return host:port at head of repairRoute, or address of destination
    */
   public String getAddress() {
-    return servers[position];
+    if (!repairRoute.isEmpty()) {
+      return repairRoute.get(0);
+    }
+    return destination;
   }
 
   /**
@@ -278,7 +294,12 @@ public class RepairChunk implements Event {
       dout.write(replacementSlice);
     }
 
-    dout.writeInt(position);
+    dout.writeInt(repairRoute.size());
+    for (String address : repairRoute) {
+      array = address.getBytes();
+      dout.writeInt(array.length);
+      dout.write(array);
+    }
 
     byte[] marshalledBytes = bout.toByteArray();
     dout.close();

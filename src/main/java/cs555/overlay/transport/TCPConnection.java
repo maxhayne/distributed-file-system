@@ -18,9 +18,9 @@ public class TCPConnection {
 
   private static final Logger logger = Logger.getInstance();
   private final Socket socket;
-  private final TCPSender sender;
+  private final TCPSenderThread sender;
   private final TCPReceiverThread receiver;
-  private boolean started;
+  private boolean receiving;
 
   /**
    * Default constructor.
@@ -31,20 +31,20 @@ public class TCPConnection {
    */
   public TCPConnection(Node node, Socket socket) throws IOException {
     this.socket = socket;
-    this.sender = new TCPSender(socket);
+    this.sender = new TCPSenderThread(socket);
     this.receiver = new TCPReceiverThread(node, socket, this);
-    this.started = false;
+    this.receiving = false;
+    (new Thread(sender)).start(); // start the sender
   }
 
   /**
-   * The TCPReceiverThread object has been created, but a thread to encapsulate
-   * it hasn't been. This creates and starts that thread to start receiving
-   * messages concurrently (if that hasn't happened already).
+   * Starts a thread to receive packets inside the receiver, if one hasn't been
+   * created already.
    */
   public synchronized void start() {
-    if (!started) {
+    if (!receiving) {
       (new Thread(receiver)).start();
-      started = true;
+      receiving = true;
     }
   }
 
@@ -62,7 +62,7 @@ public class TCPConnection {
    *
    * @return connection's TCPSender
    */
-  public TCPSender getSender() {
+  public TCPSenderThread getSender() {
     return sender;
   }
 
@@ -72,6 +72,7 @@ public class TCPConnection {
    */
   public void close() {
     try {
+      sender.stopThread();
       sender.dout.close();
       receiver.din.close();
       socket.close();

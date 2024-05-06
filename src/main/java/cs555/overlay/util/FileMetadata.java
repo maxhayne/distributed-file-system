@@ -1,9 +1,7 @@
 package cs555.overlay.util;
 
 /**
- * Class to keep track of the metadata associated with files stored on
- * ChunkServers. Has a secondary use as a lock for accessing files at the
- * ChunkServer.
+ * Used to keep track of metadata associated with files stored on ChunkServers.
  *
  * @author hayne
  */
@@ -11,10 +9,10 @@ public class FileMetadata {
   private final String filename; // includes "_chunk#" and "_shard#"
   private int version;
   private long timestamp;
-  private boolean isNew;
+  private boolean written; // written to disk?
 
   /**
-   * Constructor. Sets isNew to true automatically.
+   * Constructor.
    *
    * @param filename filename of chunk/shard
    * @param version version of file
@@ -24,7 +22,7 @@ public class FileMetadata {
     this.filename = filename;
     this.version = version;
     this.timestamp = timestamp;
-    this.isNew = true;
+    this.written = false;
   }
 
   /**
@@ -55,19 +53,18 @@ public class FileMetadata {
   }
 
   /**
-   * Sets isNew to false.
+   * Sets written to false.
    */
-  public synchronized void notNew() {
-    isNew = false;
+  public synchronized void written() {
+    written = true;
   }
 
   /**
-   * Updates the version and timestamp if isNew is false. Otherwise, it sets
-   * isNew to true.
+   * Updates the version and timestamp if written has already been set to true.
    */
-  public synchronized void updateIfNotNew() {
-    if (isNew) {
-      notNew();
+  public synchronized void updateIfWritten() {
+    if (!written) {
+      written();
     } else {
       update();
     }
@@ -77,7 +74,7 @@ public class FileMetadata {
    * Updates the version and timestamp.
    */
   public synchronized void update() {
-    version++;
     timestamp = System.currentTimeMillis();
+    version++;
   }
 }

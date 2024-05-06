@@ -90,8 +90,8 @@ public class Client implements Node {
     switch (event.getType()) {
 
       case Protocol.CONTROLLER_APPROVES_FILE_DELETE:
-        logger.debug("Controller approved deletion of " +
-                     ((GeneralMessage) event).getMessage());
+        logger.info("Controller approved deletion of " +
+                    ((GeneralMessage) event).getMessage());
         break;
 
       case Protocol.CHUNK_SERVER_SERVES_FILE:
@@ -253,43 +253,35 @@ public class Client implements Node {
       String[] splitCommand = command.split("\\s+");
       switch (splitCommand[0].toLowerCase()) {
 
-        case "p":
-        case "put":
+        case "p", "put":
           put(splitCommand);
           break;
 
-        case "g":
-        case "get":
+        case "g", "get":
           get(splitCommand);
           break;
 
-        case "d":
-        case "delete":
+        case "d", "delete":
           requestFileDelete(splitCommand);
           break;
 
-        case "st":
-        case "stop":
+        case "st", "stop":
           stopHelper(splitCommand);
           break;
 
-        case "r":
-        case "readers":
+        case "r", "readers":
           showReaders();
           break;
 
-        case "w":
-        case "writers":
+        case "w", "writers":
           showWriters();
           break;
 
-        case "f":
-        case "files":
+        case "f", "files":
           requestFileList();
           break;
 
-        case "s":
-        case "servers":
+        case "s", "servers":
           requestServerList();
           break;
 
@@ -297,12 +289,10 @@ public class Client implements Node {
           printWorkingDirectory(splitCommand);
           break;
 
-        case "e":
-        case "exit":
+        case "e", "exit":
           break interactLoop;
 
-        case "h":
-        case "help":
+        case "h", "help":
           showHelp();
           break;
 
@@ -356,7 +346,7 @@ public class Client implements Node {
                 !writers.containsKey(controllerFileList[fileNumber])) {
               deleteMessage.setMessage(controllerFileList[fileNumber]);
               controllerConnection.getSender()
-                                  .sendData(deleteMessage.getBytes());
+                                  .queueSend(deleteMessage.getBytes());
             }
           } catch (IOException ioe) {
             logger.error("Couldn't send Controller a delete request. " +
@@ -397,7 +387,7 @@ public class Client implements Node {
     GeneralMessage requestMessage =
         new GeneralMessage(Protocol.CLIENT_REQUESTS_FILE_LIST);
     try {
-      controllerConnection.getSender().sendData(requestMessage.getBytes());
+      controllerConnection.getSender().queueSend(requestMessage.getBytes());
     } catch (IOException ioe) {
       logger.error("Could not send a file list request to the Controller. " +
                    ioe.getMessage());
@@ -551,7 +541,7 @@ public class Client implements Node {
     GeneralMessage requestMessage =
         new GeneralMessage(Protocol.CLIENT_REQUESTS_SERVER_LIST);
     try {
-      controllerConnection.getSender().sendData(requestMessage.getBytes());
+      controllerConnection.getSender().queueSend(requestMessage.getBytes());
     } catch (IOException ioe) {
       logger.error("Could not send a server list request to the Controller. " +
                    ioe.getMessage());

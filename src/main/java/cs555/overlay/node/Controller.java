@@ -2,10 +2,7 @@ package cs555.overlay.node;
 
 import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.config.Constants;
-import cs555.overlay.transport.ControllerInformation;
-import cs555.overlay.transport.ServerConnection;
-import cs555.overlay.transport.TCPConnection;
-import cs555.overlay.transport.TCPServerThread;
+import cs555.overlay.transport.*;
 import cs555.overlay.util.FilenameUtilities;
 import cs555.overlay.util.ForwardInformation;
 import cs555.overlay.util.HeartbeatMonitor;
@@ -31,12 +28,15 @@ public class Controller implements Node {
   private static final Logger logger = Logger.getInstance();
   private final String host;
   private final int port;
+  private final TCPConnectionCache connectionCache;
   private final ControllerInformation information;
 
   public Controller(String host, int port) {
     this.host = host;
     this.port = port;
-    this.information = new ControllerInformation();
+    this.connectionCache = new TCPConnectionCache(this);// TODO Dangerous?
+    // ControllerInformation uses the same TCPConnectionCache
+    this.information = new ControllerInformation(connectionCache);
   }
 
   /**
@@ -151,7 +151,8 @@ public class Controller implements Node {
     GeneralMessage message =
         new GeneralMessage(Protocol.CONTROLLER_SENDS_SERVER_LIST, servers);
     try {
-      connection.getSender().sendData(message.getBytes());
+      //connection.getSender().sendData(message.getBytes());
+      connection.getSender().queueSend(message.getBytes());
     } catch (IOException ioe) {
       logger.debug(
           "Unable to send response to Client containing list of servers. " +
@@ -174,7 +175,8 @@ public class Controller implements Node {
 
     ControllerSendsFileList response = new ControllerSendsFileList(listToSend);
     try {
-      connection.getSender().sendData(response.getBytes());
+      //connection.getSender().sendData(response.getBytes());
+      connection.getSender().queueSend(response.getBytes());
     } catch (IOException ioe) {
       logger.debug(
           "Unable to send response to Client containing list of files. " +
@@ -197,7 +199,8 @@ public class Controller implements Node {
     ControllerSendsStorageList response =
         new ControllerSendsStorageList(filename, servers);
     try {
-      connection.getSender().sendData(response.getBytes());
+      //connection.getSender().sendData(response.getBytes());
+      connection.getSender().queueSend(response.getBytes());
     } catch (IOException ioe) {
       logger.debug(
           "Unable to send response to Client containing storage information " +
@@ -246,22 +249,20 @@ public class Controller implements Node {
       return;
     }
 
-    // Construct the appropriate repair message and find out who to send the
-    // message to first
     ForwardInformation forwardInformation =
         ControllerInformation.constructRepairMessage(report.getFilename(),
             servers, destination, report.getSlices());
 
     if (forwardInformation.firstHop() != null) {
-      try {
-        logger.debug("About to dispatch repair to " + destination);
-        information.getConnection(forwardInformation.firstHop())
-                   .getConnection()
-                   .getSender()
-                   .sendData(forwardInformation.repairMessage().getBytes());
-        logger.debug("Sent repair message to " + destination);
-      } catch (IOException ioe) {
-        logger.debug("Failed to send repair message to its first hop.");
+      String address = forwardInformation.firstHop();
+      int firstHopID = information.getConnection(address).getIdentifier();
+      logger.debug("Dispatching repair to " + destination + ", " + firstHopID);
+      if (connectionCache.send(address, forwardInformation.repairMessage(),
+          true, true)) {
+        logger.debug("Sent repair message to " + address);
+      } else {
+        logger.debug("Unable to send a message to " + address + " to repair '" +
+                     report.getFilename() + "' at " + destination);
       }
     }
   }
@@ -321,7 +322,8 @@ public class Controller implements Node {
     GeneralMessage response =
         new GeneralMessage(Protocol.CONTROLLER_APPROVES_FILE_DELETE, filename);
     try {
-      connection.getSender().sendData(response.getBytes());
+      //connection.getSender().sendData(response.getBytes());
+      connection.getSender().queueSend(response.getBytes());
     } catch (IOException ioe) {
       logger.debug("Unable to acknowledge Client's request to delete file. " +
                    ioe.getMessage());
@@ -359,7 +361,8 @@ public class Controller implements Node {
 
     // Respond to the Client
     try {
-      connection.getSender().sendData(response.getBytes());
+      //connection.getSender().sendData(response.getBytes());
+      connection.getSender().queueSend(response.getBytes());
     } catch (IOException ioe) {
       logger.debug("Unable to respond to Client's request to store chunk. " +
                    ioe.getMessage());
@@ -385,7 +388,8 @@ public class Controller implements Node {
           Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS,
           String.valueOf(registrationStatus));
       try {
-        connection.getSender().sendData(message.getBytes());
+        //connection.getSender().sendData(message.getBytes());
+        connection.getSender().queueSend(message.getBytes());
         if (registrationStatus != -1) {
           // give new registrant the files it has been allocated, if any
           information.refreshServerFiles(registrationStatus);
@@ -404,9 +408,9 @@ public class Controller implements Node {
   }
 
   /**
-   * A public deregister method which just takes the identifier of the server to
-   * be deregistered. Is simple, but needed for the HeartbeatMonitor because it
-   * has the proper synchronization.
+   * A public deregister method which just takes the identifiers of the servers
+   * to be deregistered. Is simple, but needed for the HeartbeatMonitor because
+   * it has the proper synchronization.
    *
    * @param identifiers list of the servers to be deregistered
    */

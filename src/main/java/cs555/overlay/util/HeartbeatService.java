@@ -1,10 +1,10 @@
 package cs555.overlay.util;
 
 import cs555.overlay.node.ChunkServer;
+import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.ChunkServerSendsHeartbeat;
 import cs555.overlay.wireformats.Event;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.Map;
@@ -22,12 +22,14 @@ public class HeartbeatService extends TimerTask {
   private final ConcurrentHashMap<String,FileMetadata> majorFiles;
   private final ConcurrentHashMap<String,FileMetadata> minorFiles;
   private int round;
+  private final TCPConnectionCache connectionCache; // just for Controller
 
   public HeartbeatService(ChunkServer chunkServer) {
     this.chunkServer = chunkServer;
     this.majorFiles = new ConcurrentHashMap<>();
     this.minorFiles = new ConcurrentHashMap<>();
     this.round = 1;
+    this.connectionCache = new TCPConnectionCache(chunkServer);
   }
 
   /**
@@ -43,10 +45,10 @@ public class HeartbeatService extends TimerTask {
     Map<String,FileMetadata> fileMap = beatType == 0 ? minorFiles : majorFiles;
     fileMap.clear(); // will be filled up during this heartbeat
     // Use files map in ChunkServer to construct message
-    chunkServer.getFiles().getMap().forEach(1000, (filename, metadata) -> {
+    chunkServer.getFiles().getMap().forEach(1000, (filename, record) -> {
       if ((beatType == 0 && !majorFiles.containsKey(filename)) ||
           beatType == 1) {
-        fileMap.put(filename, metadata);
+        fileMap.put(filename, record.md());
       }
     });
     if (beatType == 0) { // add minorFiles to majorFiles
@@ -66,9 +68,9 @@ public class HeartbeatService extends TimerTask {
   private ChunkServerSendsHeartbeat generateHeartbeatMessage(int beatType,
       Map<String,FileMetadata> fileMap) {
     int totalChunks = majorFiles.size();
-    long freeSpace = chunkServer.getFileSynchronizer().getUsableSpace();
+    long freeSpace = chunkServer.getStreamer().usableSpace();
     // Even if a FileMetadata is removed from the FileMap before the message
-    // is created, the reference will still be
+    // is created, the reference will still exist for our usage
     return new ChunkServerSendsHeartbeat(chunkServer.getIdentifier(), beatType,
         totalChunks, freeSpace, new ArrayList<>(fileMap.values()));
   }
@@ -77,19 +79,15 @@ public class HeartbeatService extends TimerTask {
    * The method that will be run every time the ChunkServer is scheduled to
    * perform a heartbeat.
    */
-  public void run() {
-    try {
-      Event heartbeat = round%10 == 0 ? heartbeat(1) : heartbeat(0);
-      chunkServer.getControllerConnection()
-                 .getSender()
-                 .sendData(heartbeat.getBytes());
-      logger.debug(
-          "Heartbeat " + round + " sent to the Controller at " + new Date());
-    } catch (IOException ioe) {
-      logger.debug(
-          "Unable to send heartbeat to Controller. " + ioe.getMessage());
-    } finally {
-      round++;
+  public synchronized void run() {
+    Event heartbeat = round%10 == 0 ? heartbeat(1) : heartbeat(0);
+    logger.debug("About to send heartbeat " + round + " to Controller");
+    if (connectionCache.send(chunkServer.controllerAddress(), heartbeat,
+        false, false)) {
+      logger.debug("Heartbeat " + round + " sent at " + new Date());
+    } else {
+      logger.debug("Unable to send heartbeat " + round + " to Controller. ");
     }
+    round++;
   }
 }

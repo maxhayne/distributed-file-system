@@ -3,6 +3,8 @@ package cs555.overlay.node;
 import cs555.overlay.transport.TCPConnection;
 import cs555.overlay.wireformats.Event;
 
+import java.security.NoSuchAlgorithmException;
+
 /**
  * All node types implement this interface. The goal is to keep all
  * communication between nodes indistinguishable, generalized, such that nodes

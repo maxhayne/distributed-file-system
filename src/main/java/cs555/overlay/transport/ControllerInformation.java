@@ -5,12 +5,8 @@ import cs555.overlay.config.Constants;
 import cs555.overlay.util.ArrayUtilities;
 import cs555.overlay.util.ForwardInformation;
 import cs555.overlay.util.Logger;
-import cs555.overlay.wireformats.GeneralMessage;
-import cs555.overlay.wireformats.Protocol;
-import cs555.overlay.wireformats.RepairChunk;
-import cs555.overlay.wireformats.RepairShard;
+import cs555.overlay.wireformats.*;
 
-import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -35,18 +31,20 @@ public class ControllerInformation {
   // Sequence numbers then map to arrays containing host:port addresses of
   // the servers storing that particular chunk.
   private final Map<String,TreeMap<Integer,String[]>> fileTable;
+  private final TCPConnectionCache connectionCache;
 
   /**
    * Constructor. Creates a list of available identifiers, and HashMaps for both
    * the files and the connections to the ChunkServers.
    */
-  public ControllerInformation() {
+  public ControllerInformation(TCPConnectionCache connectionCache) {
     this.servers = new HashMap<>();
     this.fileTable = new HashMap<>();
     this.idPool = new LinkedBlockingQueue<>();
     for (int i = 1; i <= 32; ++i) {
       this.idPool.add(i);
     }
+    this.connectionCache = connectionCache;
   }
 
   private static boolean isChunkRecoverable(String[] servers) {
@@ -163,9 +161,7 @@ public class ControllerInformation {
    * @return ServerConnection
    */
   public ServerConnection getConnection(String address) {
-    logger.debug("About to acquire lock on 'servers'");
     synchronized(servers) {
-      logger.debug("Acquired lock on 'servers'");
       for (ServerConnection connection : servers.values()) {
         if (connection.getServerAddress().equals(address)) {
           return connection;
@@ -209,13 +205,7 @@ public class ControllerInformation {
         GeneralMessage deleteRequest =
             new GeneralMessage(Protocol.CONTROLLER_REQUESTS_FILE_DELETE,
                 filename);
-        try {
-          broadcast(deleteRequest.getBytes());
-        } catch (IOException ioe) {
-          logger.debug(
-              "Problem sending file delete request to all ChunkServers. " +
-              ioe.getMessage());
-        }
+        broadcast(deleteRequest);
       }
     }
   }
@@ -325,7 +315,7 @@ public class ControllerInformation {
         Integer identifier = idPool.poll();
         if (identifier != null) {
           ServerConnection newServer =
-              new ServerConnection(identifier, address, connection);
+              new ServerConnection(identifier, address);
           servers.put(identifier, newServer);
           assignUnderReplicatedChunks(newServer); // assign chunks to server
           registrationStatus = identifier; // registration successful
@@ -434,7 +424,6 @@ public class ControllerInformation {
       for (int id : ids) {
         ServerConnection server = servers.get(id);
         if (server != null) { // hasn't already been deregistered
-          server.getConnection().close(); // stop the receiver
           servers.remove(id);
           idPool.add(id); // add id back to pool
           removedServers.add(server);
@@ -543,41 +532,36 @@ public class ControllerInformation {
    * either RepairShard or RepairChunk, and then send the message to the correct
    * server.
    *
-   * @param filename base filename of file to be relocated
+   * @param baseFilename base filename of file to be relocated
    * @param sequence sequence number of chunk
    * @param destination host:port of the server the file should be relocated to
    * @param servers String[] of host:port addresses that replicas/fragments of
    * this particular file are located at
    * @return true if message is sent, false if it wasn't
    */
-  private boolean sendReplacementMessage(String filename, int sequence,
+  private boolean sendReplacementMessage(String baseFilename, int sequence,
       String destination, String[] servers) {
-    String specificFilename = filename + "_chunk";
-    specificFilename = ApplicationProperties.storageType.equals("erasure") ?
-                           specificFilename + sequence + "_shard" +
-                           ArrayUtilities.contains(servers, destination) :
-                           specificFilename + sequence;
+    String filename = baseFilename + "_chunk" + sequence;
+    if (ApplicationProperties.storageType.equals("erasure")) {
+      filename += "_shard";
+      filename += ArrayUtilities.contains(servers, destination);
+    }
 
     ForwardInformation forwardInformation =
-        constructRepairMessage(specificFilename, servers, destination,
+        constructRepairMessage(filename, servers, destination,
             new int[]{0, 1, 2, 3, 4, 5, 6, 7});
 
     if (forwardInformation.firstHop() != null) {
-      try {
-        String address = forwardInformation.firstHop();
-        logger.debug("About to send replacement message to " + address);
-        getConnection(address).getConnection()
-                              .getSender()
-                              .sendData(forwardInformation.repairMessage()
-                                                          .getBytes());
-        logger.debug("Sent replacement message to " + address);
+      String address = forwardInformation.firstHop();
+      int firstHopID = getConnection(address).getIdentifier();
+      logger.debug("Sending replace message to " + address + ", " + firstHopID);
+      if (connectionCache.send(address, forwardInformation.repairMessage(),
+          true, true)) {
+        logger.debug("Sent replace message to " + address);
         return true;
-      } catch (IOException ioe) {
-        logger.debug(
-            "Unable to send a message to " + forwardInformation.firstHop() +
-            " to replace '" + specificFilename + "' at " + destination + ". " +
-            ioe.getMessage());
       }
+      logger.debug("Unable to send a message to " + address + " to replace '" +
+                   filename + "' at " + destination);
     }
     return false;
   }
@@ -585,17 +569,12 @@ public class ControllerInformation {
   /**
    * Broadcast a message to all registered ChunkServers.
    *
-   * @param marshalledBytes message to send
+   * @param event message to send
    */
-  public void broadcast(byte[] marshalledBytes) {
+  public void broadcast(Event event) {
     synchronized(servers) {
       for (ServerConnection connection : servers.values()) {
-        try {
-          connection.getConnection().getSender().sendData(marshalledBytes);
-        } catch (IOException ioe) {
-          logger.debug("Unable to send message to ChunkServer " +
-                       connection.getIdentifier() + ". " + ioe.getMessage());
-        }
+        connectionCache.send(connection.getServerAddress(), event, true, true);
       }
     }
   }

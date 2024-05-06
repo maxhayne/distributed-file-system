@@ -8,7 +8,7 @@
 # Originally written by Jason Stock, Graduate Student at CSU in Computer Science
 # I've taken the base file and modified it so that it works with my code
 
-MULTI="1 2 3 4 5 6 7 8 9 10 11 12"
+MULTI="1 2 3 4 5 6 7 8 9"
 
 DIR="$( cd "$( dirname "$0" )" && pwd )"
 JAR_PATH="$DIR/conf/:$DIR/build/libs/distributed-file-system.jar"

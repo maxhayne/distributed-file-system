@@ -1,8 +1,11 @@
 package cs555.overlay.wireformats;
 
 import cs555.overlay.config.Constants;
+import cs555.overlay.util.ArrayUtilities;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Collections;
 
 /**
  * Dispatched by the Controller to be relayed between ChunkServers with
@@ -15,8 +18,9 @@ public class RepairShard implements Event {
   private final String filename; // full filename of shard that needs replacing
   private final String[] servers; // array of host:port addresses to servers
   private final byte[][] fragments; // array of fragment arrays
-  private int destination; // position of destination in server list
-  private int position; // current position in server list
+  private final int destination; // position of destination in server list
+
+  private final ArrayList<String> repairRoute; // route the message should take
 
   /**
    * Default constructor. Designed to simplify call for Controller.
@@ -31,15 +35,18 @@ public class RepairShard implements Event {
     this.type = Protocol.REPAIR_SHARD;
     this.filename = filename.split("_shard")[0];
     this.servers = servers;
-    for (int i = 0; i < servers.length; ++i) {
-      if (java.util.Objects.equals(servers[i], destination)) {
-        this.destination = i;
-        this.position = i;
-        break;
+    this.destination = ArrayUtilities.contains(servers, destination);
+    this.fragments = new byte[Constants.TOTAL_SHARDS][];
+
+    // Generate route for message
+    this.repairRoute = new ArrayList<>();
+    for (String server : servers) {
+      if (server != null && !java.util.Objects.equals(server, destination)) {
+        repairRoute.add(server);
       }
     }
-    this.nextPosition(); // move position to first valid server
-    this.fragments = new byte[Constants.TOTAL_SHARDS][];
+    Collections.shuffle(repairRoute); // balance the load
+
   }
 
   public RepairShard(byte[] marshalledBytes) throws IOException {
@@ -54,8 +61,6 @@ public class RepairShard implements Event {
     filename = new String(array);
 
     destination = din.readInt();
-
-    position = din.readInt();
 
     int numberOfServers = din.readInt();
     servers = new String[numberOfServers];
@@ -83,6 +88,15 @@ public class RepairShard implements Event {
       fragments[i] = array;
     }
 
+    int remainingServers = din.readInt();
+    repairRoute = new ArrayList<>(remainingServers);
+    for (int i = 0; i < remainingServers; ++i) {
+      len = din.readInt();
+      array = new byte[len];
+      din.readFully(array);
+      repairRoute.add(new String(array));
+    }
+
     din.close();
     bin.close();
   }
@@ -97,57 +111,45 @@ public class RepairShard implements Event {
   }
 
   /**
-   * Returns the host:port string stored at 'servers[position]'.
+   * Returns the address of the current server on the route.
    *
-   * @return host:port stored at server[position]
+   * @return host:port at the head of repairRoute, or address of destination
    */
   public String getAddress() {
-    return servers[position];
+    if (!repairRoute.isEmpty()) {
+      return repairRoute.get(0);
+    }
+    return servers[destination];
   }
 
   /**
-   * Gets the filename of the fragment at the current position.
+   * Gets the filename of the fragment for the current address.
    *
    * @return string filename of fragment
    */
   public String getFilename() {
-    return filename + "_shard" + position;
-  }
-
-  /**
-   * The member 'position' only gets changed when 'nextPosition()' is called,
-   * but if we've collected Constants.DATA_SHARDS fragments (6) already, we can
-   * go straight to the destination, so we need a way to move the 'position' to
-   * match 'destination', so the filename is correct when called at the
-   * destination server.
-   */
-  public void setPositionToDestination() {
-    position = destination;
-  }
-
-  /**
-   * Moves the 'position' integer to the position of the next non-null entry in
-   * the 'servers' array. If the next non-null entry in the 'servers' array is
-   * the destination, returns false.
-   *
-   * @return true if the 'position' integer was moved to the index of another
-   * non-null server in the 'servers' array, false if there wasn't another
-   * non-null server in the array. False implies the message should be forwarded
-   * directly to the 'destination' server.
-   */
-  public boolean nextPosition() {
-    int nextPosition = position + 1;
-    for (int i = 1; i < Constants.TOTAL_SHARDS; ++i) {
-      nextPosition = nextPosition%Constants.TOTAL_SHARDS;
-      if (nextPosition == destination) {
-        return false;
-      } else if (servers[nextPosition] != null) {
-        break;
-      }
-      nextPosition++;
+    String base = filename + "_shard";
+    if (fragmentsCollected() < Constants.DATA_SHARDS &&
+        !repairRoute.isEmpty()) {
+      return base + ArrayUtilities.contains(servers, repairRoute.get(0));
     }
-    position = nextPosition;
-    return true;
+    return base + destination;
+  }
+
+  /**
+   * Returns the address of the next server the message should be forwarded to.
+   *
+   * @return host:port address of server
+   */
+  public String nextServer() {
+    if (!repairRoute.isEmpty()) {
+      repairRoute.remove(0);
+    }
+    if (fragmentsCollected() >= Constants.DATA_SHARDS ||
+        repairRoute.isEmpty()) {
+      return servers[destination];
+    }
+    return repairRoute.get(0);
   }
 
   /**
@@ -202,8 +204,6 @@ public class RepairShard implements Event {
 
     dout.writeInt(destination);
 
-    dout.writeInt(position);
-
     dout.writeInt(servers.length);
     for (String server : servers) {
       if (server == null) {
@@ -223,6 +223,13 @@ public class RepairShard implements Event {
       }
       dout.writeInt(fragment.length);
       dout.write(fragment);
+    }
+
+    dout.writeInt(repairRoute.size());
+    for (String address : repairRoute) {
+      array = address.getBytes();
+      dout.writeInt(array.length);
+      dout.write(array);
     }
 
     byte[] marshalledBytes = bout.toByteArray();

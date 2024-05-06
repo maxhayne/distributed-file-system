@@ -5,10 +5,10 @@ import cs555.overlay.config.Constants;
 import cs555.overlay.node.Controller;
 import cs555.overlay.transport.ControllerInformation;
 import cs555.overlay.transport.ServerConnection;
+import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.GeneralMessage;
 import cs555.overlay.wireformats.Protocol;
 
-import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,11 +26,13 @@ public class HeartbeatMonitor extends TimerTask {
   private static final Logger logger = Logger.getInstance();
   private final Controller controller;
   private final ControllerInformation information;
+  private final TCPConnectionCache connectionCache;
 
   public HeartbeatMonitor(Controller controller,
       ControllerInformation information) {
     this.controller = controller;
     this.information = information;
+    this.connectionCache = new TCPConnectionCache(controller);
   }
 
   /**
@@ -183,15 +185,15 @@ public class HeartbeatMonitor extends TimerTask {
    * combo given as parameters. A different message has to be created whether
    * erasure coding or replicating.
    *
-   * @param filename base filename of chunk to be repaired
+   * @param baseFilename base filename of chunk to be repaired
    * @param sequence sequence of chunk to be repaired
    * @param destination host:port address of server that needs replacement file
    */
-  private void dispatchRepair(String filename, int sequence,
+  private void dispatchRepair(String baseFilename, int sequence,
       String destination) {
-    filename = ApplicationProperties.storageType.equals("erasure") ?
-                   filename + "_chunk" + sequence :
-                   filename + "_chunk" + sequence + "_shard";
+    String filename = ApplicationProperties.storageType.equals("erasure") ?
+                          baseFilename + "_chunk" + sequence :
+                          baseFilename + "_chunk" + sequence + "_shard";
     String[] servers = information.getServers(filename, sequence);
 
     ForwardInformation forwardInformation =
@@ -199,14 +201,8 @@ public class HeartbeatMonitor extends TimerTask {
             destination, new int[]{0, 1, 2, 3, 4, 5, 6, 7});
 
     if (forwardInformation.firstHop() != null) {
-      try {
-        information.getConnection(forwardInformation.firstHop())
-                   .getConnection()
-                   .getSender()
-                   .sendData(forwardInformation.repairMessage().getBytes());
-      } catch (IOException ioe) {
-        logger.debug("Failed to send message. " + ioe.getMessage());
-      }
+      connectionCache.send(forwardInformation.firstHop(),
+          forwardInformation.repairMessage(), true, false);
     }
   }
 
@@ -217,18 +213,16 @@ public class HeartbeatMonitor extends TimerTask {
    * @return true if successfully sent, false if pipe is broken
    */
   private boolean pokeServer(ServerConnection connection) {
-    try {
-      connection.getConnection()
-                .getSender()
-                .sendData((new GeneralMessage(
-                    Protocol.CONTROLLER_SENDS_HEARTBEAT)).getBytes());
+    String address = connection.getServerAddress();
+    GeneralMessage message =
+        new GeneralMessage(Protocol.CONTROLLER_SENDS_HEARTBEAT);
+    boolean reachable = connectionCache.send(address, message, true, true);
+    if (reachable) {
       connection.incrementPokes();
       return true;
-    } catch (IOException ioe) {
-      logger.debug(connection.getServerAddress() + " is unreachable. Set to " +
-                   "deregister. " + ioe.getMessage());
-      return false;
     }
+    logger.debug(address + " is unreachable, set to deregister.");
+    return false;
   }
 
   /**

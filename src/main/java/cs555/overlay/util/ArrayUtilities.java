@@ -1,7 +1,7 @@
 package cs555.overlay.util;
 
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Stores some useful functions for working with arrays.
@@ -80,7 +80,7 @@ public class ArrayUtilities {
    * @param list ArrayList<Integer> to convert to int[]
    * @return int[] converted from ArrayList
    */
-  public static int[] arrayListToArray(ArrayList<Integer> list) {
+  public static int[] listToArray(List<Integer> list) {
     return list.stream().mapToInt(i -> i).toArray();
   }
 
