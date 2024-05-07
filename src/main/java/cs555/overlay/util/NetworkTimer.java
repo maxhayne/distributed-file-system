@@ -31,7 +31,7 @@ public class NetworkTimer implements Runnable {
 
     this.cancelled = false;
     this.elapsed = 0;
-    this.timeout = 10000; // 10s default
+    this.timeout = 5000; // 5s default
     this.interval = 500; // 500ms default
   }
 

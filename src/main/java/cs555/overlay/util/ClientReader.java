@@ -172,12 +172,15 @@ public class ClientReader implements Runnable {
             totalChunksReceived.incrementAndGet();
           }
         } else { // replication
-          receivedFiles[sequence][0] = content;
-          chunksReceivedInBatch.incrementAndGet(); // chunk received, increment
-          totalChunksReceived.incrementAndGet();
+          if (receivedFiles[sequence][0] == null) {
+            receivedFiles[sequence][0] = content;
+            chunksReceivedInBatch.incrementAndGet();
+            totalChunksReceived.incrementAndGet();
+          }
         }
       }
       // If the batch has been fully downloaded, await() on batchBarrier
+      // so that thread in wrangleChunks can proceed, and write to disk
       if (chunksReceivedInBatch.get() >= chunksToGetInBatch()) {
         if (!batchBarrier.isBroken()) {
           try {
@@ -282,16 +285,18 @@ public class ClientReader implements Runnable {
     int localBatchStartIndex = batchStartIndex.get();
     for (int i = localBatchStartIndex;
          i < localBatchStartIndex + BATCH_SIZE && i < servers.length; ++i) {
-      for (int j = 0; j < servers[i].length; ++j) {
-        if (servers[i][j] != null) {
-          if (!dryRun) {
-            requestFileFromServer(servers[i][j], i, j, requestMessage);
-            servers[i][j] = null;
-          }
-          askCount++;
-          if (!ApplicationProperties.storageType.equals("erasure")) {
-            // only ask one if replicating
-            break;
+      if (receivedFiles[i][0] == null) { // only request if chunk not downloaded
+        for (int j = 0; j < servers[i].length; ++j) {
+          if (servers[i][j] != null) {
+            if (!dryRun) {
+              requestFileFromServer(servers[i][j], i, j, requestMessage);
+              servers[i][j] = null;
+            }
+            askCount++;
+            if (!ApplicationProperties.storageType.equals("erasure")) {
+              // only ask one if replicating
+              break;
+            }
           }
         }
       }
@@ -388,7 +393,29 @@ public class ClientReader implements Runnable {
    */
   public synchronized void setServersAndNotify(String[][] servers) {
     this.servers = servers;
+    if (ApplicationProperties.storageType.equals("replication")) {
+      doubleUpServers();
+    }
     this.notify();
+  }
+
+  /**
+   * Doubles up each of the entries in the servers array. Is done for the edge
+   * case where, while replicating, each replication is corrupt, but an
+   * uncorrupted chunk can still be assembled. The three servers will be
+   * requested once, and if each denies, they will be requested once more,
+   * hopefully given enough time to fix their chunk. Turns [1, 2, 3] into [1, 2,
+   * 3, 1, 2, 3].
+   */
+  private synchronized void doubleUpServers() {
+    for (int i = 0; i < servers.length; ++i) {
+      String[] doubledServers = new String[servers[i].length*2];
+      for (int j = 0; j < servers[i].length; ++j) {
+        doubledServers[j] = servers[i][j];
+        doubledServers[j + servers[i].length] = servers[i][j];
+      }
+      servers[i] = doubledServers;
+    }
   }
 
   /**

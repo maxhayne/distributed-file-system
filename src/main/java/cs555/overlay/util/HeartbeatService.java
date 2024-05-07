@@ -81,9 +81,8 @@ public class HeartbeatService extends TimerTask {
    */
   public synchronized void run() {
     Event heartbeat = round%10 == 0 ? heartbeat(1) : heartbeat(0);
-    logger.debug("About to send heartbeat " + round + " to Controller");
-    if (connectionCache.send(chunkServer.controllerAddress(), heartbeat,
-        false, false)) {
+    if (connectionCache.send(chunkServer.controllerAddress(), heartbeat, false,
+        false)) {
       logger.debug("Heartbeat " + round + " sent at " + new Date());
     } else {
       logger.debug("Unable to send heartbeat " + round + " to Controller. ");
