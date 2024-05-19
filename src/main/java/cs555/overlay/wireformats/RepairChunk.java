@@ -1,8 +1,14 @@
 package cs555.overlay.wireformats;
 
+import cs555.overlay.config.ApplicationProperties;
+import cs555.overlay.config.Constants;
+import cs555.overlay.util.ArrayUtilities;
+import cs555.overlay.util.FileUtilities;
+
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Objects;
 
 /**
  * Dispatched by the Controller to be relayed between ChunkServers with
@@ -11,23 +17,23 @@ import java.util.Collections;
  * @author hayne
  */
 public class RepairChunk implements Event {
+
   private final byte type;
   private final String filename; // including _chunk#
   private final String destination; // host:port of server that needs repair
-  private final int[] slicesToRepair;// slice numbers needing repair
+  private int[] piecesToRepair; // slice indices needing repair
   private final String[] servers; // array of host:port addresses to servers
-  private final byte[][] replacementSlices; // slices retrieved so far w/ hashes
-
+  private byte[][] pieces;
   private final ArrayList<String> repairRoute; // route the message should take
 
-  public RepairChunk(String filename, String destination, int[] slicesToRepair,
-      String[] servers) {
+  public RepairChunk(String filename, String destination, String[] servers) {
     this.type = Protocol.REPAIR_CHUNK;
     this.filename = filename;
     this.destination = destination;
-    this.slicesToRepair = slicesToRepair;
+    this.piecesToRepair = new int[0];
     this.servers = servers;
-    this.replacementSlices = new byte[slicesToRepair.length][];
+    this.pieces = new byte[ApplicationProperties.storageType.equals("erasure") ?
+                               Constants.TOTAL_SHARDS : Constants.SLICES][];
 
     // Generate route for message
     this.repairRoute = new ArrayList<>();
@@ -37,6 +43,15 @@ public class RepairChunk implements Event {
       }
     }
     Collections.shuffle(repairRoute); // balance the load
+  }
+
+  public void setPiecesToRepair(int[] piecesToRepair) {
+    this.piecesToRepair =
+        Objects.requireNonNullElseGet(piecesToRepair, () -> new int[0]);
+  }
+
+  public int[] getPiecesToRepair() {
+    return piecesToRepair;
   }
 
   public RepairChunk(byte[] marshalledBytes) throws IOException {
@@ -56,9 +71,9 @@ public class RepairChunk implements Event {
     destination = new String(array);
 
     int numberOfSlices = din.readInt();
-    slicesToRepair = new int[numberOfSlices];
+    piecesToRepair = new int[numberOfSlices];
     for (int i = 0; i < numberOfSlices; ++i) {
-      slicesToRepair[i] = din.readInt();
+      piecesToRepair[i] = din.readInt();
     }
 
     int numberOfServers = din.readInt();
@@ -70,17 +85,17 @@ public class RepairChunk implements Event {
       servers[i] = new String(array);
     }
 
-    int numberOfReplacementSlices = din.readInt();
-    replacementSlices = new byte[numberOfReplacementSlices][];
-    for (int i = 0; i < numberOfReplacementSlices; ++i) {
+    int numberOfPieces = din.readInt();
+    pieces = new byte[numberOfPieces][];
+    for (int i = 0; i < numberOfPieces; ++i) {
       len = din.readInt();
       if (len == 0) {
-        replacementSlices[i] = null;
+        pieces[i] = null;
         continue;
       }
       array = new byte[len];
       din.readFully(array);
-      replacementSlices[i] = array;
+      pieces[i] = array;
     }
 
     int remainingServers = din.readInt();
@@ -106,6 +121,20 @@ public class RepairChunk implements Event {
   }
 
   /**
+   * Returns the name of the file that needs to be repaired for the particular
+   * server. Only changes at the specific server for erasure coding.
+   *
+   * @return filename of file to be retrieved from current server
+   */
+  public String getFilenameAtServer() {
+    if (ApplicationProperties.storageType.equals("erasure")) {
+      int index = ArrayUtilities.contains(servers, repairRoute.get(0));
+      return filename + "_shard" + index;
+    }
+    return filename;
+  }
+
+  /**
    * Returns host:port address of server that needs repair.
    *
    * @return destination host:port
@@ -115,30 +144,28 @@ public class RepairChunk implements Event {
   }
 
   /**
-   * Sets a byte string to the position of a particular slice in the
-   * 'replacementSlices' array.
-   *
-   * @param sliceIndex the number of the slice that will be sliceBytes
-   * @param sliceBytes the replacement slice byte string
+   * Moves the address of the destination to the head of the repairRoute so the
+   * filename is properly formatted.
    */
-  public void attachSlice(int sliceIndex, byte[] sliceBytes) {
-    for (int i = 0; i < slicesToRepair.length; ++i) {
-      if (slicesToRepair[i] == sliceIndex) {
-        replacementSlices[i] = sliceBytes;
-        return;
-      }
-    }
+  public void prepareForDestination() {
+    repairRoute.remove(destination);
+    repairRoute.add(0, destination);
   }
 
-  /**
-   * Checks if replacements to all slices have been added.
-   *
-   * @return true if all slots in 'replacementSlices' are non-null, false
-   * otherwise
-   */
-  public boolean allSlicesRetrieved() {
-    for (byte[] replacementSlice : replacementSlices) {
-      if (replacementSlice == null) {
+  public void setPieces(byte[][] pieces) {
+    this.pieces = pieces;
+  }
+
+  public byte[][] getPieces() {
+    return pieces;
+  }
+
+  public boolean readyToRepair() {
+    if (ApplicationProperties.storageType.equals("erasure")) {
+      return ArrayUtilities.countNulls(pieces) <= Constants.PARITY_SHARDS;
+    }
+    for (int index : piecesToRepair) {
+      if (pieces[index] == null) {
         return false;
       }
     }
@@ -150,11 +177,11 @@ public class RepairChunk implements Event {
    *
    * @return host:port address of next server
    */
-  public String nextServer() {
+  public String getNextAddress() {
     if (!repairRoute.isEmpty()) {
       repairRoute.remove(0);
     }
-    if (allSlicesRetrieved() || repairRoute.isEmpty()) {
+    if (readyToRepair() || repairRoute.isEmpty()) {
       return destination;
     }
     return repairRoute.get(0);
@@ -173,83 +200,23 @@ public class RepairChunk implements Event {
   }
 
   /**
-   * Returns an int[] containing the indices of the slices that still need
-   * repairing -- that is, slice indices in 'slicesToRepair' that are still set
-   * to null in 'replacementSlices'.
+   * Uses the pieces array to reconstruct the content of the chunk. Assumes a
+   * call to readyToRepair() has already returned true.
    *
-   * @return int[] containing the indices of slices that need repairing, null if
-   * there are no slices left to repair
+   * @return byte[] of chunk's content
    */
-  public int[] slicesStillNeedingRepair() {
-    int count = 0;
-    for (byte[] replacementSlice : replacementSlices) {
-      if (replacementSlice == null) {
-        count++;
+  public byte[] getChunk() {
+    if (ApplicationProperties.storageType.equals("erasure")) {
+      byte[][] decoded = FileUtilities.decodeMissingShards(pieces);
+      if (decoded != null) {
+        return FileUtilities.getContentFromShards(decoded);
       }
+    } else {
+      byte[] array = ArrayUtilities.combineByteArrays(pieces);
+      array = FileUtilities.removeHashesFromChunk(array);
+      return FileUtilities.getDataFromChunk(array);
     }
-    int[] slicesNeedingRepair = new int[count];
-    int index = 0;
-    for (int i = 0; i < replacementSlices.length; ++i) {
-      if (replacementSlices[i] == null) {
-        slicesNeedingRepair[index] = slicesToRepair[i];
-        index++;
-      }
-    }
-    return slicesNeedingRepair;
-  }
-
-  /**
-   * Returns an int[] containing the slice indices that correspond to non-null
-   * entries in the replacementSlices array.
-   *
-   * @return int[] of slice indices retrieved thus far, null if no slices have
-   * been retrieved thus far
-   */
-  public int[] getRepairedIndices() {
-    int totalSlicesRetrieved = 0;
-    for (byte[] replacementSlice : replacementSlices) {
-      if (replacementSlice != null) {
-        totalSlicesRetrieved++;
-      }
-    }
-    if (totalSlicesRetrieved == 0) {
-      return null;
-    }
-    int[] repairedSlices = new int[totalSlicesRetrieved];
-    int index = 0;
-    for (int i = 0; i < replacementSlices.length; ++i) {
-      if (replacementSlices[i] != null) {
-        repairedSlices[index] = slicesToRepair[i];
-        index++;
-      }
-    }
-    return repairedSlices;
-  }
-
-  /**
-   * Get array of non-null slices that have been retrieved so far.
-   *
-   * @return array of slices that have been retrieved so far
-   */
-  public byte[][] getReplacedSlices() {
-    int totalSlicesRetrieved = 0;
-    for (byte[] replacementSlice : replacementSlices) {
-      if (replacementSlice != null) {
-        totalSlicesRetrieved++;
-      }
-    }
-    if (totalSlicesRetrieved == 0) {
-      return null;
-    }
-    byte[][] slicesRetrieved = new byte[totalSlicesRetrieved][];
-    int index = 0;
-    for (byte[] replacementSlice : replacementSlices) {
-      if (replacementSlice != null) {
-        slicesRetrieved[index] = replacementSlice;
-        index++;
-      }
-    }
-    return slicesRetrieved;
+    return null;
   }
 
   @Override
@@ -272,8 +239,8 @@ public class RepairChunk implements Event {
     dout.writeInt(array.length);
     dout.write(array);
 
-    dout.writeInt(slicesToRepair.length);
-    for (int sliceIndex : slicesToRepair) {
+    dout.writeInt(piecesToRepair.length);
+    for (int sliceIndex : piecesToRepair) {
       dout.writeInt(sliceIndex);
     }
 
@@ -284,14 +251,14 @@ public class RepairChunk implements Event {
       dout.write(array);
     }
 
-    dout.writeInt(replacementSlices.length);
-    for (byte[] replacementSlice : replacementSlices) {
-      if (replacementSlice == null) {
+    dout.writeInt(pieces.length);
+    for (byte[] piece : pieces) {
+      if (piece == null) {
         dout.writeInt(0);
         continue;
       }
-      dout.writeInt(replacementSlice.length);
-      dout.write(replacementSlice);
+      dout.writeInt(piece.length);
+      dout.write(piece);
     }
 
     dout.writeInt(repairRoute.size());

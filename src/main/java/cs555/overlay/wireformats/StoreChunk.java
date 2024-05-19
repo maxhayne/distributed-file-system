@@ -1,6 +1,12 @@
 package cs555.overlay.wireformats;
 
+import cs555.overlay.config.ApplicationProperties;
+import cs555.overlay.util.ArrayUtilities;
+
 import java.io.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Sent by the Controller to a ChunkServer, carrying the content of a chunk to
@@ -9,33 +15,31 @@ import java.io.*;
  *
  * @author hayne
  */
-public class SendsFileForStorage implements Event {
+public class StoreChunk implements Event {
+
   private final byte type;
   private final String filename;
   private final byte[][] content;
   private String[] servers;
-  private int position;
+  private final List<String> route;
 
   /**
-   * Constructor. If the file to be stored is being stored using the replication
-   * schema, filename should be 'filename_chunk#'. If using the erasure coding
-   * schema, filename should be 'filename_chunk#_shard' (without the fragment
-   * number).
+   * Constructor.
    *
    * @param filename of file to be stored
    * @param content of file to be stored
    * @param servers to store the file at
    */
-  public SendsFileForStorage(String filename, byte[][] content,
-      String[] servers) {
-    this.type = Protocol.SENDS_FILE_FOR_STORAGE;
+  public StoreChunk(String filename, byte[][] content, String[] servers) {
+    this.type = Protocol.STORE_CHUNK;
     this.filename = filename;
     this.content = content;
     this.servers = servers;
-    this.position = 0;
+    this.route = new ArrayList<String>(List.of(servers));
+    Collections.shuffle(route);
   }
 
-  public SendsFileForStorage(byte[] marshalledBytes) throws IOException {
+  public StoreChunk(byte[] marshalledBytes) throws IOException {
     ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
     DataInputStream din = new DataInputStream(bin);
 
@@ -67,7 +71,13 @@ public class SendsFileForStorage implements Event {
       }
     }
 
-    position = din.readInt();
+    int routeLength = din.readInt();
+    route = new ArrayList<>(routeLength);
+    for (int i = 0; i < routeLength; ++i) {
+      int serverLength = din.readInt();
+      byte[] serverBytes = din.readNBytes(serverLength);
+      route.add(new String(serverBytes));
+    }
 
     din.close();
     bin.close();
@@ -105,7 +115,12 @@ public class SendsFileForStorage implements Event {
       dout.writeInt(0);
     }
 
-    dout.writeInt(position);
+    dout.writeInt(route.size());
+    for (String server : route) {
+      byte[] serverBytes = server.getBytes();
+      dout.writeInt(serverBytes.length);
+      dout.write(serverBytes);
+    }
 
     byte[] marshalledBytes = bout.toByteArray();
     dout.close();
@@ -119,32 +134,45 @@ public class SendsFileForStorage implements Event {
   }
 
   /**
-   * Getter for filename to be stored. If the file being stored is a shard, the
-   * filename will change from server to server, so 'position' will be appended
-   * in that case.
+   * Getter for filename to be stored. If the file being stored is a fragment,
+   * the filename will change from server to server.
    *
    * @return filename string
    */
-  public String getFilename() {
-    if (filename.contains("shard")) {
-      return filename + position;
+  public String getFilenameAtServer() {
+    if (ApplicationProperties.storageType.equals("erasure")) {
+      int index = ArrayUtilities.contains(servers, route.get(0));
+      return filename + "_shard" + index;
     } else {
       return filename;
     }
   }
 
   /**
-   * If we have visited 'servers.length' servers, returns false. If we haven't
-   * yet, increments 'position' by one and returns true.
+   * Return the address of the server at the head of route.
    *
-   * @return true if there is another server to relay to, false if not
+   * @return host:port of current server
    */
-  public boolean nextPosition() {
-    if (position < servers.length - 1) {
-      position++;
-      return true;
+  public String getServer() {
+    if (!route.isEmpty()) {
+      return route.get(0);
     }
-    return false;
+    return null;
+  }
+
+  /**
+   * Returns the address of the next server the message should be forwarded to.
+   *
+   * @return host:port address of next server
+   */
+  public String getNextServer() {
+    if (!route.isEmpty()) {
+      route.remove(0);
+    }
+    if (route.isEmpty()) {
+      return null;
+    }
+    return route.get(0);
   }
 
   /**
@@ -155,23 +183,14 @@ public class SendsFileForStorage implements Event {
    * @return byte[] of file's content
    */
   public byte[] getContent() {
-    if (filename.contains("shard")) {
-      byte[] copy = new byte[content[position].length];
-      System.arraycopy(content[position], 0, copy, 0, copy.length);
-      content[position] = null; // So we don't relay it to the next ChunkServer
+    if (ApplicationProperties.storageType.equals("erasure")) {
+      int index = ArrayUtilities.contains(servers, route.get(0));
+      byte[] copy = new byte[content[index].length];
+      System.arraycopy(content[index], 0, copy, 0, copy.length);
+      content[index] = null; // So we don't relay it to the next ChunkServer
       return copy;
     } else {
       return content[0];
     }
-  }
-
-  /**
-   * Returns the host:port address of the server in servers[position]. Should be
-   * called if nextPosition() was just called and returned true.
-   *
-   * @return host:port address of servers[position]
-   */
-  public String getServer() {
-    return servers[position];
   }
 }

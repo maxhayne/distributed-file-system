@@ -12,6 +12,9 @@ public class Constants {
   public static final int BYTES_IN_INT = 4;
   public static final int BYTES_IN_LONG = 8;
 
+  public static final int REPLICAS = 3;
+  public static final int SLICES = 8;
+
   public static final int CHUNK_DATA_LENGTH = 65536; // 2^16 bytes
 
   // Number of milliseconds between each Heartbeat

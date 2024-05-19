@@ -23,3 +23,7 @@
 
 # Reads from the DFS
 reads/
+
+# Generated files for stats
+docker/docker-erasure-stats
+docker/docker-replication-stats

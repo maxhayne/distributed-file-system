@@ -175,4 +175,22 @@ public class ArrayUtilities {
       String destination) {
     return removeFromArray(removeFromArray(servers, destination), null);
   }
+
+  public static byte[] combineByteArrays(byte[][] toCombine) {
+    int totalLength = 0;
+    for (byte[] array : toCombine) {
+      if (array != null) {
+        totalLength += array.length;
+      }
+    }
+    byte[] combined = new byte[totalLength];
+    int index = 0;
+    for (byte[] array : toCombine) {
+      if (array != null) {
+        System.arraycopy(array, 0, combined, index, array.length);
+        index += array.length;
+      }
+    }
+    return combined;
+  }
 }

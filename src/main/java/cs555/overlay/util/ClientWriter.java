@@ -6,7 +6,7 @@ import cs555.overlay.node.Client;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.ClientStore;
 import cs555.overlay.wireformats.Event;
-import cs555.overlay.wireformats.SendsFileForStorage;
+import cs555.overlay.wireformats.StoreChunk;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -107,17 +107,17 @@ public class ClientWriter implements Runnable {
    */
   private void chunkizeFileAndStore(RandomAccessFile file, int totalChunks)
       throws IOException, InterruptedException {
-    ClientStore requestMessage = createNewStoreMessage(); // reusable
+    ClientStore storeRequest = new ClientStore(dateAddedFilename, 0);
     byte[] chunk = new byte[Constants.CHUNK_DATA_LENGTH]; // reusable
     for (int i = 0; i < totalChunks; ++i) {
       setServersAndNotify(null); // set servers to null, notify isn't used
-      byte[] chunkContent = readAndResize(file, chunk);
-      if (chunkContent != null && sendToController(requestMessage)) {
+      byte[] fileBytes = readAndResize(file, chunk);
+      if (fileBytes != null && sendToController(storeRequest)) {
         logger.debug("wait for allocated servers " + i);
         waitForServers(); // wait for Controller to send allocated servers
         if (servers == null || stopRequested ||
-            !sendChunkToServers(requestMessage.getSequence(),
-                chunkContent)) { // stopped by user, or chunk not sent out
+            !sendChunkToServers(storeRequest.getSequence(),
+                fileBytes)) { // stopped by user, or chunk not sent out
           logger.error("Couldn't store chunk " + i + " to the DFS. Stopping.");
           break;
         }
@@ -126,7 +126,7 @@ public class ClientWriter implements Runnable {
         break;
       }
       chunksSent.incrementAndGet();
-      requestMessage.incrementSequence(); // set sequence for next chunk
+      storeRequest.incrementSequence(); // set sequence for next chunk
     }
   }
 
@@ -193,8 +193,8 @@ public class ClientWriter implements Runnable {
   private boolean sendToController(Event event) {
     try {
       client.getControllerConnection().getSender().sendData(event.getBytes());
-    } catch (IOException ioe) {
-      logger.error("Couldn't send message to Controller.");
+    } catch (IOException e) {
+      logger.error("Couldn't send message to Controller. " + e.getMessage());
       return false;
     }
     return true;
@@ -205,39 +205,26 @@ public class ClientWriter implements Runnable {
    * sending to one of them fails, tries to send to the others.
    *
    * @param sequence of the chunk being sent
-   * @param content of the chunk being sent
+   * @param fileBytes of the chunk being sent
    * @return true if sent to one of the servers, false if the chunk couldn't be
    * sent
    */
-  private boolean sendChunkToServers(int sequence, byte[] content) {
-    byte[][] contentToSend = createContentToSend(content);
-    SendsFileForStorage sendMessage =
-        new SendsFileForStorage(createFilename(sequence), contentToSend,
-            servers);
+  private boolean sendChunkToServers(int sequence, byte[] fileBytes) {
+    byte[][] content = makeContentToSend(fileBytes);
+    StoreChunk store = new StoreChunk(makeFilename(sequence), content, servers);
     int failedSends = 0;
-    boolean sent;
+    String nextServer = store.getServer();
     do {
-      sent = sendToChunkServer(sendMessage, sendMessage.getServer());
-      if (!sent) {
-        failedSends++;
-        if (ApplicationProperties.storageType.equals("erasure") &&
-            failedSends > Constants.TOTAL_SHARDS - Constants.DATA_SHARDS) {
-          break;
-        }
+      if (connectionCache.send(nextServer, store, false, false)) {
+        return true;
       }
-    } while (!sent && sendMessage.nextPosition());
-    return sent;
-  }
-
-  /**
-   * Attempts to send a message to a server with address 'address'.
-   *
-   * @param event message to be sent
-   * @param address of server to send message to
-   * @return true if sent, false if not
-   */
-  private boolean sendToChunkServer(Event event, String address) {
-    return connectionCache.send(address, event, false, false);
+      ++failedSends;
+      if (ApplicationProperties.storageType.equals("erasure") &&
+          failedSends > Constants.PARITY_SHARDS) {
+        return false;
+      }
+    } while ((nextServer = store.getNextServer()) != null);
+    return false;
   }
 
   /**
@@ -246,10 +233,9 @@ public class ClientWriter implements Runnable {
    * replicating or erasure coding.
    *
    * @param content of chunk read from the disk
-   * @return byte[][] of content to be attached to the SendsFileForStorage
-   * message
+   * @return byte[][] of content to be attached to the StoreChunk message
    */
-  private byte[][] createContentToSend(byte[] content) {
+  private byte[][] makeContentToSend(byte[] content) {
     if (ApplicationProperties.storageType.equals("erasure")) {
       int length = content.length;
       content = standardizeLength(content);
@@ -301,28 +287,13 @@ public class ClientWriter implements Runnable {
   }
 
   /**
-   * Creates the initial message type based on the storageType of the Client.
-   *
-   * @return new ClientStore message with correct filename, and sequence number
-   * of 0
-   */
-  private ClientStore createNewStoreMessage() {
-    return new ClientStore(dateAddedFilename, 0);
-  }
-
-  /**
-   * Creates proper filename for the SendsFileForStorage message, which is
-   * different if we're using erasure coding or replication.
+   * Creates proper filename for the StoreChunk message.
    *
    * @param sequence of chunk to be stored
    * @return filename
    */
-  private String createFilename(int sequence) {
-    String filename = dateAddedFilename + "_chunk" + sequence;
-    if (ApplicationProperties.storageType.equals("erasure")) {
-      filename += "_shard";
-    }
-    return filename;
+  private String makeFilename(int sequence) {
+    return dateAddedFilename + "_chunk" + sequence;
   }
 
   /**

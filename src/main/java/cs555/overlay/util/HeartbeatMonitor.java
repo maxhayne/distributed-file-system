@@ -1,6 +1,5 @@
 package cs555.overlay.util;
 
-import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.config.Constants;
 import cs555.overlay.node.Controller;
 import cs555.overlay.transport.ControllerInformation;
@@ -8,6 +7,7 @@ import cs555.overlay.transport.ServerConnection;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.GeneralMessage;
 import cs555.overlay.wireformats.Protocol;
+import cs555.overlay.wireformats.RepairChunk;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -191,18 +191,14 @@ public class HeartbeatMonitor extends TimerTask {
    */
   private void dispatchRepair(String baseFilename, int sequence,
       String destination) {
-    String filename = ApplicationProperties.storageType.equals("erasure") ?
-                          baseFilename + "_chunk" + sequence :
-                          baseFilename + "_chunk" + sequence + "_shard";
+    String filename = baseFilename + "_chunk" + sequence;
     String[] servers = information.getServers(filename, sequence);
 
-    ForwardInformation forwardInformation =
-        ControllerInformation.constructRepairMessage(filename, servers,
-            destination, new int[]{0, 1, 2, 3, 4, 5, 6, 7});
-
-    if (forwardInformation.firstHop() != null) {
-      connectionCache.send(forwardInformation.firstHop(),
-          forwardInformation.repairMessage(), true, false);
+    RepairChunk message =
+        ControllerInformation.makeRepairMessage(filename, servers, destination,
+            new int[]{0, 1, 2, 3, 4, 5, 6, 7});
+    if (message != null) {
+      connectionCache.send(message.getAddress(), message, true, false);
     }
   }
 

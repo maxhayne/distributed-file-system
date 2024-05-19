@@ -1,12 +1,11 @@
 package cs555.overlay.util;
 
-import cs555.overlay.config.ApplicationProperties;
-import cs555.overlay.config.Constants;
 import cs555.overlay.node.Client;
 import cs555.overlay.transport.TCPConnectionCache;
 import cs555.overlay.wireformats.Event;
 import cs555.overlay.wireformats.GeneralMessage;
 import cs555.overlay.wireformats.Protocol;
+import cs555.overlay.wireformats.RequestChunk;
 
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -15,7 +14,6 @@ import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,10 +37,9 @@ public class ClientReader implements Runnable {
   private final AtomicInteger batchStartIndex;
   private final AtomicInteger chunksReceivedInBatch;
   private final CyclicBarrier batchBarrier;
-  private String[][] servers = null; // set by Controller response
-  private byte[][][] receivedFiles = null; // set by Controller response
+  private String[][] servers; // set by Controller response
+  private byte[][] receivedChunks; // set by Controller response
   private volatile boolean stopRequested;
-
 
   /**
    * Constructor. Creates a new ClientReader which can be passed to a new thread
@@ -61,7 +58,6 @@ public class ClientReader implements Runnable {
     this.readDirectory = Paths.get(System.getProperty("user.dir"), "reads");
     this.stopRequested = false;
     this.batchStartIndex = new AtomicInteger(0);
-
     this.chunksReceivedInBatch = new AtomicInteger(0);
     this.batchBarrier = new CyclicBarrier(2);
   }
@@ -82,9 +78,9 @@ public class ClientReader implements Runnable {
           channel.truncate(0); // truncate the file if it exists
           batchedDownloadAndWrite(file);
         }
-      } catch (IOException ioe) {
+      } catch (IOException e) {
         logger.error(
-            "Problem writing '" + filename + "' to disk. " + ioe.getMessage());
+            "Couldn't write '" + filename + "' to disk. " + e.getMessage());
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         logger.error("Thread interrupted.");
@@ -92,7 +88,7 @@ public class ClientReader implements Runnable {
     }
     try {
       cleanup();
-    } catch (InterruptedException ie) {
+    } catch (InterruptedException e) {
       logger.error(filename + " cleanup() interrupted.");
     }
   }
@@ -126,8 +122,8 @@ public class ClientReader implements Runnable {
     int workBackwardsFrom = batchStartIndex.get() - 1;
     for (int i = workBackwardsFrom;
          i >= 0 && i > workBackwardsFrom - BATCH_SIZE; --i) {
-      synchronized(receivedFiles[i]) { // Probably don't need this
-        Arrays.fill(receivedFiles[i], null);
+      synchronized(receivedChunks[i]) { // Probably don't need this
+        receivedChunks[i] = null;
       }
     }
   }
@@ -137,7 +133,7 @@ public class ClientReader implements Runnable {
    * receivedFiles.
    */
   private void setTotalChunks() {
-    totalChunks.set(receivedFiles.length);
+    totalChunks.set(receivedChunks.length);
   }
 
   /**
@@ -145,39 +141,25 @@ public class ClientReader implements Runnable {
    * array.
    */
   private void initializeReceivedFiles() {
-    receivedFiles = ApplicationProperties.storageType.equals("erasure") ?
-                        new byte[servers.length][Constants.TOTAL_SHARDS][] :
-                        new byte[servers.length][1][];
+    receivedChunks = new byte[servers.length][];
   }
 
   /**
-   * Adds a byte[] to the receivedFiles[][][] array. Will be called through the
+   * Adds a byte[] to the receivedFiles[][] array. Will be called through the
    * Client's onEvent method by TCPReceiverThreads that have received messages
    * from ChunkServers. If the file being added is not part of the current
    * batch, it is ignored.
    *
-   * @param filename contains "_chunk#" (and "_shard#" if erasure coding)
-   * @param content byte[] of chunk/shard's content
+   * @param filename contains "_chunk#"
+   * @param content byte[] of chunk's content
    */
   public void addFile(String filename, byte[] content) {
     int sequence = FilenameUtilities.getSequence(filename);
     if (sequence >= batchStartIndex.get()) { // only add if in batch
-      synchronized(receivedFiles[sequence]) {
-        if (ApplicationProperties.storageType.equals("erasure")) {
-          receivedFiles[sequence][FilenameUtilities.getFragment(filename)] =
-              content;
-          if (ArrayUtilities.countNulls(receivedFiles[sequence]) ==
-              Constants.TOTAL_SHARDS - Constants.DATA_SHARDS) {
-            chunksReceivedInBatch.incrementAndGet(); // chunk received
-            totalChunksReceived.incrementAndGet();
-          }
-        } else { // replication
-          if (receivedFiles[sequence][0] == null) {
-            receivedFiles[sequence][0] = content;
-            chunksReceivedInBatch.incrementAndGet();
-            totalChunksReceived.incrementAndGet();
-          }
-        }
+      synchronized(servers[sequence]) {
+        receivedChunks[sequence] = content;
+        chunksReceivedInBatch.incrementAndGet(); // chunk received
+        totalChunksReceived.incrementAndGet();
       }
       // If the batch has been fully downloaded, await() on batchBarrier
       // so that thread in wrangleChunks can proceed, and write to disk
@@ -205,23 +187,12 @@ public class ClientReader implements Runnable {
     int nullChunks = 0;
     int localBatchStartIndex = batchStartIndex.get();
     for (int i = localBatchStartIndex; i < localBatchStartIndex + BATCH_SIZE &&
-                                       i < receivedFiles.length; ++i) {
-      synchronized(receivedFiles[i]) {
-        if (ApplicationProperties.storageType.equals("erasure")) {
-          byte[][] decoded =
-              FileUtilities.decodeMissingShards(receivedFiles[i]);
-          if (decoded != null) {
-            byte[] content = FileUtilities.getContentFromShards(decoded);
-            file.write(content);
-          } else {
-            nullChunks++;
-          }
-        } else { // replication
-          if (receivedFiles[i][0] != null) {
-            file.write(receivedFiles[i][0]);
-          } else {
-            nullChunks++;
-          }
+                                       i < receivedChunks.length; ++i) {
+      synchronized(servers[i]) {
+        if (receivedChunks[i] != null) {
+          file.write(receivedChunks[i]);
+        } else {
+          ++nullChunks;
         }
       }
     }
@@ -238,22 +209,19 @@ public class ClientReader implements Runnable {
   private void wrangleChunks() throws InterruptedException {
     chunksReceivedInBatch.set(0); // haven't received any chunks for this batch
     NetworkTimer timer = new NetworkTimer(batchBarrier, chunksReceivedInBatch);
-    do {
-      batchBarrier.reset(); // make sure it's set to two
-      requestUnaskedServers(false);
-      timer.reset();
-      Thread timerThread = new Thread(timer);
-      timerThread.start(); // start network timer
-      try {
-        batchBarrier.await(); // triggered by timeout or complete download
-      } catch (BrokenBarrierException bbe) {
-        logger.debug("Barrier broken. " + bbe.getMessage());
-      }
-      timerThread.interrupt();
-      timer.cancel(); // if interrupt hasn't stopped it
-      timerThread.join();
-    } while (chunksReceivedInBatch.get() < chunksToGetInBatch() &&
-             requestUnaskedServers(true) != 0);
+    batchBarrier.reset(); // make sure it's set to two
+    requestBatch();
+    timer.reset();
+    Thread timerThread = new Thread(timer);
+    timerThread.start(); // start network timer
+    try {
+      batchBarrier.await(); // triggered by timeout or complete download
+    } catch (BrokenBarrierException bbe) {
+      logger.debug("Barrier broken. " + bbe.getMessage());
+    }
+    timerThread.interrupt();
+    timer.cancel(); // if interrupt hasn't stopped it
+    timerThread.join();
   }
 
   /**
@@ -265,97 +233,40 @@ public class ClientReader implements Runnable {
   private int chunksToGetInBatch() {
     int localBatchStartIndex = batchStartIndex.get();
     int batchEndIndex =
-        Math.min(localBatchStartIndex + BATCH_SIZE, receivedFiles.length);
+        Math.min(localBatchStartIndex + BATCH_SIZE, receivedChunks.length);
     return batchEndIndex - localBatchStartIndex;
   }
 
   /**
-   * Sends file requests to servers that haven't been asked yet for the current
-   * batch.
-   *
-   * @param dryRun if true, the function doesn't actually send requests to the
-   * servers, just returns the total number of times it would have
-   * @return total number of servers asked
+   * Sends chunk requests to servers for the current batch.
    */
-  private int requestUnaskedServers(boolean dryRun) {
-    // Create general purpose message
-    GeneralMessage requestMessage =
-        new GeneralMessage(Protocol.REQUEST_FILE, "");
-    int askCount = 0;
+  private void requestBatch() {
     int localBatchStartIndex = batchStartIndex.get();
     for (int i = localBatchStartIndex;
          i < localBatchStartIndex + BATCH_SIZE && i < servers.length; ++i) {
-      if (receivedFiles[i][0] == null) { // only request if chunk not downloaded
-        for (int j = 0; j < servers[i].length; ++j) {
-          if (servers[i][j] != null) {
-            if (!dryRun) {
-              requestFileFromServer(servers[i][j], i, j, requestMessage);
-              servers[i][j] = null;
-            }
-            askCount++;
-            if (!ApplicationProperties.storageType.equals("erasure")) {
-              // only ask one if replicating
-              break;
-            }
-          }
-        }
+      requestChunk(i, servers[i]);
+    }
+  }
+
+  /**
+   * Sends out a chunk request message.
+   *
+   * @param servers servers the chunk is available at
+   * @param sequence number of chunk
+   * @return true if request message was sent, false otherwise
+   */
+  private boolean requestChunk(int sequence, String[] servers) {
+    String chunkFilename = filename + "_chunk" + sequence;
+    String address = client.getHost() + ":" + client.getPort();
+    RequestChunk request = new RequestChunk(chunkFilename, servers, address);
+    String nextServer = request.getAddress();
+    do {
+      if (connectionCache.send(nextServer, request, false, true)) {
+        return true;
       }
-    }
-    return askCount;
-  }
-
-  /**
-   * Requests a file from a server using information given in the parameters.
-   *
-   * @param address of server to request the file from
-   * @param sequence number of chunk
-   * @param serverPosition position of address in server array (could correspond
-   * to fragment number if we're erasure coding)
-   * @param requestMessage reusable request message of type Protocol
-   * .REQUEST_FILE
-   * @return true if request message was sent to server, false otherwise
-   */
-  private boolean requestFileFromServer(String address, int sequence,
-      int serverPosition, GeneralMessage requestMessage) {
-    String specificFilename = appendFilename(sequence, serverPosition);
-    requestMessage.setMessage(specificFilename);
-    if (connectionCache.send(address, requestMessage, false, true)) {
-      return true;
-    }
-    logger.debug(specificFilename + " could not be requested from " + address);
-    logger.debug("Removing " + address + " from servers list for future chunk" +
-                 " retrievals.");
-    removeAddressFromServers(address);
+    } while ((nextServer = request.getNextAddress()) != null);
+    logger.debug(chunkFilename + " could not be requested.");
     return false;
-  }
-
-  /**
-   * Remove a server from all server arrays ahead of the batch we're currently
-   * retrieving.
-   *
-   * @param address to remove
-   */
-  private void removeAddressFromServers(String address) {
-    int nextBatchStartIndex = batchStartIndex.get() + BATCH_SIZE;
-    for (int i = nextBatchStartIndex; i < servers.length; ++i) {
-      ArrayUtilities.replaceArrayItem(servers[i], address, null);
-    }
-  }
-
-  /**
-   * Creates the filename for a file request from a server based on the sequence
-   * number and server position. If the client is erasure coding, the
-   * serverPosition is relevant, and corresponds to the fragment number.
-   * Otherwise, it is ignored.
-   *
-   * @param sequence number of chunk
-   * @param serverPosition of server being requested
-   * @return filename of chunk/shard to be requested
-   */
-  private String appendFilename(int sequence, int serverPosition) {
-    return ApplicationProperties.storageType.equals("erasure") ?
-               filename + "_chunk" + sequence + "_shard" + serverPosition :
-               filename + "_chunk" + sequence;
   }
 
   /**
@@ -378,9 +289,8 @@ public class ClientReader implements Runnable {
       Files.createDirectories(readDirectory);
       return true;
     } catch (IOException e) {
-      logger.error(
-          "Couldn't create directory to store files read from the DFS: " +
-          readDirectory);
+      logger.error("Couldn't make directory to store files from the DFS. " +
+                   readDirectory);
       return false;
     }
   }
@@ -393,29 +303,7 @@ public class ClientReader implements Runnable {
    */
   public synchronized void setServersAndNotify(String[][] servers) {
     this.servers = servers;
-    if (ApplicationProperties.storageType.equals("replication")) {
-      doubleUpServers();
-    }
     this.notify();
-  }
-
-  /**
-   * Doubles up each of the entries in the servers array. Is done for the edge
-   * case where, while replicating, each replication is corrupt, but an
-   * uncorrupted chunk can still be assembled. The three servers will be
-   * requested once, and if each denies, they will be requested once more,
-   * hopefully given enough time to fix their chunk. Turns [1, 2, 3] into [1, 2,
-   * 3, 1, 2, 3].
-   */
-  private synchronized void doubleUpServers() {
-    for (int i = 0; i < servers.length; ++i) {
-      String[] doubledServers = new String[servers[i].length*2];
-      for (int j = 0; j < servers[i].length; ++j) {
-        doubledServers[j] = servers[i][j];
-        doubledServers[j + servers[i].length] = servers[i][j];
-      }
-      servers[i] = doubledServers;
-    }
   }
 
   /**
@@ -427,9 +315,8 @@ public class ClientReader implements Runnable {
    * @return the total number of chunks stored on the DFS,
    */
   private synchronized boolean getStorageInfo() {
-    GeneralMessage storageInfoMessage =
-        new GeneralMessage(Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO,
-            filename);
+    byte type = Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO;
+    GeneralMessage storageInfoMessage = new GeneralMessage(type, filename);
     if (sendToController(storageInfoMessage)) {
       waitForStorageInfo();
     }
@@ -454,8 +341,8 @@ public class ClientReader implements Runnable {
     while (servers == null && !stopRequested) {
       try {
         this.wait(5000);
-      } catch (InterruptedException ie) {
-        logger.debug(ie.getMessage());
+      } catch (InterruptedException e) {
+        logger.debug(e.getMessage());
       }
     }
   }
@@ -476,8 +363,8 @@ public class ClientReader implements Runnable {
   private boolean sendToController(Event event) {
     try {
       client.getControllerConnection().getSender().sendData(event.getBytes());
-    } catch (IOException ioe) {
-      System.err.println("Couldn't send message to Controller.");
+    } catch (IOException e) {
+      System.err.println("Couldn't send to Controller." + e.getMessage());
       return false;
     }
     return true;

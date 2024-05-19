@@ -4,7 +4,7 @@ import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.config.Constants;
 import cs555.overlay.transport.*;
 import cs555.overlay.util.FilenameUtilities;
-import cs555.overlay.util.ForwardInformation;
+import cs555.overlay.util.HeartbeatInformation;
 import cs555.overlay.util.HeartbeatMonitor;
 import cs555.overlay.util.Logger;
 import cs555.overlay.wireformats.*;
@@ -35,7 +35,6 @@ public class Controller implements Node {
     this.host = host;
     this.port = port;
     this.connectionCache = new TCPConnectionCache(this);// TODO Dangerous?
-    // ControllerInformation uses the same TCPConnectionCache
     this.information = new ControllerInformation(connectionCache);
   }
 
@@ -52,38 +51,35 @@ public class Controller implements Node {
         ApplicationProperties.controllerPort)) {
 
       String host = serverSocket.getInetAddress().getHostAddress();
-      Controller controller =
-          new Controller(host, ApplicationProperties.controllerPort);
+      int serverPort = serverSocket.getLocalPort();
+      Controller controller = new Controller(host, serverPort);
 
       // Start the ServerThread
       (new Thread(new TCPServerThread(controller, serverSocket))).start();
-
-      logger.info("ServerThread has started at [" + host + ":" +
-                  ApplicationProperties.controllerPort + "]");
+      logger.info("ServerThread started at [" + host + ":" + serverPort + "]");
 
       // Start the HeartbeatMonitor
-      HeartbeatMonitor heartbeatMonitor =
+      HeartbeatMonitor monitor =
           new HeartbeatMonitor(controller, controller.information);
       Timer heartbeatTimer = new Timer();
-      heartbeatTimer.scheduleAtFixedRate(heartbeatMonitor, 0,
-          Constants.HEARTRATE);
+      heartbeatTimer.scheduleAtFixedRate(monitor, 0, Constants.HEARTRATE);
 
       // Start looping for user interaction
       controller.interact();
-    } catch (IOException ioe) {
-      logger.error("Controller failed to start. " + ioe.getMessage());
+    } catch (IOException e) {
+      logger.error("Controller failed to start. " + e.getMessage());
       System.exit(1);
     }
   }
 
   @Override
   public String getHost() {
-    return this.host;
+    return host;
   }
 
   @Override
   public int getPort() {
-    return this.port;
+    return port;
   }
 
   @Override
@@ -91,11 +87,11 @@ public class Controller implements Node {
     switch (event.getType()) {
 
       case Protocol.CHUNK_SERVER_SENDS_REGISTRATION:
-        registrationHelper(event, connection, true);
+        registrationHandler(event, connection, true);
         break;
 
       case Protocol.CHUNK_SERVER_SENDS_DEREGISTRATION:
-        registrationHelper(event, connection, false);
+        registrationHandler(event, connection, false);
         break;
 
       case Protocol.CLIENT_STORE:
@@ -107,15 +103,15 @@ public class Controller implements Node {
         break;
 
       case Protocol.CHUNK_SERVER_SENDS_HEARTBEAT:
-        heartbeatHelper(event);
+        heartbeatHandler(event);
         break;
 
       case Protocol.CHUNK_SERVER_RESPONDS_TO_HEARTBEAT:
-        pokeHelper(event);
+        pokeHandler(event);
         break;
 
       case Protocol.CHUNK_SERVER_REPORTS_FILE_CORRUPTION:
-        corruptionHelper(event);
+        corruptionHandler(event);
         break;
 
       case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
@@ -148,15 +144,14 @@ public class Controller implements Node {
    */
   private void serverListRequest(TCPConnection connection) {
     String servers = String.join("\n", information.serverDetailsList());
-    GeneralMessage message =
-        new GeneralMessage(Protocol.CONTROLLER_SENDS_SERVER_LIST, servers);
+    byte type = Protocol.CONTROLLER_SENDS_SERVER_LIST;
+    GeneralMessage message = new GeneralMessage(type, servers);
     try {
-      //connection.getSender().sendData(message.getBytes());
       connection.getSender().queueSend(message.getBytes());
-    } catch (IOException ioe) {
+    } catch (IOException e) {
       logger.debug(
           "Unable to send response to Client containing list of servers. " +
-          ioe.getMessage());
+          e.getMessage());
     }
   }
 
@@ -175,12 +170,11 @@ public class Controller implements Node {
 
     ControllerSendsFileList response = new ControllerSendsFileList(listToSend);
     try {
-      //connection.getSender().sendData(response.getBytes());
       connection.getSender().queueSend(response.getBytes());
-    } catch (IOException ioe) {
+    } catch (IOException e) {
       logger.debug(
           "Unable to send response to Client containing list of files. " +
-          ioe.getMessage());
+          e.getMessage());
     }
   }
 
@@ -199,12 +193,11 @@ public class Controller implements Node {
     ControllerSendsStorageList response =
         new ControllerSendsStorageList(filename, servers);
     try {
-      //connection.getSender().sendData(response.getBytes());
       connection.getSender().queueSend(response.getBytes());
-    } catch (IOException ioe) {
+    } catch (IOException e) {
       logger.debug(
           "Unable to send response to Client containing storage information " +
-          "about '" + filename + "'. " + ioe.getMessage());
+          "about '" + filename + "'. " + e.getMessage());
     }
   }
 
@@ -224,13 +217,12 @@ public class Controller implements Node {
    *
    * @param event message being handled
    */
-  private synchronized void corruptionHelper(Event event) {
+  private synchronized void corruptionHandler(Event event) {
     ChunkServerReportsFileCorruption report =
         (ChunkServerReportsFileCorruption) event;
-
-    String baseFilename =
-        FilenameUtilities.getBaseFilename(report.getFilename());
-    int sequence = FilenameUtilities.getSequence(report.getFilename());
+    String filename = report.getFilename();
+    String baseFilename = FilenameUtilities.getBaseFilename(filename);
+    int sequence = FilenameUtilities.getSequence(filename);
 
     String destination =
         information.getChunkServerAddress(report.getIdentifier());
@@ -238,27 +230,23 @@ public class Controller implements Node {
 
     // If no servers hold this chunk, there is nothing to be done
     if (servers == null) {
-      logger.debug(
-          "The Controller doesn't have an entry in its fileTable for '" +
-          report.getFilename() + "', so it cannot be repaired.");
+      logger.debug("No entry in fileTable for '" + filename +
+                   "', so it can't be repaired.");
       return;
     } else if (destination == null) {
-      logger.debug(
-          "Could not fetch the destination address of the server needing the " +
-          "repair.");
+      logger.debug("Couldn't get the address of the server to repair.");
       return;
     }
 
-    ForwardInformation forwardInformation =
-        ControllerInformation.constructRepairMessage(report.getFilename(),
-            servers, destination, report.getSlices());
+    RepairChunk message =
+        ControllerInformation.makeRepairMessage(filename, servers, destination,
+            report.getSlices());
 
-    if (forwardInformation.firstHop() != null) {
-      String address = forwardInformation.firstHop();
-      int firstHopID = information.getConnection(address).getIdentifier();
-      logger.debug("Dispatching repair to " + destination + ", " + firstHopID);
-      if (connectionCache.send(address, forwardInformation.repairMessage(),
-          true, true)) {
+    if (message != null) {
+      String address = message.getAddress();
+      int id = information.getConnection(address).getIdentifier();
+      logger.debug("Dispatching repair to " + destination + ", " + id);
+      if (connectionCache.send(address, message, true, true)) {
         logger.debug("Sent repair message to " + address);
       } else {
         logger.debug("Unable to send a message to " + address + " to repair '" +
@@ -273,7 +261,7 @@ public class Controller implements Node {
    *
    * @param event message being handled
    */
-  private void pokeHelper(Event event) {
+  private void pokeHandler(Event event) {
     ChunkServerRespondsToHeartbeat response =
         (ChunkServerRespondsToHeartbeat) event;
     ServerConnection connection =
@@ -292,7 +280,7 @@ public class Controller implements Node {
    *
    * @param event message being handled
    */
-  private void heartbeatHelper(Event event) {
+  private void heartbeatHandler(Event event) {
     ChunkServerSendsHeartbeat heartbeat = (ChunkServerSendsHeartbeat) event;
     ServerConnection connection =
         information.getConnection(heartbeat.getIdentifier());
@@ -301,9 +289,9 @@ public class Controller implements Node {
                    heartbeat.getIdentifier() + ".");
       return;
     }
-    connection.getHeartbeatInfo()
-              .update(heartbeat.getBeatType(), heartbeat.getFreeSpace(),
-                  heartbeat.getTotalChunks(), heartbeat.getFiles());
+    HeartbeatInformation hbi = connection.getHeartbeatInfo();
+    hbi.update(heartbeat.getBeatType(), heartbeat.getFreeSpace(),
+        heartbeat.getTotalChunks(), heartbeat.getFiles());
   }
 
   /**
@@ -319,14 +307,13 @@ public class Controller implements Node {
     information.deleteFileFromDFS(filename);
 
     // Send client an acknowledgement
-    GeneralMessage response =
-        new GeneralMessage(Protocol.CONTROLLER_APPROVES_FILE_DELETE, filename);
+    byte type = Protocol.CONTROLLER_APPROVES_FILE_DELETE;
+    GeneralMessage response = new GeneralMessage(type, filename);
     try {
-      //connection.getSender().sendData(response.getBytes());
       connection.getSender().queueSend(response.getBytes());
-    } catch (IOException ioe) {
+    } catch (IOException e) {
       logger.debug("Unable to acknowledge Client's request to delete file. " +
-                   ioe.getMessage());
+                   e.getMessage());
     }
   }
 
@@ -338,34 +325,31 @@ public class Controller implements Node {
    */
   private synchronized void storeChunk(Event event, TCPConnection connection) {
     ClientStore request = (ClientStore) event;
+    String filename = request.getFilename();
+    int sequence = request.getSequence();
 
     // Check if we've already allocated that particular filename/sequence combo
-    String[] servers =
-        information.getServers(request.getFilename(), request.getSequence());
+    String[] servers = information.getServers(filename, sequence);
 
     // If it wasn't previously allocated, try to allocate it
     if (servers == null) {
-      servers = information.allocateServers(request.getFilename(),
-          request.getSequence());
+      servers = information.allocateServers(filename, sequence);
     }
 
-    // Choose which response to send
+    // Make correct response
     Event response;
     if (servers == null) {
-      response = new GeneralMessage(Protocol.CONTROLLER_DENIES_STORAGE_REQUEST,
-          request.getFilename());
+      byte type = Protocol.CONTROLLER_DENIES_STORAGE_REQUEST;
+      response = new GeneralMessage(type, filename);
     } else {
-      response = new ControllerReservesServers(request.getFilename(),
-          request.getSequence(), servers);
+      response = new ControllerReservesServers(filename, sequence, servers);
     }
 
-    // Respond to the Client
     try {
-      //connection.getSender().sendData(response.getBytes());
       connection.getSender().queueSend(response.getBytes());
-    } catch (IOException ioe) {
+    } catch (IOException e) {
       logger.debug("Unable to respond to Client's request to store chunk. " +
-                   ioe.getMessage());
+                   e.getMessage());
     }
   }
 
@@ -374,29 +358,27 @@ public class Controller implements Node {
    *
    * @param event message being handled
    * @param connection that produced the event
-   * @param type true = register, false = deregister
+   * @param register true to register, false to deregister
    */
-  private synchronized void registrationHelper(Event event,
-      TCPConnection connection, boolean type) {
+  private synchronized void registrationHandler(Event event,
+      TCPConnection connection, boolean register) {
     GeneralMessage request = (GeneralMessage) event;
-    if (type) { // attempt to register
+    if (register) { // Attempt to register
       String address = request.getMessage();
       int registrationStatus = information.register(address, connection);
 
-      // Respond to ChunkServer
-      GeneralMessage message = new GeneralMessage(
-          Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS,
-          String.valueOf(registrationStatus));
+      byte type = Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS;
+      String status = String.valueOf(registrationStatus);
+      GeneralMessage message = new GeneralMessage(type, status);
       try {
-        //connection.getSender().sendData(message.getBytes());
         connection.getSender().queueSend(message.getBytes());
         if (registrationStatus != -1) {
-          // give new registrant the files it has been allocated, if any
+          // Send under-replicated chunks to new server
           information.refreshServerFiles(registrationStatus);
         }
-      } catch (IOException ioe) {
+      } catch (IOException e) {
         logger.debug("Failed to notify ChunkServer of registration status. " +
-                     "Deregistering. " + ioe.getMessage());
+                     "Deregistering. " + e.getMessage());
         if (registrationStatus != -1) {
           deregister(new ArrayList<>(List.of(registrationStatus)));
         }

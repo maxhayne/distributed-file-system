@@ -47,7 +47,6 @@ public class EventFactory {
       case Protocol.CONTROLLER_APPROVES_FILE_DELETE:
       case Protocol.CLIENT_REQUESTS_FILE_STORAGE_INFO:
       case Protocol.CLIENT_REQUESTS_FILE_DELETE:
-      case Protocol.REQUEST_FILE:
       case Protocol.CHUNK_SERVER_ACKNOWLEDGES_FILE_FOR_STORAGE:
       case Protocol.CONTROLLER_REPORTS_CHUNK_SERVER_REGISTRATION_STATUS:
       case Protocol.CHUNK_SERVER_DENIES_REQUEST:
@@ -72,14 +71,14 @@ public class EventFactory {
       case Protocol.REPAIR_CHUNK:
         return new RepairChunk(marshalledBytes);
 
-      case Protocol.REPAIR_SHARD:
-        return new RepairShard(marshalledBytes);
+      case Protocol.STORE_CHUNK:
+        return new StoreChunk(marshalledBytes);
 
-      case Protocol.SENDS_FILE_FOR_STORAGE:
-        return new SendsFileForStorage(marshalledBytes);
+      case Protocol.SERVE_CHUNK:
+        return new ServeChunk(marshalledBytes);
 
-      case Protocol.CHUNK_SERVER_SERVES_FILE:
-        return new ChunkServerServesFile(marshalledBytes);
+      case Protocol.REQUEST_CHUNK:
+        return new RequestChunk(marshalledBytes);
 
       case Protocol.CHUNK_SERVER_SENDS_HEARTBEAT:
         return new ChunkServerSendsHeartbeat(marshalledBytes);

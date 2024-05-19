@@ -3,9 +3,11 @@ package cs555.overlay.transport;
 import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.config.Constants;
 import cs555.overlay.util.ArrayUtilities;
-import cs555.overlay.util.ForwardInformation;
 import cs555.overlay.util.Logger;
-import cs555.overlay.wireformats.*;
+import cs555.overlay.wireformats.Event;
+import cs555.overlay.wireformats.GeneralMessage;
+import cs555.overlay.wireformats.Protocol;
+import cs555.overlay.wireformats.RepairChunk;
 
 import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -51,7 +53,7 @@ public class ControllerInformation {
     if (servers != null) {
       int nullCount = ArrayUtilities.countNulls(servers);
       if (ApplicationProperties.storageType.equals("erasure")) {
-        return nullCount <= Constants.TOTAL_SHARDS - Constants.DATA_SHARDS;
+        return nullCount <= Constants.PARITY_SHARDS;
       } else {
         return nullCount < 3;
       }
@@ -61,37 +63,26 @@ public class ControllerInformation {
   }
 
   /**
-   * Constructs a repair message of the correct type if there are enough servers
-   * that might hold the file in the servers array.
+   * Constructs a repair message if there are enough servers that might hold the
+   * file in the servers array.
    *
    * @param filename of file to be repaired
    * @param servers array of servers that hold the file
    * @param destination address of server that needs the repair
    * @param slices specific slices that need repairing, is ignored if using
    * erasure coding
-   * @return a ForwardInformation object containing the address of the first
-   * server to forward the message to, and the actual message to be sent, or a
-   * ForwardInformation object with null values, if message couldn't be
-   * constructed
+   * @return a RepairChunk object, or null
    */
-  public static ForwardInformation constructRepairMessage(String filename,
-      String[] servers, String destination, int[] slices) {
+  public static RepairChunk makeRepairMessage(String filename, String[] servers,
+      String destination, int[] slices) {
     if (isChunkRecoverable(servers)) {
-      if (ApplicationProperties.storageType.equals("erasure")) {
-        RepairShard repairShard =
-            new RepairShard(filename, destination, servers);
-        return new ForwardInformation(repairShard.getAddress(), repairShard);
-      } else {
-        String[] strippedServers =
-            ArrayUtilities.reduceReplicationServers(servers, destination);
-        if (strippedServers.length != 0) {
-          RepairChunk repairChunk =
-              new RepairChunk(filename, destination, slices, strippedServers);
-          return new ForwardInformation(repairChunk.getAddress(), repairChunk);
-        }
+      RepairChunk message = new RepairChunk(filename, destination, servers);
+      message.setPiecesToRepair(slices);
+      if (!message.getAddress().equals(destination)) {
+        return message;
       }
     }
-    return new ForwardInformation(null, null);
+    return null;
   }
 
   /**
@@ -197,9 +188,6 @@ public class ControllerInformation {
     synchronized(servers) {
       synchronized(fileTable) {
         fileTable.remove(filename);
-        // TODO remove the step from server.deleteFile that attempts to
-        //  remove entries with that filename from missingChunks, which will,
-        //  if the HeartbeatMonitor is in progress, produce deadlock
         servers.values().forEach(server -> server.deleteFile(filename));
         // Send message to all servers to delete
         GeneralMessage deleteRequest =
@@ -270,7 +258,6 @@ public class ControllerInformation {
             reservedServers[i] = sortedServers.get(i);
           }
           fileServers.put(sequence, reservedServers);
-          // TODO figure out if this operation needs fileTable synchronization
           // add chunk to reservedServer's storedChunks
           for (String reservedServer : reservedServers) {
             getConnection(reservedServer).addChunk(filename, sequence);
@@ -454,11 +441,10 @@ public class ControllerInformation {
           if (ArrayUtilities.contains(servers, candidate) == -1) {
             ServerConnection server = getConnection(candidate);
             servers[i] = candidate;
-            if (sendReplacementMessage(filename, sequence, candidate,
-                servers)) {
+            if (sendReplacement(filename, sequence, candidate, servers)) {
               logger.debug("About to add " + filename + "_chunk" + sequence +
                            " to the storedChunks of " + candidate);
-              server.addChunk(filename, sequence); // TODO getting locked here?
+              server.addChunk(filename, sequence);
               logger.debug(
                   "Moving " + filename + "_chunk" + sequence + " " + i +
                   " to " + candidate);
@@ -503,17 +489,12 @@ public class ControllerInformation {
       synchronized(fileTable) {
         ServerConnection connection = servers.get(identifier);
         if (connection != null) {
-          // TODO figure this out. The getStoredChunks() is called here and
-          //  in the HeartbeatMonitor. This means that if there is nothing
-          //  preventing this function and the monitor running at the same time,
-          //  we could be iterating over it at the same time. We won't be
-          //  modifying it concurrently, though. This requires more thought.
           String address = connection.getServerAddress();
           connection.getStoredChunks().forEach((filename, sequences) -> {
             sequences.forEach((sequence) -> {
               String[] servers = fileTable.get(filename).get(sequence);
               boolean sent =
-                  sendReplacementMessage(filename, sequence, address, servers);
+                  sendReplacement(filename, sequence, address, servers);
               String NOT = sent ? "" : "NOT ";
               logger.debug(
                   filename + "_chunk" + sequence + " was " + NOT + "sent to " +
@@ -528,9 +509,6 @@ public class ControllerInformation {
   /**
    * Constructs a message that will try to relocate a file from a server that
    * has deregistered to a server that has been selected as its replacement.
-   * Slightly long because it must first construct the right type of message --
-   * either RepairShard or RepairChunk, and then send the message to the correct
-   * server.
    *
    * @param baseFilename base filename of file to be relocated
    * @param sequence sequence number of chunk
@@ -539,30 +517,18 @@ public class ControllerInformation {
    * this particular file are located at
    * @return true if message is sent, false if it wasn't
    */
-  private boolean sendReplacementMessage(String baseFilename, int sequence,
+  private boolean sendReplacement(String baseFilename, int sequence,
       String destination, String[] servers) {
     String filename = baseFilename + "_chunk" + sequence;
-    if (ApplicationProperties.storageType.equals("erasure")) {
-      filename += "_shard";
-      filename += ArrayUtilities.contains(servers, destination);
+    RepairChunk repair = makeRepairMessage(filename, servers, destination,
+        new int[]{0, 1, 2, 3, 4, 5, 6, 7});
+    String address = repair.getAddress();
+    int id = getConnection(address).getIdentifier();
+    if (connectionCache.send(address, repair, true, true)) {
+      logger.debug("Sent replace message to " + address + ", " + id);
+      return true;
     }
-
-    ForwardInformation forwardInformation =
-        constructRepairMessage(filename, servers, destination,
-            new int[]{0, 1, 2, 3, 4, 5, 6, 7});
-
-    if (forwardInformation.firstHop() != null) {
-      String address = forwardInformation.firstHop();
-      int firstHopID = getConnection(address).getIdentifier();
-      logger.debug("Sending replace message to " + address + ", " + firstHopID);
-      if (connectionCache.send(address, forwardInformation.repairMessage(),
-          true, true)) {
-        logger.debug("Sent replace message to " + address);
-        return true;
-      }
-      logger.debug("Unable to send a message to " + address + " to replace '" +
-                   filename + "' at " + destination);
-    }
+    logger.debug("Couldn't replace '" + filename + "' at " + destination);
     return false;
   }
 

@@ -3,13 +3,15 @@ package cs555.overlay.files;
 import cs555.overlay.util.ArrayUtilities;
 import cs555.overlay.util.FileMetadata;
 import cs555.overlay.util.FileUtilities;
+import cs555.overlay.wireformats.RepairChunk;
+import cs555.overlay.wireformats.RequestChunk;
 
 import java.nio.ByteBuffer;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class ChunkProcessor {
+public class ChunkProcessor implements FileProcessor {
   private final byte[] fileBytes;
   private byte[] content;
   private boolean corrupt;
@@ -40,29 +42,38 @@ public class ChunkProcessor {
     return slices;
   }
 
-  public boolean repair(FileMetadata md, byte[][] repairSlices,
-      int[] repairIndices) throws NoSuchAlgorithmException {
-    if (repairIndices != null && repairSlices != null &&
-        repairIndices.length == repairSlices.length) {
-      for (int i = 0; i < repairIndices.length; ++i) {
-        slices[repairIndices[i]] = repairSlices[i];
+  public boolean repair(FileMetadata md, byte[][] repairSlices)
+      throws NoSuchAlgorithmException {
+    if (!corrupt) {
+      return false; // repair not necessary
+    }
+    if (repairSlices != null && repairSlices.length == slices.length) {
+      boolean repaired = false;
+      for (int i = 0; i < slices.length; ++i) {
+        if (ArrayUtilities.contains(corruptIndices, i) &&
+            repairSlices[i] != null) {
+          slices[i] = repairSlices[i];
+          repaired = true;
+        }
       }
-      updateMetadata(md, repairIndices);
-      for (int i = 0; i < 8; ++i) {
-        System.arraycopy(slices[i], 0, fileBytes, i*(20 + 8195), 20 + 8195);
+      if (repaired) {
+        updateMetadata(md, repairSlices);
+        for (int i = 0; i < 8; ++i) {
+          System.arraycopy(slices[i], 0, fileBytes, i*(20 + 8195), 20 + 8195);
+        }
+        recheckCorruption(repairSlices);
+        return true;
       }
-      recheckCorruption(repairIndices);
-      return true;
     }
     return false;
   }
 
-  private void updateMetadata(FileMetadata md, int[] repairIndices)
+  private void updateMetadata(FileMetadata md, byte[][] repairSlices)
       throws NoSuchAlgorithmException {
     md.updateIfWritten(); // update in-memory metadata
     // update metadata in zeroth slice, if it isn't corrupt
-    if (ArrayUtilities.contains(repairIndices, 0) ||
-        !ArrayUtilities.contains(corruptIndices, 0)) {
+    if (!ArrayUtilities.contains(corruptIndices, 0) ||
+        repairSlices[0] != null) {
       ByteBuffer sliceBuf = ByteBuffer.wrap(slices[0]);
       sliceBuf.putInt(28, md.getVersion());
       sliceBuf.putLong(36, md.getTimestamp());
@@ -73,18 +84,47 @@ public class ChunkProcessor {
     }
   }
 
-  private void recheckCorruption(int[] repairIndices) {
-    ArrayList<Integer> newCorruptions = new ArrayList<>();
+  private void recheckCorruption(byte[][] repairSlices) {
+    ArrayList<Integer> corruptions = new ArrayList<>();
     for (int corruptIndex : corruptIndices) {
-      if (!ArrayUtilities.contains(repairIndices, corruptIndex)) {
-        newCorruptions.add(corruptIndex);
+      if (repairSlices[corruptIndex] == null) {
+        corruptions.add(corruptIndex);
       }
     }
-    corruptIndices = ArrayUtilities.listToArray(newCorruptions);
-    if (newCorruptions.isEmpty()) {
+    corruptIndices = ArrayUtilities.listToArray(corruptions);
+    if (corruptions.isEmpty()) {
       corrupt = false;
       content = FileUtilities.getDataFromChunk(
           FileUtilities.removeHashesFromChunk(fileBytes));
+    }
+  }
+
+  /**
+   * Attach all the slices to the message that aren't corrupted.
+   *
+   * @param request RequestChunk message
+   */
+  public void attachToRequest(RequestChunk request) {
+    for (int i = 0; i < slices.length; ++i) {
+      if (!ArrayUtilities.contains(corruptIndices, i)) {
+        request.getPieces()[i] = slices[i];
+      }
+    }
+  }
+
+  /**
+   * Attach all the slices to the message that aren't corrupted, and that the
+   * message is slotted to replace.
+   *
+   * @param repair RepairChunk message
+   */
+  public void attachToRepair(RepairChunk repair) {
+    int[] piecesToRepair = repair.getPiecesToRepair();
+    for (int i = 0; i < slices.length; ++i) {
+      if (!ArrayUtilities.contains(corruptIndices, i) &&
+          ArrayUtilities.contains(piecesToRepair, i)) {
+        repair.getPieces()[i] = slices[i];
+      }
     }
   }
 

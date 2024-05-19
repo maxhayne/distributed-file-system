@@ -7,18 +7,18 @@ import java.io.*;
  *
  * @author hayne
  */
-public class ChunkServerServesFile implements Event {
+public class ServeChunk implements Event {
   private final byte type;
   private final String filename;
   private final byte[] content;
 
-  public ChunkServerServesFile(String filename, byte[] content) {
-    this.type = Protocol.CHUNK_SERVER_SERVES_FILE;
+  public ServeChunk(String filename, byte[] content) {
+    this.type = Protocol.SERVE_CHUNK;
     this.filename = filename;
     this.content = content;
   }
 
-  public ChunkServerServesFile(byte[] marshalledBytes) throws IOException {
+  public ServeChunk(byte[] marshalledBytes) throws IOException {
     ByteArrayInputStream bin = new ByteArrayInputStream(marshalledBytes);
     DataInputStream din = new DataInputStream(bin);
 

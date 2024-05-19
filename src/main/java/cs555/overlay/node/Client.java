@@ -2,6 +2,7 @@ package cs555.overlay.node;
 
 import cs555.overlay.config.ApplicationProperties;
 import cs555.overlay.transport.TCPConnection;
+import cs555.overlay.transport.TCPServerThread;
 import cs555.overlay.util.ClientReader;
 import cs555.overlay.util.ClientWriter;
 import cs555.overlay.util.FilenameUtilities;
@@ -10,6 +11,8 @@ import cs555.overlay.wireformats.*;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -28,6 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Client implements Node {
 
   private static final Logger logger = Logger.getInstance();
+  private final String host;
+  private final int port;
   private final ConcurrentHashMap<String,ClientWriter> writers;
   private final ConcurrentHashMap<String,ClientReader> readers;
   private final Object listLock; // protects the controllerFileList
@@ -38,7 +43,9 @@ public class Client implements Node {
   /**
    * Default constructor.
    */
-  public Client() {
+  public Client(String host, int port) {
+    this.host = host;
+    this.port = port;
     this.writers = new ConcurrentHashMap<>();
     this.readers = new ConcurrentHashMap<>();
     this.workingDirectory = Paths.get(System.getProperty("user.dir"), "data");
@@ -48,18 +55,28 @@ public class Client implements Node {
   /**
    * Entry point for the Client. Creates a Client using the storageType
    * specified in the 'application.properties' file, and connects to the
-   * Controller. The Client is a node, but it doesn't have an active
-   * ServerSocket, so it doesn't have its own values for 'host' and 'port'.
+   * Controller.
    *
    * @param args ignored
    */
   public static void main(String[] args) {
-    // Establish connection with Controller
-    try (Socket controllerSocket = new Socket(
-        ApplicationProperties.controllerHost,
-        ApplicationProperties.controllerPort)) {
 
-      Client client = new Client();
+    // Optional command line argument
+    int serverPort = args.length > 0 ? Integer.parseInt(args[0]) : 0;
+
+    // Create server and establish connection with Controller
+    try (ServerSocket serverSocket = new ServerSocket(serverPort);
+         Socket controllerSocket = new Socket(
+             ApplicationProperties.controllerHost,
+             ApplicationProperties.controllerPort);) {
+
+      String host = InetAddress.getLocalHost().getHostAddress();
+      serverPort = serverSocket.getLocalPort();
+      Client client = new Client(host, serverPort);
+
+      // Start the TCPServerThread
+      (new Thread(new TCPServerThread(client, serverSocket))).start();
+      logger.info("ServerThread started at [" + host + ":" + serverPort + "]");
 
       // Set Client's connection to Controller, start the receiver
       client.controllerConnection = new TCPConnection(client, controllerSocket);
@@ -68,21 +85,21 @@ public class Client implements Node {
 
       // Loop for user interaction
       client.interact();
-    } catch (IOException ioe) {
+    } catch (IOException e) {
       logger.error("Connection to the Controller couldn't be established. " +
-                   ioe.getMessage());
+                   e.getMessage());
       System.exit(1);
     }
   }
 
   @Override
   public String getHost() {
-    return "N/A";
+    return host;
   }
 
   @Override
   public int getPort() {
-    return -1;
+    return port;
   }
 
   @Override
@@ -94,7 +111,7 @@ public class Client implements Node {
                     ((GeneralMessage) event).getMessage());
         break;
 
-      case Protocol.CHUNK_SERVER_SERVES_FILE:
+      case Protocol.SERVE_CHUNK:
         directFileToReader(event);
         break;
 
@@ -153,7 +170,7 @@ public class Client implements Node {
    * @param event message being handled
    */
   private void directFileToReader(Event event) {
-    ChunkServerServesFile serveMessage = (ChunkServerServesFile) event;
+    ServeChunk serveMessage = (ServeChunk) event;
     String baseFilename =
         FilenameUtilities.getBaseFilename(serveMessage.getFilename());
     ClientReader reader = readers.get(baseFilename);
@@ -266,7 +283,7 @@ public class Client implements Node {
           break;
 
         case "st", "stop":
-          stopHelper(splitCommand);
+          stopHandler(splitCommand);
           break;
 
         case "r", "readers":
@@ -310,7 +327,7 @@ public class Client implements Node {
    *
    * @param command user input split by whitespace
    */
-  private void stopHelper(String[] command) {
+  private void stopHandler(String[] command) {
     if (command.length > 1) {
       stopReader(command[1]);
       stopWriter(command[1]);
@@ -348,10 +365,10 @@ public class Client implements Node {
               controllerConnection.getSender()
                                   .queueSend(deleteMessage.getBytes());
             }
-          } catch (IOException ioe) {
-            logger.error("Couldn't send Controller a delete request. " +
-                         ioe.getMessage());
-          } catch (NumberFormatException nfe) {
+          } catch (IOException e) {
+            logger.error(
+                "Couldn't send Controller a delete request. " + e.getMessage());
+          } catch (NumberFormatException e) {
             logger.error(command[i] + " is not an integer.");
           }
         }
@@ -388,9 +405,9 @@ public class Client implements Node {
         new GeneralMessage(Protocol.CLIENT_REQUESTS_FILE_LIST);
     try {
       controllerConnection.getSender().queueSend(requestMessage.getBytes());
-    } catch (IOException ioe) {
+    } catch (IOException e) {
       logger.error("Could not send a file list request to the Controller. " +
-                   ioe.getMessage());
+                   e.getMessage());
     }
   }
 
@@ -542,9 +559,9 @@ public class Client implements Node {
         new GeneralMessage(Protocol.CLIENT_REQUESTS_SERVER_LIST);
     try {
       controllerConnection.getSender().queueSend(requestMessage.getBytes());
-    } catch (IOException ioe) {
+    } catch (IOException e) {
       logger.error("Could not send a server list request to the Controller. " +
-                   ioe.getMessage());
+                   e.getMessage());
     }
   }
 
