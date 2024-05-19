@@ -14,12 +14,17 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 /**
  * Client node in the DFS. It is responsible for parsing commands from the user
@@ -39,6 +44,8 @@ public class Client implements Node {
   private TCPConnection controllerConnection;
   private Path workingDirectory;
   private String[] controllerFileList;
+  private static final Pattern rangePattern =
+      Pattern.compile("^[0-9]+\\.\\.[0-9]+$");
 
   /**
    * Default constructor.
@@ -306,6 +313,10 @@ public class Client implements Node {
           printWorkingDirectory(splitCommand);
           break;
 
+        case "ls":
+          printWorkingDirectoryContents();
+          break;
+
         case "e", "exit":
           break interactLoop;
 
@@ -337,43 +348,39 @@ public class Client implements Node {
   }
 
   /**
-   * Send a request to the Controller to delete a file.
+   * Send request(s) to the Controller to delete file(s).
    *
    * @param command user input split by whitespace
    */
   private void requestFileDelete(String[] command) {
     synchronized(listLock) {
       if (controllerFileList == null) {
-        logger.error(
-            "Either no files are stored on the DFS or the file list hasn't " +
-            "been retrieved from the Controller yet. Use command 'files' to " +
-            "retrieve the list, then use the delete command followed by one " +
-            "or more of the numbers printed to the left of the list of files" +
-            ".");
+        logger.error("Either no files are stored on the DFS, or you must use " +
+                     "the 'files' command to populate file list.");
+        return;
+      } else if (command.length < 2) {
+        logger.error("No file number(s) given. Use 'help' command.");
         return;
       }
-      if (command.length > 1) {
-        GeneralMessage deleteMessage =
-            new GeneralMessage(Protocol.CLIENT_REQUESTS_FILE_DELETE);
-        for (int i = 1; i < command.length; ++i) {
-          try {
-            int fileNumber = Integer.parseInt(command[i]);
-            if (fileNumber >= 0 && fileNumber < controllerFileList.length &&
-                !readers.containsKey(controllerFileList[fileNumber]) &&
-                !writers.containsKey(controllerFileList[fileNumber])) {
-              deleteMessage.setMessage(controllerFileList[fileNumber]);
-              controllerConnection.getSender()
-                                  .queueSend(deleteMessage.getBytes());
+      // Expand all numbers user wants to delete
+      List<Integer> fileNumbers = parseFileNumbers(1, command);
+      fileNumbers = fileNumbers.stream().distinct().toList();
+      byte type = Protocol.CLIENT_REQUESTS_FILE_DELETE;
+      GeneralMessage message = new GeneralMessage(type);
+      int len = controllerFileList.length;
+      for (Integer index : fileNumbers) {
+        if (index >= 0 && index < len) {
+          String name = controllerFileList[index];
+          if (!readers.containsKey(name) && !writers.containsKey(name)) {
+            message.setMessage(name);
+            try {
+              controllerConnection.getSender().queueSend(message.getBytes());
+            } catch (IOException e) {
+              logger.error("Couldn't request Controller delete " + name +
+                           e.getMessage());
             }
-          } catch (IOException e) {
-            logger.error(
-                "Couldn't send Controller a delete request. " + e.getMessage());
-          } catch (NumberFormatException e) {
-            logger.error(command[i] + " is not an integer.");
           }
         }
-      } else {
-        logger.error("No number given. Use 'help' for usage.");
       }
     }
   }
@@ -382,18 +389,18 @@ public class Client implements Node {
    * Print a list of active writers.
    */
   private void showWriters() {
-    writers.forEach(
-        (k, v) -> System.out.printf("%3s%3d%-2s%s%n", "", v.getProgress(), "%",
-            k));
+    writers.forEach((k, v) -> {
+      System.out.printf("%3s%3d%-2s%s%n", "", v.getProgress(), "%", k);
+    });
   }
 
   /**
    * Print a list of active readers.
    */
   private void showReaders() {
-    readers.forEach(
-        (k, v) -> System.out.printf("%3s%3d%-2s%s%n", "", v.getProgress(), "%",
-            k));
+    readers.forEach((k, v) -> {
+      System.out.printf("%3s%3d%-2s%s%n", "", v.getProgress(), "%", k);
+    });
   }
 
   /**
@@ -401,13 +408,13 @@ public class Client implements Node {
    * DFS.
    */
   private void requestFileList() {
-    GeneralMessage requestMessage =
-        new GeneralMessage(Protocol.CLIENT_REQUESTS_FILE_LIST);
+    byte type = Protocol.CLIENT_REQUESTS_FILE_LIST;
+    GeneralMessage requestMessage = new GeneralMessage(type);
     try {
       controllerConnection.getSender().queueSend(requestMessage.getBytes());
     } catch (IOException e) {
-      logger.error("Could not send a file list request to the Controller. " +
-                   e.getMessage());
+      logger.error(
+          "Couldn't request file list from the Controller. " + e.getMessage());
     }
   }
 
@@ -471,25 +478,77 @@ public class Client implements Node {
   }
 
   /**
-   * Attempts to store a file on the DFS.
+   * Attempts to write file(s) to the DFS.
    *
    * @param command String[] of command given by user, split by space
    */
   private void put(String[] command) {
     if (command.length < 2) {
-      logger.error("No file given. Use 'help' for usage.");
+      logger.error("No files given. Use 'help' for usage.");
       return;
     }
-    Path pathToFile = parsePath(command[1]);
-    Boolean alreadyWriting =
-        writers.searchValues(10, (w) -> w.getPathToFile().equals(pathToFile));
-    if (alreadyWriting == null || !alreadyWriting) {
-      String dateAddedFilename =
-          addDateToFilename(pathToFile.getFileName().toString());
-      ClientWriter writer =
-          new ClientWriter(this, pathToFile, dateAddedFilename);
-      writers.put(dateAddedFilename, writer);
-      (new Thread(writer)).start();
+    for (int i = 1; i < command.length; ++i) {
+      List<Path> filesFromPath = getFilesFromPath(command[i]);
+      makeWriters(filesFromPath);
+    }
+  }
+
+  /**
+   * If pathString is a directory, returns a list of valid paths in the
+   * directory. If pathString is a valid file, returns a list of size one
+   * containing that path.
+   *
+   * @param pathString path string to expand
+   * @return list of paths
+   */
+  private List<Path> getFilesFromPath(String pathString) {
+    Path path = parsePath(pathString);
+    boolean isDirectory = Files.isDirectory(path);
+    boolean isFile = Files.isRegularFile(path);
+    List<Path> paths = new ArrayList<>();
+    if (isDirectory) {
+      paths.addAll(listDirectoryFiles(path));
+    } else if (isFile) {
+      paths.add(path);
+    }
+    return paths;
+  }
+
+  /**
+   * Creates a list of all non-directory, non-hidden file paths in the dirPath.
+   *
+   * @param dirPath path to a directory
+   * @return list of file paths in directory
+   */
+  private List<Path> listDirectoryFiles(Path dirPath) {
+    List<Path> filePaths = new ArrayList<>();
+    try (DirectoryStream<Path> stream = Files.newDirectoryStream(dirPath)) {
+      for (Path p : stream) {
+        if (Files.isRegularFile(p) && !Files.isHidden(p)) {
+          filePaths.add(p);
+        }
+      }
+    } catch (IOException e) {
+      logger.error("Exception while traversing directory. " + e.getMessage());
+    }
+    return filePaths;
+  }
+
+  /**
+   * Creates a new writer for every non-duplicate entry in the list of paths.
+   *
+   * @param pathsToWrite paths to create writers for
+   */
+  private void makeWriters(List<Path> pathsToWrite) {
+    for (Path p : pathsToWrite) {
+      String dateAdded = addDateToFilename(p.getFileName().toString());
+      ClientWriter writer = new ClientWriter(this, p, dateAdded);
+      Boolean isDuplicate;
+      isDuplicate = writers.search(100, (k, v) -> v.getPathToFile().equals(p));
+      if (isDuplicate == null || !isDuplicate) {
+        writers.put(dateAdded, writer);
+        (new Thread(writer)).start();
+      }
     }
   }
 
@@ -512,42 +571,77 @@ public class Client implements Node {
   }
 
   /**
-   * Attempts to retrieve a file from the DFS.
+   * Attempts to read file(s) from the DFS.
    *
    * @param command String[] of command given by user, split by space
    */
   private void get(String[] command) {
     synchronized(listLock) {
       if (controllerFileList == null) {
-        logger.error(
-            "The file list hasn't been retrieved from the Controller yet" +
-            ". Use command 'files' to retrieve the list, then use the number " +
-            "to the left of the filename in your 'get' command.");
+        logger.error("Either no files are stored on the DFS, or you must use " +
+                     "the 'files' command to populate file list.");
         return;
       } else if (command.length < 2) {
-        logger.error("No number given. Use 'help' command.");
+        logger.error("No file number(s) given. Use 'help' command.");
         return;
       }
-      for (int i = 1; i < command.length; ++i) {
-        int fileNumber;
-        try {
-          fileNumber = Integer.parseInt(command[i]);
-        } catch (NumberFormatException nfe) {
-          logger.error(command[i] + " isn't an integer.");
-          continue;
-        }
-        if (fileNumber >= 0 && fileNumber < controllerFileList.length &&
-            !readers.containsKey(controllerFileList[fileNumber])) {
-          ClientReader reader =
-              new ClientReader(this, controllerFileList[fileNumber]);
-          readers.put(controllerFileList[fileNumber], reader);
-          (new Thread(reader)).start();
-        } else {
-          logger.error(
-              fileNumber + " is either a duplicate, or not a valid file.");
+      // Expand all numbers user wants to read
+      List<Integer> fileNumbers = parseFileNumbers(1, command);
+      int len = controllerFileList.length;
+      for (Integer index : fileNumbers) {
+        if (index >= 0 && index < len) {
+          String filename = controllerFileList[index];
+          if (!readers.containsKey(filename)) {
+            ClientReader reader = new ClientReader(this, filename);
+            readers.put(filename, reader);
+            (new Thread(reader)).start();
+          }
         }
       }
     }
+  }
+
+  /**
+   * Reads ranges of file numbers given by user in command, and expands them
+   * into a list.
+   *
+   * @param startIndex index in command from which to start parsing
+   * @param command user command
+   * @return list of file numbers
+   */
+  private List<Integer> parseFileNumbers(int startIndex, String[] command) {
+    List<Integer> fileNumbers = new ArrayList<>();
+    for (int i = startIndex; i < command.length; ++i) {
+      fileNumbers.addAll(parseRange(command[i]));
+    }
+    return fileNumbers;
+  }
+
+  private List<Integer> parseRange(String range) {
+    if (rangePattern.matcher(range).matches()) {
+      String[] split = range.split("\\.\\.");
+      int lower = Integer.parseInt(split[0]);
+      int upper = Integer.parseInt(split[1]);
+      logger.debug(
+          range + " matches the range pattern! " + lower + " " + upper);
+      return expandRange(lower, upper);
+    }
+    try {
+      return new ArrayList<>(List.of(Integer.parseInt(range)));
+    } catch (NumberFormatException e) {
+      logger.error(range + " is not a valid number or range.");
+    }
+    return new ArrayList<>();
+  }
+
+  private List<Integer> expandRange(int lower, int upper) {
+    List<Integer> expansion = new ArrayList<>();
+    if (lower <= upper) {
+      for (int i = lower; i <= upper; ++i) {
+        expansion.add(i);
+      }
+    }
+    return expansion;
   }
 
   /**
@@ -555,13 +649,32 @@ public class Client implements Node {
    * constituting the DFS.
    */
   private void requestServerList() {
-    GeneralMessage requestMessage =
-        new GeneralMessage(Protocol.CLIENT_REQUESTS_SERVER_LIST);
+    byte type = Protocol.CLIENT_REQUESTS_SERVER_LIST;
+    GeneralMessage request = new GeneralMessage(type);
     try {
-      controllerConnection.getSender().queueSend(requestMessage.getBytes());
+      controllerConnection.getSender().queueSend(request.getBytes());
     } catch (IOException e) {
-      logger.error("Could not send a server list request to the Controller. " +
-                   e.getMessage());
+      logger.error(
+          "Couldn't send server request to the Controller. " + e.getMessage());
+    }
+  }
+
+  public void printWorkingDirectoryContents() {
+    // ANSI escape code constants for text colors
+    String RESET = "\u001B[0m";
+    String BLUE = "\u001B[34m";
+    try (DirectoryStream<Path> stream = Files.newDirectoryStream(
+        workingDirectory)) {
+      for (Path p : stream) {
+        if (Files.isDirectory(p) && !Files.isHidden(p)) {
+          System.out.println("  " + BLUE + p.getFileName().toString() + RESET);
+        } else if (Files.isRegularFile(p) && !Files.isHidden(p)) {
+          System.out.println("  " + p.getFileName().toString());
+        }
+      }
+    } catch (IOException e) {
+      logger.info(
+          "Error encountered traversing the workdir. " + e.getMessage());
     }
   }
 
@@ -569,11 +682,11 @@ public class Client implements Node {
    * Prints a list of valid commands.
    */
   private void showHelp() {
-    System.out.printf("%3s%-19s : %s%n", "", "p[ut] PATH/FILENAME",
-        "store a local file on the DFS");
-    System.out.printf("%3s%-19s : %s%n", "", "g[et] # [#...]",
+    System.out.printf("%3s%-19s : %s%n", "", "p[ut] PATH...",
+        "store local file(s) on the DFS");
+    System.out.printf("%3s%-19s : %s%n", "", "g[et] #[..#]...",
         "retrieve file(s) from the DFS");
-    System.out.printf("%3s%-19s : %s%n", "", "d[elete] # [#...]",
+    System.out.printf("%3s%-19s : %s%n", "", "d[elete] #[..#]...",
         "request that file(s) be deleted from the DFS");
     System.out.printf("%3s%-19s : %s%n", "", "st[op] FILENAME",
         "tries to stop writer or reader for FILENAME");
@@ -587,8 +700,10 @@ public class Client implements Node {
         "print the list of servers constituting the DFS");
     System.out.printf("%3s%-19s : %s%n", "", "wd [NEW_WORKDIR]",
         "print the current working directory or change it");
+    System.out.printf("%3s%-19s : %s%n", "", "ls",
+        "print the contents of the working directory");
     System.out.printf("%3s%-19s : %s%n", "", "e[xit]",
-        "disconnect from the Controller and shutdown the Client");
+        "disconnect from the Controller and shut down the Client");
     System.out.printf("%3s%-19s : %s%n", "", "h[elp]",
         "print a list of valid commands");
   }
