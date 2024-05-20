@@ -258,7 +258,7 @@ public class Client implements Node {
         System.out.printf("%3s%s%n", "", "Controller: No files stored.");
       } else {
         for (int i = 0; i < controllerFileList.length; ++i) {
-          System.out.printf("%3s%-3d%s%n", "", i, controllerFileList[i]);
+          System.out.printf("%3s%d %s%n", "", i, controllerFileList[i]);
         }
       }
     }

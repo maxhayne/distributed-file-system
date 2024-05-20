@@ -122,7 +122,7 @@ public class ClientReader implements Runnable {
     int workBackwardsFrom = batchStartIndex.get() - 1;
     for (int i = workBackwardsFrom;
          i >= 0 && i > workBackwardsFrom - BATCH_SIZE; --i) {
-      synchronized(receivedChunks[i]) { // Probably don't need this
+      synchronized(servers[i]) { // Probably don't need this
         receivedChunks[i] = null;
       }
     }
